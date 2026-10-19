@@ -29,5 +29,7 @@ export function errorMessage(err: unknown): string {
   if (!e) return 'Erreur inconnue';
   if (e.code === '23505') return 'Ce pseudo est déjà pris.';
   if (e.code === '23514') return 'Pseudo invalide : 2 à 16 caractères, lettres, chiffres, _ ou -.';
+  // Fonction absente : une migration de supabase/migrations n'a pas été exécutée.
+  if (e.code === 'PGRST202' || e.code === '42883') return 'le serveur n’est pas à jour (migration SQL manquante)';
   return e.message ?? String(err);
 }

@@ -17,7 +17,7 @@ export function homeView(root: HTMLElement): () => void {
   const content = page(root, 'Accueil');
   const items: MenuItem[] = [];
 
-  const icons: Record<string, [string, number]> = { '2048': ['2⁰', 1], tetris: ['▚', 5], connect4: ['●', 2], tictactoe: ['✕', 3] };
+  const icons: Record<string, [string, number]> = { '2048': ['2⁰', 1], tetris: ['▚', 5], connect4: ['●', 2], tictactoe: ['✕', 3], td: ['♜', 4] };
   for (const g of games) {
     if (g.modes.includes('solo')) {
       const [icon, tone] = icons[g.id] ?? ['▸', 3];
@@ -29,7 +29,7 @@ export function homeView(root: HTMLElement): () => void {
     { label: 'Créer un salon', icon: '+', tone: 3, detail: off ?? 'Multijoueur · code à partager', action: () => navigate(`/room/${generateCode()}`) },
     { label: 'Rejoindre un salon', icon: '→', tone: 3, detail: off ?? 'Saisir un code', action: () => navigate('/join') },
   );
-  items.push({ label: 'Classements', icon: '★', tone: 4, detail: off ?? '2048, Tetris, Puissance 4, Morpion', action: () => navigate('/scores') });
+  items.push({ label: 'Classements', icon: '★', tone: 4, detail: off ?? 'Tous les jeux', action: () => navigate('/scores') });
   items.push({ label: 'Réglages', icon: '⚙', tone: 5, detail: 'Pseudo, couleurs, touche panique', action: () => navigate('/settings') });
 
   const m = menu(items, lastIndex);

@@ -15,7 +15,7 @@ interface Pending {
   data: string;
 }
 
-async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
+export async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
   const supabase = await getSupabase();
   if (!supabase || !(await ensureAccount())) throw new Error('hors ligne');
   const { data, error } = await supabase.rpc(fn, args);

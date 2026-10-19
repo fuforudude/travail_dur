@@ -563,3 +563,15 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
   .tt { gap: 0.6rem; }
   .tt-side { min-width: 4.5rem; }
 }
+
+/* ---------------------------------------------------------------------------
+   Tower defense
+   --------------------------------------------------------------------------- */
+.td-canvas { display: block; border-radius: 10px; border: 1px solid var(--border); box-shadow: var(--shadow); touch-action: manipulation; }
+.td-bar { max-width: 640px; }
+.td-info { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 0.2rem; }
+.td-info p { margin: 0; }
+.td-shop { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.td-shop .chip { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+.td-shop .chip.off { opacity: 0.45; }
+.td-rank { margin-left: auto; }
