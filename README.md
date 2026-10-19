@@ -56,7 +56,7 @@ Limites connues : le serveur garantit qu’un score correspond à une vraie part
 4. **Authentication → URL Configuration** :
    - **Site URL** : `https://fuforudude.github.io/travail_dur/`
    - **Redirect URLs** : ajouter `https://fuforudude.github.io/travail_dur/` et `http://localhost:5173/travail_dur/`
-5. **Emails (important)** : le service d’envoi intégré de Supabase n’envoie qu’aux membres de l’équipe du projet, et seulement quelques emails par heure. Pour de vrais utilisateurs, configurer un SMTP dans **Authentication → Emails → SMTP Settings** (Brevo, Resend, Mailjet… ont des offres gratuites).
+5. **Emails (important)** : le service d’envoi intégré de Supabase n’envoie qu’aux membres de l’équipe du projet, et seulement quelques emails par heure. Pour de vrais utilisateurs, il faut un service SMTP externe : voir [Envoyer les emails avec Brevo](#envoyer-les-emails-avec-brevo) ci-dessous (Resend, Mailjet ou Gmail avec un mot de passe d’application fonctionnent aussi).
 6. **Authentication → Rate Limits** : tout un établissement sort souvent par **une seule adresse IP**. Augmenter la limite de connexions anonymes par IP (30 par heure par défaut), sinon les nouveaux joueurs seront bloqués. Chaque navigateur ne crée son compte qu’une fois.
 7. **Project Settings → API** : récupérer la **Project URL** et la clé **anon / public**, puis en local copier `.env.example` en `.env.local` :
    ```
@@ -66,6 +66,48 @@ Limites connues : le serveur garantit qu’un score correspond à une vraie part
    et relancer `npm run dev`.
 
 La clé *anon* est publique par nature (elle finit dans le JavaScript du site) : c’est la RLS qui protège les données. Ne jamais utiliser la clé *service_role* côté site.
+
+### Envoyer les emails avec Brevo
+
+Supabase sait envoyer ses emails (vérification, lien de connexion) par n’importe quel serveur SMTP. Brevo en fournit un gratuitement (environ 300 emails par jour). Les intitulés des menus peuvent varier légèrement selon les versions de Brevo et de Supabase.
+
+**1. Dans Brevo : déclarer l’adresse d’expédition**
+
+- Menu du compte (en haut à droite) → **Senders, Domains & Dedicated IPs** → onglet **Senders** → **Add a sender**.
+- Nom : par exemple `Notes`. Email : l’adresse qui apparaîtra comme expéditeur.
+- Brevo envoie un code ou un lien de confirmation à cette adresse : le valider. Tant que l’expéditeur n’est pas vérifié, les envois sont refusés.
+
+**2. Dans Brevo : récupérer les identifiants SMTP**
+
+- Menu du compte → **SMTP & API** → onglet **SMTP**.
+- Noter le **serveur** (`smtp-relay.brevo.com`), le **port** (`587`) et le **login** (de la forme `xxxxxx@smtp-brevo.com`, différent de l’email du compte Brevo).
+- **Generate a new SMTP key** → lui donner un nom (`supabase`) → copier la clé tout de suite : elle ne sera plus affichée. C’est elle, le mot de passe SMTP (et non le mot de passe du compte Brevo).
+
+**3. Dans Supabase : brancher Brevo**
+
+**Authentication → Emails → SMTP Settings** → activer **Enable Custom SMTP**, puis :
+
+| Champ Supabase | Valeur |
+| --- | --- |
+| Sender email | l’adresse vérifiée à l’étape 1 |
+| Sender name | `Notes` (ou autre) |
+| Host | `smtp-relay.brevo.com` |
+| Port number | `587` |
+| Username | le login SMTP Brevo (`xxxxxx@smtp-brevo.com`) |
+| Password | la clé SMTP générée à l’étape 2 |
+
+Enregistrer. Ensuite, dans **Authentication → Rate Limits**, ajuster **emails envoyés par heure** (Supabase applique sa propre limite, même avec un SMTP externe).
+
+**4. Tester**
+
+Sur le site : *Réglages → Compte → Ajouter mon email* avec une adresse qui n’est **pas** membre du projet Supabase. L’email doit arriver en moins d’une minute. Sinon :
+
+- **Brevo → Transactional → Logs** (ou *Statistics*) indique si l’email est parti, a été refusé ou bloqué.
+- **Supabase → Logs → Auth** montre les erreurs SMTP (identifiants faux, expéditeur non vérifié…).
+- Compte Brevo neuf : l’envoi transactionnel peut nécessiter que le profil soit complété ou que le compte soit validé par Brevo ; un message l’indique dans le tableau de bord.
+- Email dans les **spams** : fréquent quand l’expéditeur est une adresse Gmail, Outlook… envoyée via Brevo. Pour une meilleure délivrabilité, ajouter un domaine à soi dans Brevo (onglet **Domains**, enregistrements DNS à copier). Pour un usage entre étudiants, prévenir de regarder les spams suffit souvent.
+
+Facultatif : **Authentication → Emails → Templates** permet de traduire les emails en français (modèles *Confirm signup*, *Change Email Address* pour l’ajout d’email à un compte invité, et *Magic Link* pour retrouver son compte). Garder la variable `{{ .ConfirmationURL }}` dans le lien.
 
 ### Jouer à plusieurs
 
