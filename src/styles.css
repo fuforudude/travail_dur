@@ -173,3 +173,22 @@ button.field { cursor: pointer; }
   padding: 1rem;
 }
 .overlay strong { font-size: 1.1rem; }
+
+/* Faux écran (touche panique) : style fixe, indépendant du thème. */
+#panic { position: fixed; inset: 0; z-index: 100; background: #fff; color: #37352f; }
+.fake { display: flex; height: 100%; font: 15px/1.6 var(--font); }
+.fake-side { width: 220px; flex: none; background: #f7f7f5; border-right: 1px solid #e9e9e7; padding: 1rem 0.75rem; font-size: 0.9rem; color: #5f5e5b; }
+.fake-side-title { font-weight: 600; margin-bottom: 0.5rem; }
+.fake-side ul { list-style: none; margin: 0; padding: 0; }
+.fake-side li { padding: 0.2rem 0.5rem; border-radius: 4px; }
+.fake-side li.on { background: #ebebea; color: #37352f; }
+.fake-main { flex: 1; overflow: auto; padding: 2rem 3rem; }
+.fake-meta { color: #9b9a97; font-size: 0.8rem; margin-bottom: 1rem; }
+.fake-doc { max-width: 700px; outline: none; }
+.fake-doc h1 { font-size: 1.7rem; margin: 0 0 1rem; }
+.fake-doc h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
+.fake-todo { color: #9b9a97; }
+@media (max-width: 640px) {
+  .fake-side { display: none; }
+  .fake-main { padding: 1.25rem 1rem; }
+}
