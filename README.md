@@ -9,7 +9,9 @@ En ligne : https://fuforudude.github.io/travail_dur/
 | Jeu | Modes | Touches |
 | --- | --- | --- |
 | 2048 | solo, classé | flèches, WASD ou ZQSD · `R` recommencer |
+| Tetris | solo, classé | `←` `→` déplacer · `↑` ou `X` tourner · `C` sens inverse · `↓` descendre · `Espace` lâcher · `P` pause · `R` rejouer |
 | Puissance 4 | solo contre l’ordinateur, ou en ligne à 2 (classé) | `←` `→` colonne · `Entrée` / `Espace` / `↓` jouer · `R` revanche |
+| Morpion | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches ou `1`–`9` case · `Entrée` jouer · `R` revanche |
 
 Partout : `↑` `↓` + `Entrée` pour naviguer, `Retour arrière` pour revenir.
 
@@ -40,7 +42,8 @@ Rien de ce qu’envoie un client n’est cru sur parole :
 
 - Les clients n’ont **que la lecture** sur les tables (RLS). Toute écriture passe par des fonctions SQL `security definer` qui identifient le joueur avec `auth.uid()`.
 - **2048** : le serveur fournit la graine aléatoire, le client renvoie la liste de ses coups, le serveur **rejoue la partie** et calcule lui-même le score. Coup impossible, partie déjà envoyée, partie d’un autre ou jouée à plus de 25 coups/s : refusé.
-- **Puissance 4 en ligne** : chaque coup est validé et appliqué par le serveur (bon joueur, bon tour, colonne valide). Victoire, nul, abandon et victoire au temps (adversaire inactif 45 s) sont décidés par le serveur.
+- **Tetris** : même principe que 2048 (graine serveur, rejeu complet des actions). Le serveur vérifie aussi que la partie n’a pas duré moins longtemps que ses chutes automatiques.
+- **Puissance 4 et Morpion en ligne** : chaque coup est validé et appliqué par le serveur (bon joueur, bon tour, case ou colonne valide). Victoire, nul, abandon et victoire au temps (adversaire inactif 45 s) sont décidés par le serveur.
 - Pseudos : 2 à 16 caractères (lettres, chiffres, `_`, `-`), uniques sans tenir compte de la casse. Tous les textes sont insérés dans la page comme texte, jamais comme HTML.
 - Le site publié porte une Content-Security-Policy stricte (scripts du site uniquement, connexions vers Supabase uniquement).
 
@@ -49,7 +52,7 @@ Limites connues : le serveur garantit qu’un score correspond à une vraie part
 ## Configurer Supabase
 
 1. Créer un compte sur https://supabase.com, puis **New project** (le plan gratuit suffit).
-2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter (une seule fois).
+2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
 3. **Authentication → Sign In / Providers** :
    - activer **Allow anonymous sign-ins** ;
    - dans **Email**, laisser **Confirm email** activé.
@@ -113,7 +116,7 @@ Facultatif : **Authentication → Emails → Templates** permet de traduire les 
 
 - **Créer un salon** dans l’accueil : un code de 4 lettres est généré. `C` copie le lien à partager.
 - Les autres choisissent **Rejoindre un salon** et saisissent le code, ou ouvrent directement le lien (`…/#/room/ABCD`).
-- Dans le salon, `↑` `↓` pour choisir un joueur, `Entrée` pour le **défier** à Puissance 4. Le joueur défié accepte avec `O` ou refuse avec `N`. Un défi expire au bout de 2 minutes.
+- Dans le salon, `←` `→` pour choisir le jeu (Puissance 4 ou Morpion), `↑` `↓` pour choisir un joueur, `Entrée` pour le **défier**. Le joueur défié accepte avec `O` ou refuse avec `N`. Un défi expire au bout de 2 minutes.
 - En partie : `Retour arrière` deux fois pour abandonner ; si l’adversaire ne joue plus pendant 45 s, `V` réclame la victoire.
 
 Pour tester seul : deux onglets du même navigateur partagent le même compte. Utiliser deux navigateurs, ou une fenêtre de navigation privée.
@@ -155,4 +158,4 @@ Créer un dossier dans `src/games/`, exporter un objet `Game` (voir `src/games/t
 - `mount(ctx)` dessine le jeu dans `ctx.root` et retourne une fonction de nettoyage.
 - Clavier : `pushKeys()` de `core/input.ts` (retirer le gestionnaire au nettoyage). `Retour arrière` → `ctx.onExit()`.
 - Jeux en temps réel : `onPanicChange()` de `core/panic.ts` pour se mettre en pause.
-- Score classé ou multijoueur : la règle du jeu doit exister **côté serveur** (fonctions SQL, comme `g2048_replay` ou `c4_play`). Ne jamais écrire un score ou un état de partie depuis le client.
+- Score classé ou multijoueur : la règle du jeu doit exister **côté serveur**, dans une nouvelle migration SQL. Solo classé : sur le modèle de `g2048_replay` / `tetris_replay` et `src/net/ranked.ts`. Jeu à deux au tour par tour : ajouter le jeu à la colonne `game` de `matches` et sa règle dans `match_play`, puis réutiliser `mountOnline` (`src/games/online.ts`) avec une vue qui respecte `src/games/duel.ts`. Ne jamais écrire un score ou un état de partie depuis le client.

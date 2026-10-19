@@ -17,6 +17,7 @@ export interface Account {
 let session: Promise<Account | null> | null = null;
 const listeners = new Set<(a: Account | null) => void>();
 let current: Account | null = null;
+let initialized = false; // ensureAccount a fini sa propre synchro du pseudo
 
 function toAccount(u: User | null | undefined): Account | null {
   if (!u) return null;
@@ -57,7 +58,7 @@ export function ensureAccount(): Promise<Account | null> {
       set(a);
       // Jamais d'appel Supabase directement dans ce callback : il tient le verrou d'auth
       // et l'appel attendrait ce même verrou (blocage). On diffère.
-      if (changed && current) setTimeout(() => void syncName(a), 0);
+      if (changed && current && initialized) setTimeout(() => void syncName(a), 0);
     });
     const { data } = await supabase.auth.getSession();
     let user = data.session?.user ?? null;
@@ -69,6 +70,7 @@ export function ensureAccount(): Promise<Account | null> {
     const a = toAccount(user);
     set(a);
     await syncName(a);
+    initialized = true;
     return a;
   })().catch((err) => {
     console.warn('Connexion impossible :', errorMessage(err));

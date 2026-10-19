@@ -14,7 +14,9 @@ interface Board {
 
 const BOARDS: Board[] = [
   { title: '2048', view: 'leaderboard_2048', order: 'best', columns: [['best', 'Record'], ['max_tile', 'Tuile'], ['games', 'Parties']] },
+  { title: 'Tetris', view: 'leaderboard_tetris', order: 'best', columns: [['best', 'Record'], ['lines', 'Lignes'], ['games', 'Parties']] },
   { title: 'Puissance 4', view: 'leaderboard_c4', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
+  { title: 'Morpion', view: 'leaderboard_ttt', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
 ];
 
 let tab = 0;

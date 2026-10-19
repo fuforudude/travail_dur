@@ -319,7 +319,9 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
    --------------------------------------------------------------------------- */
 .board-2048 {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* minmax(0, 1fr) sur les deux axes : toutes les cases ont la même taille, vides ou non. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(0, 1fr));
   gap: 8px;
   width: min(380px, calc(100vw - 2rem));
   aspect-ratio: 1;
@@ -332,6 +334,9 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
   user-select: none;
 }
 .cell {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -455,3 +460,106 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .scores tbody tr:nth-child(2) td:first-child { color: var(--muted); font-weight: 700; }
 .scores tbody tr:nth-child(3) td:first-child { color: var(--tone2); font-weight: 700; }
 .scores tr.me td { background: var(--accent-soft); font-weight: 550; }
+
+/* ---------------------------------------------------------------------------
+   Sélecteur de jeu (salon)
+   --------------------------------------------------------------------------- */
+.picker { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
+.picker-games { display: inline-flex; gap: 0.3rem; padding: 0.2rem; background: var(--surface-2); border-radius: 999px; }
+.chip { font-size: 0.85rem; padding: 0.15rem 0.7rem; border-radius: 999px; color: var(--muted); }
+.chip.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 550; }
+
+/* ---------------------------------------------------------------------------
+   Morpion
+   --------------------------------------------------------------------------- */
+.ttt {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(300px, calc(100vw - 2rem));
+  aspect-ratio: 1;
+  padding: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  user-select: none;
+}
+.ttt-cell {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+  border-radius: 10px;
+  font-size: clamp(2rem, 12vw, 3.4rem);
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.ttt-cell.cursor { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.ttt-cell.p1, .mark.p1 { color: var(--p1); }
+.ttt-cell.p2, .mark.p2 { color: var(--p2); }
+.ttt-cell.last { background: color-mix(in srgb, var(--surface-2) 50%, var(--surface)); }
+.ttt-cell.win { background: var(--accent-soft); box-shadow: inset 0 0 0 3px var(--accent); }
+.mark { font-weight: 700; }
+:root[data-palette='mono'] .ttt-cell.p2, :root[data-palette='mono'] .mark.p2 { color: var(--muted); }
+
+/* ---------------------------------------------------------------------------
+   Tetris
+   --------------------------------------------------------------------------- */
+.tt { display: flex; gap: 1rem; align-items: flex-start; }
+.tt-board {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: repeat(20, minmax(0, 1fr));
+  gap: 1px;
+  width: min(250px, calc((100dvh - 12rem) / 2), calc(100vw - 9rem));
+  aspect-ratio: 1 / 2;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.tt-side { display: flex; flex-direction: column; gap: 0.5rem; min-width: 5.5rem; }
+.tt-next-wrap { display: flex; flex-direction: column; gap: 0.3rem; }
+.tt-next {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap: 1px;
+  width: 4.5rem;
+  aspect-ratio: 1;
+  padding: 3px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+.tt-next .tt-cell:not([class*='k']) { background: transparent; }
+.tt-stat {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.25rem 0.55rem;
+}
+.tt-stat b { font-variant-numeric: tabular-nums; font-size: 1.05rem; }
+.tt-cell { min-width: 0; min-height: 0; border-radius: 2px; background: color-mix(in srgb, var(--surface) 75%, var(--surface-2)); }
+.tt-cell.k1 { --k: #3cc4d8; }
+.tt-cell.k2 { --k: #f2c94c; }
+.tt-cell.k3 { --k: #a979e0; }
+.tt-cell.k4 { --k: #5cc985; }
+.tt-cell.k5 { --k: #ec6a5e; }
+.tt-cell.k6 { --k: #5b7fe1; }
+.tt-cell.k7 { --k: #f2994a; }
+.tt-cell[class*='k'] { background: var(--k); box-shadow: inset 0 -2px 0 rgb(0 0 0 / 18%); }
+.tt-cell.ghost { background: color-mix(in srgb, var(--k) 22%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k) 60%, transparent); }
+:root[data-palette='mono'] .tt-cell[class*='k'] { --k: #777; }
+:root[data-palette='mono'][data-theme='dark'] .tt-cell[class*='k'] { --k: #aaa; }
+@media (max-width: 420px) {
+  .tt { gap: 0.6rem; }
+  .tt-side { min-width: 4.5rem; }
+}

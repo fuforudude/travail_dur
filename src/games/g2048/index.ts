@@ -1,8 +1,8 @@
 import { isTyping, pushKeys } from '../../core/input';
 import { blip } from '../../core/sound';
 import { getBest, load, remove, save, setBest } from '../../core/storage';
-import { ensureAccount, getAccount } from '../../net/auth';
-import { errorMessage, getSupabase, multiConfigured } from '../../net/supabase';
+import { flushPending, startRanked, submitMessage, submitRanked } from '../../net/ranked';
+import { multiConfigured } from '../../net/supabase';
 import { h, hints } from '../../ui/dom';
 import type { Game, GameContext } from '../types';
 import { addRandom, canMove, DIR_CODE, move, replay, type Dir, type Grid } from './logic';
@@ -16,46 +16,12 @@ interface Saved {
   keepPlaying: boolean;
 }
 
-interface Pending {
-  session: string;
-  moves: string;
-}
-
 const KEYS: Record<string, Dir> = {
   arrowup: 'up', w: 'up', z: 'up',
   arrowdown: 'down', s: 'down',
   arrowleft: 'left', a: 'left', q: 'left',
   arrowright: 'right', d: 'right',
 };
-
-async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
-  const supabase = await getSupabase();
-  if (!supabase || !(await ensureAccount())) throw new Error('hors ligne');
-  const { data, error } = await supabase.rpc(fn, args);
-  if (error) throw new Error(errorMessage(error));
-  return data as T;
-}
-
-/** Envoie au serveur une partie terminée. En cas d'échec réseau, on réessaiera plus tard. */
-async function submit(p: Pending): Promise<{ score: number } | { error: string }> {
-  try {
-    const r = await rpc<{ score: number }>('g2048_finish', { session_id: p.session, moves: p.moves });
-    return r;
-  } catch (e) {
-    const msg = (e as Error).message;
-    // Erreurs définitives (refus du serveur) : inutile de réessayer.
-    if (!/fetch|réseau|network|hors ligne/i.test(msg)) return { error: msg };
-    save('pending:2048', [...load<Pending[]>('pending:2048', []), p].slice(-20));
-    return { error: 'hors ligne, envoi plus tard' };
-  }
-}
-
-async function flushPending(): Promise<void> {
-  const list = load<Pending[]>('pending:2048', []);
-  if (!list.length) return;
-  remove('pending:2048');
-  for (const p of list) await submit(p);
-}
 
 function mount(ctx: GameContext): () => void {
   let saved: Saved | null = load<Saved | null>('state:2048', null);
@@ -122,12 +88,9 @@ function mount(ctx: GameContext): () => void {
   /** Enregistre la partie en cours auprès du serveur (si elle est classée et non vide). */
   const finish = () => {
     if (!saved?.session || !saved.moves) return;
-    const p = { session: saved.session, moves: saved.moves };
-    void submit(p).then((r) => {
+    void submitRanked('g2048', saved.session, saved.moves).then((r) => {
       if (disposed) return;
-      if ('error' in r) note = `Score non enregistré : ${r.error}.`;
-      else if (getAccount()?.verified) note = `Score de ${r.score} enregistré au classement.`;
-      else note = `Score de ${r.score} enregistré. Ajoute un email (Réglages → Compte) pour apparaître au classement.`;
+      note = submitMessage(r);
       render();
     });
   };
@@ -144,13 +107,11 @@ function mount(ctx: GameContext): () => void {
     starting = multiConfigured;
     if (starting) render();
     let s: Saved = { seed: randomSeed(), moves: '', session: null, keepPlaying: false };
-    if (multiConfigured) {
-      try {
-        const r = await rpc<{ id: string; seed: number }>('g2048_start');
-        s = { ...s, seed: Number(r.seed), session: r.id };
-      } catch (e) {
-        note = `Partie non classée : ${(e as Error).message}.`;
-      }
+    try {
+      const r = await startRanked('g2048');
+      if (r) s = { ...s, seed: r.seed, session: r.id };
+    } catch (e) {
+      note = `Partie non classée : ${(e as Error).message}.`;
     }
     if (disposed) return;
     starting = false;
@@ -199,7 +160,7 @@ function mount(ctx: GameContext): () => void {
   }
   if (saved) render();
   else void start();
-  void flushPending();
+  void flushPending('g2048');
 
   const popKeys = pushKeys((e) => {
     if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;

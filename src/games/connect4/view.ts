@@ -1,31 +1,9 @@
 import { isTyping, pushKeys } from '../../core/input';
 import { h, hints } from '../../ui/dom';
-import { COLS, ROWS, type Cell } from './logic';
+import { statusText, type DuelView, type ViewHandlers, type ViewState } from '../duel';
+import { COLS, ROWS } from './logic';
 
-/** Ce que le plateau affiche ; solo et en ligne le remplissent chacun à leur façon. */
-export interface ViewState {
-  board: Cell[];
-  names: [string, string];
-  /** Mon camp (0 = joueur 1), ou null si je ne joue pas. */
-  me: 0 | 1 | null;
-  turn: 0 | 1;
-  result: null | 'draw' | 0 | 1;
-  line: number[];
-  last: number | null;
-  scores: [number, number];
-  /** Remplace le texte de statut calculé par défaut. */
-  message?: string;
-}
-
-export interface ViewHandlers {
-  play(col: number): void;
-  rematch(): void;
-  exit(): void;
-  /** Touches propres à un mode (ex. réclamer la victoire en ligne). Retourne true si gérée. */
-  key?(key: string): boolean;
-}
-
-export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints: [string, string][] = []) {
+export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints: [string, string][] = []): DuelView {
   let state: ViewState | null = null;
   let cursor = Math.floor(COLS / 2);
 
@@ -67,11 +45,7 @@ export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints
     });
     heads.forEach((el, c) => (el.className = 'c4-head' + (myTurn() && c === cursor ? ` p${s.me! + 1}` : '')));
 
-    if (s.message) status.textContent = s.message;
-    else if (s.result === 'draw') status.textContent = 'Match nul. R pour la revanche.';
-    else if (s.result !== null) status.textContent = (s.result === s.me ? 'Gagné !' : `${s.names[s.result]} gagne.`) + ' R pour la revanche.';
-    else if (myTurn()) status.textContent = 'À toi de jouer.';
-    else status.textContent = `${s.names[s.turn]} réfléchit…`;
+    status.textContent = statusText(s, myTurn());
   };
 
   const moveCursor = (c: number) => {

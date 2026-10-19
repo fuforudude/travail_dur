@@ -1,7 +1,7 @@
 import { isTyping, pushKeys } from '../core/input';
 import { getSettings } from '../core/settings';
-import { connect4 } from '../games/connect4';
-import { cancelChallenge, challenge, pendingChallenges, respond, watchMyMatches, type MatchRow } from '../games/connect4/online';
+import { cancelChallenge, challenge, pendingChallenges, respond, watchMyMatches, type DuelGame, type MatchRow } from '../games/online';
+import { getGame } from '../games/registry';
 import { ensureAccount } from '../net/auth';
 import { isValidCode, normalizeCode, Room, type Player } from '../net/room';
 import { multiConfigured } from '../net/supabase';
@@ -70,6 +70,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
   let me = '';
   let disposed = false;
   let selected = 0; // index dans la liste des autres joueurs
+  let gameIndex = 0; // jeu proposé lors du prochain défi
   let incoming: MatchRow | null = null;
   let outgoing: MatchRow | null = null;
   let unmountGame: (() => void) | null = null;
@@ -84,15 +85,18 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
   // Tolérant aux horloges décalées : c'est le serveur qui fait respecter l'expiration (2 min).
   const fresh = (m: MatchRow) => Date.now() - Date.parse(m.created_at) < 600_000;
   const link = () => `${location.origin}${location.pathname}#/room/${code}`;
+  const DUEL_GAMES: DuelGame[] = ['connect4', 'tictactoe'];
+  const gameName = (id: string) => getGame(id)?.name ?? id;
 
-  const startGame = (matchId: string) => {
-    if (!room || unmountGame) return;
+  const startGame = (matchId: string, gameId: DuelGame) => {
+    const game = getGame(gameId);
+    if (!room || unmountGame || !game) return;
     incoming = outgoing = null;
     notice = '';
     content.replaceChildren();
     void room.setBusy(true);
     const r = room;
-    unmountGame = connect4.mount({
+    unmountGame = game.mount({
       root: content,
       mode: 'multi',
       room: r,
@@ -109,7 +113,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
 
   const onMatch = (m: MatchRow) => {
     if (m.room !== code || unmountGame) return;
-    if (m.status === 'playing' && m.moves === 0 && fresh(m)) return startGame(m.id);
+    if (m.status === 'playing' && m.moves === 0 && fresh(m)) return startGame(m.id, m.game);
     if (m.status === 'pending' && fresh(m)) {
       if (m.p2 === me) incoming = m;
       else outgoing = m;
@@ -142,8 +146,9 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
       return render();
     }
     void act(async () => {
-      const id = await challenge(target.id, code);
-      outgoing ??= { id, p1: me, p2: target.id, room: code, status: 'pending', created_at: new Date().toISOString() } as MatchRow;
+      const game = DUEL_GAMES[gameIndex];
+      const id = await challenge(target.id, code, game);
+      outgoing ??= { id, game, p1: me, p2: target.id, room: code, status: 'pending', created_at: new Date().toISOString() } as MatchRow;
     });
   };
 
@@ -172,9 +177,9 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
     });
 
     const banner = incoming
-      ? h('p', { class: 'notice' }, `${nameOf(incoming.p1)} te défie à Puissance 4. `, h('kbd', {}, 'O'), ' accepter · ', h('kbd', {}, 'N'), ' refuser')
+      ? h('p', { class: 'notice' }, `${nameOf(incoming.p1)} te défie au ${gameName(incoming.game)}. `, h('kbd', {}, 'O'), ' accepter · ', h('kbd', {}, 'N'), ' refuser')
       : outgoing
-        ? h('p', { class: 'notice' }, `Défi envoyé à ${nameOf(outgoing.p2)}, en attente… `, h('kbd', {}, 'N'), ' annuler')
+        ? h('p', { class: 'notice' }, `Défi au ${gameName(outgoing.game)} envoyé à ${nameOf(outgoing.p2)}, en attente… `, h('kbd', {}, 'N'), ' annuler')
         : null;
 
     content.replaceChildren(
@@ -183,13 +188,19 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
         { class: 'card' },
         h('div', { class: 'lobby-head' }, h('h1', {}, 'Salon'), h('span', { class: 'code' }, code)),
         h('p', { class: 'muted small link' }, link()),
+        h(
+          'div',
+          { class: 'picker' },
+          h('span', { class: 'muted small' }, 'Jeu du défi'),
+          h('span', { class: 'picker-games' }, ...DUEL_GAMES.map((g, i) => h('span', { class: 'chip' + (i === gameIndex ? ' on' : '') }, gameName(g)))),
+        ),
         h('h2', {}, `Joueurs (${room.players.length})`),
         h('ul', { class: 'players' }, ...items),
         list.length ? null : h('p', { class: 'muted small' }, 'Personne d’autre pour l’instant : partage le code.'),
         banner,
         notice ? h('p', { class: 'notice' }, notice) : null,
       ),
-      hints(['↑ ↓', 'joueur'], ['Entrée', 'défier à Puissance 4'], ['C', 'copier le lien'], ['Retour arrière', 'quitter']),
+      hints(['↑ ↓', 'joueur'], ['← →', 'jeu'], ['Entrée', `défier au ${gameName(DUEL_GAMES[gameIndex])}`], ['C', 'copier le lien'], ['Retour arrière', 'quitter']),
     );
   };
 
@@ -212,6 +223,10 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
         const n = others().length;
         if (n) selected = (selected + (key === 'arrowdown' ? 1 : n - 1)) % n;
         render();
+      } else if (key === 'arrowleft' || key === 'arrowright') {
+        e.preventDefault();
+        gameIndex = (gameIndex + (key === 'arrowright' ? 1 : DUEL_GAMES.length - 1)) % DUEL_GAMES.length;
+        render();
       } else if (key === 'enter') {
         e.preventDefault();
         sendChallenge();
@@ -220,7 +235,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
         incoming = null;
         void act(async () => {
           const status = await respond(m.id, true);
-          if (status === 'playing') startGame(m.id);
+          if (status === 'playing') startGame(m.id, m.game);
           else notice = 'Ce défi a expiré.';
         });
       } else if (key === 'n' && incoming) {

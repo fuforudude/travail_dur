@@ -1,14 +1,17 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { blip } from '../../core/sound';
-import { errorMessage, getSupabase } from '../../net/supabase';
-import type { GameContext } from '../types';
-import type { Cell } from './logic';
-import { createView, type ViewState } from './view';
+import { blip } from '../core/sound';
+import { errorMessage, getSupabase } from '../net/supabase';
+import type { CreateView, ViewState } from './duel';
+import type { GameContext } from './types';
 
-/** Ligne de public.c4_matches telle que renvoyée par Supabase. */
+/** Jeux à deux arbitrés par le serveur (colonne `game` de public.matches). */
+export type DuelGame = 'connect4' | 'tictactoe';
+
+/** Ligne de public.matches telle que renvoyée par Supabase. */
 export interface MatchRow {
   id: string;
   room: string;
+  game: DuelGame;
   p1: string;
   p2: string;
   status: 'pending' | 'declined' | 'expired' | 'playing' | 'won' | 'draw' | 'forfeit' | 'timeout';
@@ -36,10 +39,11 @@ async function rpc<T = unknown>(fn: string, args: Record<string, unknown>): Prom
   return data as T;
 }
 
-export const challenge = (opponent: string, room: string) => rpc<string>('c4_challenge', { opponent, room_code: room });
+export const challenge = (opponent: string, room: string, game: DuelGame) =>
+  rpc<string>('match_challenge', { opponent, room_code: room, game_id: game });
 /** Retourne le nouvel état du défi : 'playing', 'declined' ou 'expired'. */
-export const respond = (matchId: string, accept: boolean) => rpc<string>('c4_respond', { match_id: matchId, accept });
-export const cancelChallenge = (matchId: string) => rpc('c4_forfeit', { match_id: matchId });
+export const respond = (matchId: string, accept: boolean) => rpc<string>('match_respond', { match_id: matchId, accept });
+export const cancelChallenge = (matchId: string) => rpc('match_forfeit', { match_id: matchId });
 
 /** Défis et parties qui me concernent, en direct. */
 export async function watchMyMatches(me: string, cb: (row: MatchRow) => void): Promise<() => void> {
@@ -49,7 +53,7 @@ export async function watchMyMatches(me: string, cb: (row: MatchRow) => void): P
   for (const col of ['p1', 'p2']) {
     channel.on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'c4_matches', filter: `${col}=eq.${me}` },
+      { event: '*', schema: 'public', table: 'matches', filter: `${col}=eq.${me}` },
       (payload) => payload.new && 'id' in payload.new && cb(payload.new as MatchRow),
     );
   }
@@ -61,7 +65,7 @@ export async function pendingChallenges(me: string, room: string): Promise<Match
   const supabase = await getSupabase();
   const { data } =
     (await supabase
-      ?.from('c4_matches')
+      ?.from('matches')
       .select('*')
       .eq('status', 'pending')
       .eq('room', room)
@@ -75,7 +79,7 @@ export async function pendingChallenges(me: string, room: string): Promise<Match
  * Partie en ligne : le serveur fait foi. On affiche la ligne de la base, on envoie les coups
  * par RPC, et on reçoit chaque mise à jour par Realtime.
  */
-export function mountOnline(ctx: GameContext): () => void {
+export function mountOnline(ctx: GameContext, createView: CreateView): () => void {
   const me = ctx.me.id;
   let matchId = ctx.match!;
   let row: MatchRow | null = null;
@@ -91,9 +95,9 @@ export function mountOnline(ctx: GameContext): () => void {
   const view = createView(
     ctx.root,
     {
-      play: (col) => send('c4_play', { match_id: matchId, col }),
+      play: (cell) => send('match_play', { match_id: matchId, cell }),
       rematch: () => {
-        if (row && FINISHED.includes(row.status)) send('c4_rematch', { match_id: matchId });
+        if (row && FINISHED.includes(row.status)) send('match_rematch', { match_id: matchId });
       },
       exit: () => {
         if (!row || row.status !== 'playing') return ctx.onExit();
@@ -102,11 +106,11 @@ export function mountOnline(ctx: GameContext): () => void {
           error = 'Retour arrière encore une fois pour abandonner la partie.';
           return render();
         }
-        void rpc('c4_forfeit', { match_id: matchId }).finally(() => ctx.onExit());
+        void rpc('match_forfeit', { match_id: matchId }).finally(() => ctx.onExit());
       },
       key: (key) => {
         if (key !== 'v' || !canClaim()) return false;
-        send('c4_claim_timeout', { match_id: matchId });
+        send('match_claim_timeout', { match_id: matchId });
         return true;
       },
     },
@@ -127,7 +131,7 @@ export function mountOnline(ctx: GameContext): () => void {
     confirmQuit = false;
     try {
       const next = await rpc<string | null>(fn, args);
-      if (fn === 'c4_rematch' && next) await switchTo(next);
+      if (fn === 'match_rematch' && next) await switchTo(next);
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -169,7 +173,7 @@ export function mountOnline(ctx: GameContext): () => void {
     }
     const names: [string, string] = [r.p1 === me ? ctx.me.name : nameOf(r.p1), r.p2 === me ? ctx.me.name : nameOf(r.p2)];
     const state: ViewState = {
-      board: r.board.map((v) => (v === 1 || v === 2 ? v : 0) as Cell),
+      board: r.board.map((v) => (v === 1 || v === 2 ? v : 0)),
       names,
       me: side,
       turn: (r.turn - 1) as 0 | 1,
@@ -193,11 +197,11 @@ export function mountOnline(ctx: GameContext): () => void {
     // S'abonner d'abord, puis lire : aucune mise à jour ne peut se perdre entre les deux.
     channel = supabase
       .channel(`match:${id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'c4_matches', filter: `id=eq.${id}` }, (p) =>
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${id}` }, (p) =>
         apply(p.new as MatchRow),
       )
       .subscribe();
-    const { data, error: err } = await supabase.from('c4_matches').select('*').eq('id', id).single();
+    const { data, error: err } = await supabase.from('matches').select('*').eq('id', id).single();
     if (err) error = errorMessage(err);
     else apply(data as MatchRow);
     render();

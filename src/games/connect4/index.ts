@@ -1,9 +1,10 @@
 import { isPanicked, onPanicChange } from '../../core/panic';
 import { blip } from '../../core/sound';
 import type { Game, GameContext } from '../types';
-import { aiMove, drop, emptyBoard, findWin, isFull } from './logic';
-import { mountOnline } from './online';
-import { createView, type ViewState } from './view';
+import { aiMove, drop, emptyBoard, findWin, isFull, type Board } from './logic';
+import type { ViewState } from '../duel';
+import { mountOnline } from '../online';
+import { createView } from './view';
 
 /** Partie solo contre l'ordinateur, entièrement locale (non classée). */
 function mountSolo(ctx: GameContext): () => void {
@@ -22,7 +23,7 @@ function mountSolo(ctx: GameContext): () => void {
 
   const apply = (col: number) => {
     if (s.result !== null) return;
-    const r = drop(s.board, col, (s.turn + 1) as 1 | 2);
+    const r = drop(s.board as Board, col, (s.turn + 1) as 1 | 2);
     if (!r) return;
     const win = findWin(r.board);
     s = { ...s, board: r.board, last: r.index, turn: (1 - s.turn) as 0 | 1 };
@@ -42,7 +43,7 @@ function mountSolo(ctx: GameContext): () => void {
     aiTimer = window.setTimeout(() => {
       aiTimer = undefined;
       if (isPanicked()) return; // reprise à la sortie du faux écran
-      apply(aiMove(s.board, 2));
+      apply(aiMove(s.board as Board, 2));
     }, 450);
   };
 
@@ -74,5 +75,5 @@ export const connect4: Game = {
   modes: ['solo', 'multi'],
   minPlayers: 2,
   maxPlayers: 2,
-  mount: (ctx) => (ctx.mode === 'multi' ? mountOnline(ctx) : mountSolo(ctx)),
+  mount: (ctx) => (ctx.mode === 'multi' ? mountOnline(ctx, createView) : mountSolo(ctx)),
 };
