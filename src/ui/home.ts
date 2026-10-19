@@ -1,6 +1,8 @@
 import { pushKeys } from '../core/input';
 import { getSettings, keyLabel, randomName, updateSettings } from '../core/settings';
 import { games } from '../games/registry';
+import { generateCode } from '../net/room';
+import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { h, hints } from './dom';
 import { page } from './layout';
@@ -19,6 +21,11 @@ export function homeView(root: HTMLElement): () => void {
       items.push({ label: g.name, detail: g.description, action: () => navigate(`/game/${g.id}`) });
     }
   }
+  const off = multiConfigured ? undefined : 'multijoueur non configuré';
+  items.push(
+    { label: 'Créer un salon', detail: off ?? 'Multijoueur · code à partager', action: () => navigate(`/room/${generateCode()}`) },
+    { label: 'Rejoindre un salon', detail: off ?? 'Saisir un code', action: () => navigate('/join') },
+  );
   items.push({ label: 'Réglages', detail: 'Pseudo, thème, son, touche panique', action: () => navigate('/settings') });
 
   const m = menu(items, lastIndex);

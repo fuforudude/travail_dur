@@ -3,6 +3,7 @@ import { initPanic } from './core/panic';
 import { applyTheme } from './core/settings';
 import { route, startRouter } from './router';
 import { homeView } from './ui/home';
+import { joinView, lobbyView } from './ui/lobby';
 import { playView } from './ui/play';
 import { settingsView } from './ui/settings';
 
@@ -12,5 +13,7 @@ initPanic();
 route(/^\/$/, homeView);
 route(/^\/settings$/, settingsView);
 route(/^\/game\/([\w-]+)$/, playView);
+route(/^\/join$/, joinView);
+route(/^\/room\/(\w+)$/, lobbyView);
 
 startRouter();

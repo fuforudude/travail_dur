@@ -4,6 +4,7 @@ export interface GameContext {
   root: HTMLElement;
   mode: 'solo' | 'multi';
   room?: Room; // présent en multi
+  players?: string[]; // en multi : identifiants des joueurs de la partie, dans l'ordre d'arrivée
   me: { id: string; name: string };
   onExit(): void;
 }
