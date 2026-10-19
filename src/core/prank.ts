@@ -1,0 +1,97 @@
+import { isPanicked } from './panic';
+import { getSettings } from './settings';
+
+// Blague ciblée : un « screamer » de temps en temps pour un seul pseudo.
+// Garde-fous : aucun clignotement (photosensibilité), son plafonné et bref,
+// jamais pendant le faux écran de la touche panique. Pour retirer : supprimer ce fichier
+// et son appel dans main.ts.
+
+const TARGET = 'lutz_67';
+const FIRST_DELAY_MS = 60_000; // jamais dans la première minute
+const MIN_GAP_MS = 3 * 60_000;
+const MAX_GAP_MS = 8 * 60_000;
+
+const isTarget = () => getSettings().name.toLowerCase() === TARGET;
+
+function scream(): void {
+  try {
+    const ctx = new AudioContext();
+    const t = ctx.currentTime;
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(0.35, t + 0.03); // fort mais plafonné
+    out.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    out.connect(ctx.destination);
+    // cri : deux dents de scie qui chutent, plus un souffle de bruit
+    for (const f of [880, 1170]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f, t);
+      o.frequency.exponentialRampToValueAtTime(f / 3, t + 0.9);
+      o.connect(out);
+      o.start(t);
+      o.stop(t + 0.9);
+    }
+    const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const data = noise.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = noise;
+    const ng = ctx.createGain();
+    ng.gain.value = 0.4;
+    src.connect(ng).connect(out);
+    src.start(t);
+    src.stop(t + 0.9);
+    setTimeout(() => void ctx.close(), 1500);
+  } catch {
+    // pas d'audio : l'image suffit
+  }
+}
+
+const FACE = `
+<svg viewBox="0 0 200 240" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <radialGradient id="pk-skin" cx="50%" cy="40%" r="60%">
+      <stop offset="0" stop-color="#d9d4c7"/><stop offset="1" stop-color="#5b574d"/>
+    </radialGradient>
+  </defs>
+  <path d="M100 8 C40 8 18 70 22 120 C26 180 60 232 100 232 C140 232 174 180 178 120 C182 70 160 8 100 8Z" fill="url(#pk-skin)"/>
+  <ellipse cx="66" cy="98" rx="24" ry="30" fill="#0b0b0b"/>
+  <ellipse cx="134" cy="98" rx="24" ry="30" fill="#0b0b0b"/>
+  <circle cx="70" cy="104" r="4" fill="#e8e2d0"/>
+  <circle cx="130" cy="104" r="4" fill="#e8e2d0"/>
+  <path d="M92 132 L100 150 L108 132Z" fill="#2a2824"/>
+  <ellipse cx="100" cy="190" rx="34" ry="30" fill="#0b0b0b"/>
+  <path d="M70 182 L80 196 L88 180 L96 198 L104 180 L112 198 L120 180 L130 194" stroke="#e8e2d0" stroke-width="4" fill="none"/>
+  <path d="M40 60 L60 80 M160 60 L140 80" stroke="#2a2824" stroke-width="6" stroke-linecap="round"/>
+</svg>`;
+
+/** Affiche le screamer (exporté pour pouvoir le tester). */
+export function showPrank(): void {
+  const el = document.createElement('div');
+  el.className = 'prank';
+  el.innerHTML = FACE; // contenu fixe, défini ci-dessus
+  document.body.append(el);
+  scream();
+  const close = () => {
+    el.remove();
+    window.removeEventListener('keydown', close, true);
+  };
+  setTimeout(() => {
+    el.addEventListener('click', close);
+    window.addEventListener('keydown', close, true);
+  }, 400);
+  setTimeout(close, 1800);
+}
+
+function schedule(delay: number): void {
+  setTimeout(() => {
+    // Pas pendant le faux écran (il doit rester crédible), ni onglet caché.
+    if (isTarget() && !isPanicked() && !document.hidden) showPrank();
+    schedule(MIN_GAP_MS + Math.random() * (MAX_GAP_MS - MIN_GAP_MS));
+  }, delay);
+}
+
+export function initPrank(): void {
+  schedule(FIRST_DELAY_MS + Math.random() * 60_000);
+}

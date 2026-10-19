@@ -1,5 +1,6 @@
 import './styles.css';
 import { initPanic } from './core/panic';
+import { initPrank } from './core/prank';
 import { applyTheme } from './core/settings';
 import { consumeAuthRedirect, ensureAccount } from './net/auth';
 import { multiConfigured } from './net/supabase';
@@ -13,6 +14,7 @@ import { settingsView } from './ui/settings';
 
 applyTheme();
 initPanic();
+initPrank();
 
 route(/^\/$/, homeView);
 route(/^\/settings$/, settingsView);

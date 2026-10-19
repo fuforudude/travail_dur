@@ -738,3 +738,17 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .drawer-icon { width: 1.4rem; text-align: center; color: var(--muted); }
 .drawer-item.danger .drawer-icon { color: inherit; }
 .drawer-foot { margin-top: auto; text-align: center; }
+
+/* Screamer (voir core/prank.ts) : une seule apparition, sans clignotement. */
+.prank {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: #000;
+  animation: prank-in 0.18s ease-out;
+}
+.prank svg { width: min(90vw, 70vh); height: auto; animation: prank-zoom 1.6s ease-out forwards; }
+@keyframes prank-in { from { opacity: 0.6; } }
+@keyframes prank-zoom { from { transform: scale(0.6); } to { transform: scale(1.15); } }
