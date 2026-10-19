@@ -192,3 +192,32 @@ button.field { cursor: pointer; }
   .fake-side { display: none; }
   .fake-main { padding: 1.25rem 1rem; }
 }
+
+/* 2048 */
+.board-2048 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  width: min(360px, calc(100vw - 2rem));
+  aspect-ratio: 1;
+  padding: 6px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  touch-action: none;
+  user-select: none;
+}
+.cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: clamp(1rem, 6vw, 1.6rem);
+  font-variant-numeric: tabular-nums;
+}
+.cell.tile { background: color-mix(in srgb, var(--accent) calc(var(--l) * 7%), var(--surface)); }
+.cell.tile.big { color: var(--surface); font-size: clamp(0.9rem, 5vw, 1.35rem); }
+.cell.tile.huge { font-size: clamp(0.8rem, 4vw, 1.1rem); }
+.cell.merged { animation: pop 0.12s ease-out; }
+@keyframes pop { from { transform: scale(0.92); } }
