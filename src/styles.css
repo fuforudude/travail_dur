@@ -238,3 +238,18 @@ button.field { cursor: pointer; }
 .tag { font-size: 0.75rem; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; padding: 0 0.3rem; }
 .push { margin-left: auto; }
 .notice { background: var(--bg); border-left: 3px solid var(--accent); padding: 0.4rem 0.6rem; margin: 0.75rem 0 0; font-size: 0.9rem; }
+
+/* Puissance 4 */
+.c4 { width: min(392px, calc(100vw - 2rem)); user-select: none; }
+.c4-heads, .c4-board { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; padding: 0 6px; }
+.c4-head { aspect-ratio: 1; border-radius: 50%; margin: 4px; }
+.c4-head.p1 { background: color-mix(in srgb, var(--p1) 60%, transparent); }
+.c4-head.p2 { background: color-mix(in srgb, var(--p2) 60%, transparent); }
+.c4-board { background: var(--surface-2); border-radius: var(--radius); padding: 6px; cursor: pointer; }
+.c4-cell { aspect-ratio: 1; border-radius: 50%; background: var(--bg); transition: background 0.1s; }
+.c4-cell.p1, .disc.p1 { background: var(--p1); }
+.c4-cell.p2, .disc.p2 { background: var(--p2); }
+.c4-cell.last { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--text) 25%, transparent); }
+.c4-cell.win { box-shadow: inset 0 0 0 3px var(--text); }
+.disc { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 50%; vertical-align: -0.05em; }
+.stat.active { border-color: var(--accent); }
