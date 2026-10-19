@@ -17,21 +17,23 @@ export function homeView(root: HTMLElement): () => void {
   const content = page(root, 'Accueil');
   const items: MenuItem[] = [];
 
+  const icons: Record<string, [string, number]> = { '2048': ['2⁰', 1], connect4: ['●', 2] };
   for (const g of games) {
     if (g.modes.includes('solo')) {
-      items.push({ label: g.name, detail: g.description, action: () => navigate(`/game/${g.id}`) });
+      const [icon, tone] = icons[g.id] ?? ['▸', 3];
+      items.push({ label: g.name, detail: g.description, icon, tone, action: () => navigate(`/game/${g.id}`) });
     }
   }
   const off = multiConfigured ? undefined : 'multijoueur non configuré';
   items.push(
-    { label: 'Créer un salon', detail: off ?? 'Multijoueur · code à partager', action: () => navigate(`/room/${generateCode()}`) },
-    { label: 'Rejoindre un salon', detail: off ?? 'Saisir un code', action: () => navigate('/join') },
+    { label: 'Créer un salon', icon: '+', tone: 3, detail: off ?? 'Multijoueur · code à partager', action: () => navigate(`/room/${generateCode()}`) },
+    { label: 'Rejoindre un salon', icon: '→', tone: 3, detail: off ?? 'Saisir un code', action: () => navigate('/join') },
   );
-  items.push({ label: 'Classements', detail: off ?? '2048 et Puissance 4', action: () => navigate('/scores') });
-  items.push({ label: 'Réglages', detail: 'Pseudo, thème, son, touche panique', action: () => navigate('/settings') });
+  items.push({ label: 'Classements', icon: '★', tone: 4, detail: off ?? '2048 et Puissance 4', action: () => navigate('/scores') });
+  items.push({ label: 'Réglages', icon: '⚙', tone: 5, detail: 'Pseudo, couleurs, touche panique', action: () => navigate('/settings') });
 
   const m = menu(items, lastIndex);
-  content.append(h('h1', {}, 'Accueil'), m.el, hints(['↑ ↓', 'choisir'], ['Entrée', 'ouvrir'], [keyLabel(getSettings().panicKey), 'masquer']));
+  content.append(h('h1', {}, `Salut ${getSettings().name}`), m.el, hints(['↑ ↓', 'choisir'], ['Entrée', 'ouvrir'], [keyLabel(getSettings().panicKey), 'masquer']));
   m.focus();
 
   const pop = pushKeys((e) => {

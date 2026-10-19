@@ -76,10 +76,10 @@ export class Room {
     const state = this.channel.presenceState<{ busy?: unknown }>();
     // On ignore tout identifiant mal formé : il ne peut pas correspondre à un compte.
     const ids = Object.keys(state).filter((id) => UUID_RE.test(id)).slice(0, 50);
-    const unknown = ids.filter((id) => !this.names.has(id));
-    if (unknown.length) {
+    // Pseudos relus à chaque synchro : un joueur a pu se renommer depuis son arrivée.
+    if (ids.length) {
       const supabase = await getSupabase();
-      const { data } = (await supabase?.from('profiles').select('id, username').in('id', unknown)) ?? {};
+      const { data } = (await supabase?.from('profiles').select('id, username').in('id', ids)) ?? {};
       for (const p of data ?? []) this.names.set(p.id, p.username);
       if (seq !== this.syncSeq) return; // une synchro plus récente a pris le relais
     }

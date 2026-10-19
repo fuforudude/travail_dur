@@ -53,8 +53,11 @@ export function ensureAccount(): Promise<Account | null> {
     if (!supabase) return null;
     supabase.auth.onAuthStateChange((_event, s) => {
       const a = toAccount(s?.user);
-      if (a?.id !== current?.id) void syncName(a);
+      const changed = a?.id !== current?.id;
       set(a);
+      // Jamais d'appel Supabase directement dans ce callback : il tient le verrou d'auth
+      // et l'appel attendrait ce même verrou (blocage). On diffère.
+      if (changed && current) setTimeout(() => void syncName(a), 0);
     });
     const { data } = await supabase.auth.getSession();
     let user = data.session?.user ?? null;

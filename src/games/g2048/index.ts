@@ -98,6 +98,8 @@ function mount(ctx: GameContext): () => void {
       const c = cells[i];
       c.textContent = v ? String(v) : '';
       c.style.setProperty('--l', String(v ? Math.log2(v) : 0));
+      if (v) c.dataset.v = String(Math.min(v, 4096));
+      else delete c.dataset.v;
       c.className =
         'cell' + (v ? ' tile' : '') + (v >= 128 ? ' big' : '') + (v >= 1024 ? ' huge' : '') + (merged.includes(i) ? ' merged' : '');
     });

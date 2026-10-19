@@ -33,6 +33,10 @@ export function settingsView(root: HTMLElement): () => void {
     () => (getSettings().theme === 'light' ? '‹ Clair ›' : '‹ Sombre ›'),
     () => updateSettings({ theme: getSettings().theme === 'light' ? 'dark' : 'light' }),
   );
+  const palette = toggle(
+    () => (getSettings().palette === 'color' ? '‹ Couleur ›' : '‹ Noir et blanc ›'),
+    () => updateSettings({ palette: getSettings().palette === 'color' ? 'mono' : 'color' }),
+  );
   const sound = toggle(
     () => (getSettings().sound ? '‹ Activé ›' : '‹ Désactivé ›'),
     () => updateSettings({ sound: !getSettings().sound }),
@@ -61,7 +65,7 @@ export function settingsView(root: HTMLElement): () => void {
   };
   refreshHint();
 
-  const controls: HTMLElement[] = [name, theme.b, sound.b, panic, account, back];
+  const controls: HTMLElement[] = [name, theme.b, palette.b, sound.b, panic, account, back];
   content.append(
     h(
       'div',
@@ -70,6 +74,7 @@ export function settingsView(root: HTMLElement): () => void {
       row('Pseudo', name),
       nameError,
       row('Thème', theme.b),
+      row('Couleurs', palette.b),
       row('Son', sound.b),
       row('Touche panique', panic),
       panicHint,
@@ -89,6 +94,7 @@ export function settingsView(root: HTMLElement): () => void {
     } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !isTyping(e)) {
       e.preventDefault();
       if (document.activeElement === theme.b) theme.run();
+      if (document.activeElement === palette.b) palette.run();
       if (document.activeElement === sound.b) sound.run();
     } else if (e.key === 'Enter' && document.activeElement === name) {
       name.dispatchEvent(new Event('change'));

@@ -3,6 +3,9 @@ import { h } from './dom';
 export interface MenuItem {
   label: string;
   detail?: string;
+  /** Pastille à gauche : un caractère et une teinte (1 à 5). */
+  icon?: string;
+  tone?: number;
   disabled?: boolean;
   action(): void;
 }
@@ -16,6 +19,7 @@ export function menu(items: MenuItem[], initial = 0): { el: HTMLElement; onKey(e
     h(
       'button',
       { class: 'menu-item', disabled: it.disabled, type: 'button' },
+      it.icon ? h('span', { class: `menu-icon tone${it.tone ?? 1}`, 'aria-hidden': 'true' }, it.icon) : null,
       h('span', { class: 'menu-label' }, it.label),
       it.detail ? h('span', { class: 'menu-detail' }, it.detail) : null,
     ),

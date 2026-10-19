@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+// Tolère l'URL copiée depuis « Data API » (…/rest/v1/) : le client attend l'URL racine du projet.
+const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/(rest\/v1\/?)?$/, '').replace(/\/+$/, '');
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 export const multiConfigured = Boolean(url && key);

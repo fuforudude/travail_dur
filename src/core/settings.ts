@@ -1,11 +1,14 @@
 import { load, save } from './storage';
 
 export type Theme = 'light' | 'dark';
+export type Palette = 'color' | 'mono';
 
 export interface Settings {
   name: string;
   nameChosen: boolean;
   theme: Theme;
+  /** « mono » : tout en noir et blanc, pour rester discret. */
+  palette: Palette;
   sound: boolean;
   panicKey: string;
 }
@@ -21,6 +24,7 @@ const defaults: Settings = {
   name: randomName(),
   nameChosen: false,
   theme: 'light',
+  palette: 'color',
   sound: false,
   panicKey: 'Escape',
 };
@@ -39,6 +43,7 @@ export function updateSettings(patch: Partial<Settings>): void {
 
 export function applyTheme(): void {
   document.documentElement.dataset.theme = current.theme;
+  document.documentElement.dataset.palette = current.palette;
 }
 
 export function keyLabel(key: string): string {
