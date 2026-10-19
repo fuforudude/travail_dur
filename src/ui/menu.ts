@@ -1,61 +1,39 @@
-import { h } from './dom';
-
-export interface MenuItem {
-  label: string;
-  detail?: string;
-  /** Pastille à gauche : un caractère et une teinte (1 à 5). */
-  icon?: string;
-  tone?: number;
-  disabled?: boolean;
-  action(): void;
-}
-
 /**
- * Liste verticale navigable aux flèches. Le focus DOM suit la sélection,
- * donc Entrée et Espace activent nativement le bouton (et le clic marche aussi).
+ * Navigation aux flèches dans une grille de boutons : la flèche choisit le bouton le plus
+ * proche dans cette direction (d'après leur position à l'écran), donc quelle que soit la mise en page.
  */
-export function menu(items: MenuItem[], initial = 0): { el: HTMLElement; onKey(e: KeyboardEvent): boolean; focus(): void } {
-  const buttons = items.map((it) =>
-    h(
-      'button',
-      { class: 'menu-item', disabled: it.disabled, type: 'button' },
-      it.icon ? h('span', { class: `menu-icon tone${it.tone ?? 1}`, 'aria-hidden': 'true' }, it.icon) : null,
-      h('span', { class: 'menu-label' }, it.label),
-      it.detail ? h('span', { class: 'menu-detail' }, it.detail) : null,
-    ),
-  );
-  buttons.forEach((b, i) => b.addEventListener('click', () => items[i].action()));
-  const el = h('div', { class: 'menu', role: 'menu' }, ...buttons);
-  const enabled = () => buttons.filter((b) => !b.disabled);
-
-  const focusAt = (i: number) => {
-    const list = enabled();
-    if (list.length) list[(i + list.length) % list.length].focus();
-  };
-
-  return {
-    el,
-    focus() {
-      const start = buttons[initial];
-      if (start && !start.disabled) start.focus();
-      else focusAt(0);
-    },
-    onKey(e) {
-      const list = enabled();
-      const i = list.indexOf(document.activeElement as HTMLButtonElement);
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (i < 0) focusAt(0);
-        else focusAt(i + (e.key === 'ArrowDown' ? 1 : -1));
-        return true;
+export function spatialNav(container: HTMLElement): (e: KeyboardEvent) => boolean {
+  return (e) => {
+    const dirs: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const d = dirs[e.key];
+    if (!d) return false;
+    e.preventDefault();
+    const items = [...container.querySelectorAll<HTMLElement>('button:not(:disabled)')];
+    const cur = document.activeElement as HTMLElement;
+    if (!items.includes(cur)) {
+      items[0]?.focus();
+      return true;
+    }
+    const center = (el: HTMLElement) => {
+      const r = el.getBoundingClientRect();
+      return [r.left + r.width / 2, r.top + r.height / 2];
+    };
+    const [cx, cy] = center(cur);
+    let best: HTMLElement | null = null;
+    let bestScore = Infinity;
+    for (const el of items) {
+      if (el === cur) continue;
+      const [x, y] = center(el);
+      const along = (x - cx) * d[0] + (y - cy) * d[1]; // distance dans la direction voulue
+      if (along <= 4) continue;
+      const across = Math.abs((x - cx) * d[1]) + Math.abs((y - cy) * d[0]); // écart latéral
+      const score = along + across * 2;
+      if (score < bestScore) {
+        bestScore = score;
+        best = el;
       }
-      if ((e.key === 'Enter' || e.key === ' ') && i < 0) {
-        // Rien n'a le focus (par ex. après un clic ailleurs) : on le remet.
-        e.preventDefault();
-        focusAt(0);
-        return true;
-      }
-      return false;
-    },
+    }
+    best?.focus();
+    return true;
   };
 }
