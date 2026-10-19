@@ -8,6 +8,7 @@ import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { h, hints } from './dom';
 import { page } from './layout';
+import { toggleDrawer } from './drawer';
 import { spatialNav } from './menu';
 
 /** Pastille, teinte et étiquettes de chaque jeu sur l'accueil. */
@@ -63,7 +64,7 @@ export function homeView(root: HTMLElement): () => void {
       'div',
       { class: 'home-hello' },
       h('h1', {}, `Salut ${getSettings().name}`),
-      h('p', { class: 'muted' }, 'Choisis un jeu aux flèches puis Entrée, ou clique.'),
+      h('p', { class: 'muted' }, 'Choisis un jeu aux flèches puis Entrée, ou clique. Le menu ☰ en haut à gauche donne accès aux réglages et au compte.'),
     ),
     section('Jeux', ...solo.map(gameCard)),
     section(
@@ -72,12 +73,7 @@ export function homeView(root: HTMLElement): () => void {
       card('room', 'Créer un salon', off ? 'Multijoueur non configuré' : 'Un code à partager', '+', 1, () => navigate(`/room/${generateCode()}`), { disabled: off }),
       card('join', 'Rejoindre un salon', off ? 'Multijoueur non configuré' : 'Avec le code d’un ami', '→', 1, () => navigate('/join'), { disabled: off }),
     ),
-    section(
-      'Plus',
-      card('scores', 'Classements', off ? 'Serveur non configuré' : 'Tous les jeux', '★', 4, () => navigate('/scores'), { disabled: off }),
-      card('settings', 'Réglages', 'Pseudo, couleurs, compte, touche panique', '⚙', 5, () => navigate('/settings')),
-    ),
-    hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'ouvrir'], [keyLabel(getSettings().panicKey), 'masquer l’écran']),
+    hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'ouvrir'], ['M', 'menu (réglages, classements, compte)'], [keyLabel(getSettings().panicKey), 'masquer l’écran']),
   );
   content.classList.add('wide');
   content.append(wrap);
@@ -87,6 +83,10 @@ export function homeView(root: HTMLElement): () => void {
 
   const nav = spatialNav(wrap);
   return pushKeys((e) => {
+    if (e.key.toLowerCase() === 'm' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      return toggleDrawer();
+    }
     nav(e);
   });
 }

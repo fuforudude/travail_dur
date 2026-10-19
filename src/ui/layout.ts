@@ -1,6 +1,7 @@
 import { getSettings } from '../core/settings';
 import { navigate } from '../router';
 import { h } from './dom';
+import { drawerButton } from './drawer';
 
 /** Squelette commun : en-tête discret + zone de contenu. Hors accueil, un bouton ramène à l'accueil. */
 export function page(root: HTMLElement, title: string): HTMLElement {
@@ -14,6 +15,7 @@ export function page(root: HTMLElement, title: string): HTMLElement {
     h(
       'header',
       { class: 'topbar' },
+      title === 'Bienvenue' ? null : drawerButton(),
       home,
       h('a', { class: 'brand', href: '#/' }, 'Notes'),
       h('span', { class: 'crumb' }, title),

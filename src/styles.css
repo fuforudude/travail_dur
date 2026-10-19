@@ -660,3 +660,81 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .tone3 { --tone: var(--tone3); }
 .tone4 { --tone: var(--tone4); }
 .tone5 { --tone: var(--tone5); }
+
+/* ---------------------------------------------------------------------------
+   Menu latéral
+   --------------------------------------------------------------------------- */
+.menu-btn {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  width: 2rem;
+  height: 2rem;
+  padding: 0 0.45rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.menu-btn span { display: block; height: 2px; border-radius: 2px; background: var(--text); }
+.menu-btn:hover { background: var(--surface-2); border-color: var(--border); }
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgb(10 12 20 / 0%);
+  transition: background 0.15s;
+}
+.drawer-backdrop.on { background: rgb(10 12 20 / 28%); }
+.drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 41;
+  width: min(300px, 85vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem 0.8rem;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  box-shadow: 6px 0 24px rgb(0 0 0 / 12%);
+  transform: translateX(-104%);
+  transition: transform 0.15s ease-out;
+}
+.drawer.on { transform: none; }
+.drawer-head { display: flex; align-items: center; gap: 0.7rem; padding: 0.3rem 0.4rem 0.9rem; border-bottom: 1px solid var(--border); }
+.drawer-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  font-weight: 700;
+  color: var(--accent-text);
+  background: linear-gradient(135deg, var(--tone1), var(--tone5));
+}
+.drawer-name { font-weight: 650; }
+.drawer-list { display: flex; flex-direction: column; gap: 0.2rem; padding-top: 0.4rem; }
+.drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.7rem;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.drawer-item:hover { background: var(--surface-2); }
+.drawer-item:focus { outline: none; background: var(--accent-soft); border-color: var(--accent); }
+.drawer-item.danger { color: var(--tone2); }
+.drawer-icon { width: 1.4rem; text-align: center; color: var(--muted); }
+.drawer-item.danger .drawer-icon { color: inherit; }
+.drawer-foot { margin-top: auto; text-align: center; }
