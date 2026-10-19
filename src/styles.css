@@ -575,3 +575,54 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .td-shop .chip { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
 .td-shop .chip.off { opacity: 0.45; }
 .td-rank { margin-left: auto; }
+
+/* ---------------------------------------------------------------------------
+   Wordle
+   --------------------------------------------------------------------------- */
+.wd-grid { display: flex; flex-direction: column; gap: 6px; }
+.wd-row { display: grid; grid-template-columns: repeat(5, 3.2rem); gap: 6px; }
+.wd-tile {
+  display: grid;
+  place-items: center;
+  height: 3.2rem;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.wd-tile.typed { border-color: var(--muted); }
+.wd-tile.s2, .wd-key.s2 { background: var(--tone3); border-color: var(--tone3); color: #fff; }
+.wd-tile.s1, .wd-key.s1 { background: var(--tone4); border-color: var(--tone4); color: #fff; }
+.wd-tile.s0 { background: var(--surface-2); border-color: var(--surface-2); color: var(--muted); }
+.wd-key.s0 { opacity: 0.35; }
+.wd-keys { display: flex; flex-direction: column; gap: 5px; align-items: center; width: 100%; max-width: 440px; }
+.wd-krow { display: flex; gap: 4px; width: 100%; justify-content: center; }
+.wd-key {
+  flex: 1;
+  max-width: 2.6rem;
+  height: 2.8rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+}
+.wd-key.wide { max-width: 3.6rem; flex: 1.4; }
+/* Noir et blanc : bien placée = foncé, mal placée = moyen, absente = clair. */
+:root[data-palette='mono'] .wd-tile.s2, :root[data-palette='mono'] .wd-key.s2 { background: #444; border-color: #444; }
+:root[data-palette='mono'] .wd-tile.s1, :root[data-palette='mono'] .wd-key.s1 { background: #999; border-color: #999; }
+@media (max-width: 420px) {
+  .wd-row { grid-template-columns: repeat(5, 2.8rem); }
+  .wd-tile { height: 2.8rem; font-size: 1.3rem; }
+}
+
+/* ---------------------------------------------------------------------------
+   Flappy Bird
+   --------------------------------------------------------------------------- */
+.fb-canvas { display: block; border-radius: 10px; border: 1px solid var(--border); box-shadow: var(--shadow); touch-action: none; cursor: pointer; }
+.fb-bar { max-width: 340px; }

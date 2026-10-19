@@ -10,7 +10,9 @@ En ligne : https://fuforudude.github.io/travail_dur/
 | --- | --- | --- |
 | 2048 | solo, classé | flèches, WASD ou ZQSD · `R` recommencer |
 | Tetris | solo, classé | `←` `→` déplacer · `↑` ou `X` tourner · `C` sens inverse · `↓` descendre · `Espace` lâcher · `P` pause · `R` rejouer |
-| Tower defense | solo, classé (vagues infinies) | flèches case · `1` `2` `3` construire · `U` améliorer · `S` vendre · `Espace` lancer la vague · `F` vitesse ×1/×2/×3 · `P` pause |
+| Wordle | mot du jour classé (le même pour tous), ou entraînement | lettres au clavier · `Entrée` valider · `Retour arrière` effacer · `Tab` changer de mode |
+| Flappy Bird | solo, classé | `Espace` ou `↑` battre des ailes · `R` rejouer |
+| Tower defense | solo, classé (vagues infinies) | flèches case · `1` `2` `3` construire · `U` améliorer · `S` vendre · `Espace` lancer la vague · `F` vitesse ×1/×2/×3 · `P` pause ; on construit et on améliore aussi pendant les vagues |
 | Puissance 4 | solo contre l’ordinateur, ou en ligne à 2 (classé) | `←` `→` colonne · `Entrée` / `Espace` / `↓` jouer · `R` revanche |
 | Morpion | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches ou `1`–`9` case · `Entrée` jouer · `R` revanche |
 
@@ -44,7 +46,9 @@ Rien de ce qu’envoie un client n’est cru sur parole :
 - Les clients n’ont **que la lecture** sur les tables (RLS). Toute écriture passe par des fonctions SQL `security definer` qui identifient le joueur avec `auth.uid()`.
 - **2048** : le serveur fournit la graine aléatoire, le client renvoie la liste de ses coups, le serveur **rejoue la partie** et calcule lui-même le score. Coup impossible, partie déjà envoyée, partie d’un autre ou jouée à plus de 25 coups/s : refusé.
 - **Tetris** : même principe que 2048 (graine serveur, rejeu complet des actions). Le serveur vérifie aussi que la partie n’a pas duré moins longtemps que ses chutes automatiques.
-- **Tower defense** : le serveur garde l’état de chaque partie. À chaque vague, il valide les constructions (or, emplacement) et simule lui-même la vague ; le classement retient la meilleure vague atteinte.
+- **Tower defense** : le serveur garde l’état de chaque partie. À la fin de chaque vague, il reçoit les constructions (avant et pendant la vague, chacune datée au dixième de seconde près), les valide (or, emplacement) et rejoue lui-même la vague ; le classement retient la meilleure vague atteinte.
+- **Flappy Bird** : graine serveur (position des tuyaux) et rejeu des battements d’ailes, avec contrôle de la durée.
+- **Wordle** : le mot du jour est choisi par le serveur à partir d’un secret et n’est jamais envoyé avant la fin de la partie ; chaque proposition est vérifiée et colorée par le serveur, 6 au maximum. Les propositions des autres joueurs ne sont pas lisibles (elles trahiraient le mot).
 - **Puissance 4 et Morpion en ligne** : chaque coup est validé et appliqué par le serveur (bon joueur, bon tour, case ou colonne valide). Victoire, nul, abandon et victoire au temps (adversaire inactif 45 s) sont décidés par le serveur.
 - Pseudos : 2 à 16 caractères (lettres, chiffres, `_`, `-`), uniques sans tenir compte de la casse. Tous les textes sont insérés dans la page comme texte, jamais comme HTML.
 - Le site publié porte une Content-Security-Policy stricte (scripts du site uniquement, connexions vers Supabase uniquement).
@@ -54,7 +58,7 @@ Limites connues : le serveur garantit qu’un score correspond à une vraie part
 ## Configurer Supabase
 
 1. Créer un compte sur https://supabase.com, puis **New project** (le plan gratuit suffit).
-2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion) et `0003_tower_defense.sql`. Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
+2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql` et `0004_td_wordle_flappy.sql`. Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
 3. **Authentication → Sign In / Providers** :
    - activer **Allow anonymous sign-ins** ;
    - dans **Email**, laisser **Confirm email** activé.
@@ -161,3 +165,7 @@ Créer un dossier dans `src/games/`, exporter un objet `Game` (voir `src/games/t
 - Clavier : `pushKeys()` de `core/input.ts` (retirer le gestionnaire au nettoyage). `Retour arrière` → `ctx.onExit()`.
 - Jeux en temps réel : `onPanicChange()` de `core/panic.ts` pour se mettre en pause.
 - Score classé ou multijoueur : la règle du jeu doit exister **côté serveur**, dans une nouvelle migration SQL. Solo classé : sur le modèle de `g2048_replay` / `tetris_replay` et `src/net/ranked.ts`. Jeu à deux au tour par tour : ajouter le jeu à la colonne `game` de `matches` et sa règle dans `match_play`, puis réutiliser `mountOnline` (`src/games/online.ts`) avec une vue qui respecte `src/games/duel.ts`. Ne jamais écrire un score ou un état de partie depuis le client.
+
+## Crédits
+
+Dictionnaire du Wordle : [an-array-of-french-words](https://www.npmjs.com/package/an-array-of-french-words) (licence MIT), mots de 5 lettres sans accents.

@@ -17,7 +17,7 @@ export function homeView(root: HTMLElement): () => void {
   const content = page(root, 'Accueil');
   const items: MenuItem[] = [];
 
-  const icons: Record<string, [string, number]> = { '2048': ['2⁰', 1], tetris: ['▚', 5], connect4: ['●', 2], tictactoe: ['✕', 3], td: ['♜', 4] };
+  const icons: Record<string, [string, number]> = { '2048': ['2⁰', 1], tetris: ['▚', 5], connect4: ['●', 2], tictactoe: ['✕', 3], td: ['♜', 4], wordle: ['W', 1], flappy: ['➶', 4] };
   for (const g of games) {
     if (g.modes.includes('solo')) {
       const [icon, tone] = icons[g.id] ?? ['▸', 3];

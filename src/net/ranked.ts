@@ -5,10 +5,10 @@ import { errorMessage, getSupabase, multiConfigured } from './supabase';
 // Parties solo classées : le serveur donne une graine, le client renvoie ses actions,
 // le serveur rejoue la partie et calcule lui-même le score (voir les migrations SQL).
 
-export type RankedGame = 'g2048' | 'tetris';
+export type RankedGame = 'g2048' | 'tetris' | 'flappy';
 
 /** Nom du paramètre qui porte les actions dans la fonction SQL `<jeu>_finish`. */
-const PAYLOAD_ARG: Record<RankedGame, string> = { g2048: 'moves', tetris: 'events' };
+const PAYLOAD_ARG: Record<RankedGame, string> = { g2048: 'moves', tetris: 'events', flappy: 'flaps' };
 
 interface Pending {
   session: string;

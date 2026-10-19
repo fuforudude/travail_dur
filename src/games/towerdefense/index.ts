@@ -33,6 +33,8 @@ function mount(ctx: GameContext): () => void {
   let speed = 1;
   let paused = false;
   let running: Running | null = null;
+  /** État au lancement de la vague : si on quitte en pleine vague, on y revient. */
+  let snapshot: { s: State; actions: string[] } | null = null;
   let prev: number[] = []; // progression au tick précédent (pour une animation fluide)
   let shots: Shot[] = [];
   let acc = 0;
@@ -141,7 +143,7 @@ function mount(ctx: GameContext): () => void {
     }
     // portée de la tour sous le curseur
     const hover = towerAt(cx, cy);
-    if (hover && !running) {
+    if (hover) {
       g.beginPath();
       g.arc((cx + 0.5) * cell, (cy + 0.5) * cell, towerRange(hover.kind, hover.level) * u, 0, Math.PI * 2);
       g.fillStyle = c.accent + '22';
@@ -258,19 +260,8 @@ function mount(ctx: GameContext): () => void {
     if (running || s.over) return;
     note = '';
     confirmRestart = false;
-    const sent = actions.join(';');
-    actions = [];
-    // Vérification serveur en parallèle de l'animation locale
-    let check: Promise<{ wave: number; lives: number; gold: number; kills: number; over: boolean } | null> = Promise.resolve(null);
-    if (multiConfigured) {
-      if (!session && sessionPending) await sessionPending;
-      const id = session;
-      if (id) check = rpc<{ wave: number; lives: number; gold: number; kills: number; over: boolean }>('td_wave', { session_id: id, actions: sent }).catch((e: Error) => {
-        note = `Partie non classée désormais : ${e.message}.`;
-        session = null;
-        return null;
-      });
-    }
+    if (multiConfigured && !session && sessionPending) await sessionPending;
+    snapshot = { s: structuredClone(s), actions: actions.slice() };
     running = startWave(s);
     prev = running.enemies.map((e) => e.progress);
     last = performance.now();
@@ -280,7 +271,21 @@ function mount(ctx: GameContext): () => void {
     const finished = new Promise<void>((resolve) => (onEnd = resolve));
     await finished;
     if (disposed) return;
-    const server = await check;
+    // Fin de vague : le serveur rejoue la vague avec toutes ses actions (avant et pendant).
+    const sent = actions.join(';');
+    actions = [];
+    snapshot = null;
+    let server: { wave: number; lives: number; gold: number; kills: number; over: boolean } | null = null;
+    if (session) {
+      server = await rpc<{ wave: number; lives: number; gold: number; kills: number; over: boolean }>('td_wave', { session_id: session, actions: sent }).catch(
+        (e: Error) => {
+          note = `Partie non classée désormais : ${e.message}.`;
+          session = null;
+          return null;
+        },
+      );
+      if (disposed) return;
+    }
     if (server && (server.wave !== s.wave || server.lives !== s.lives || server.gold !== s.gold || server.kills !== s.kills)) {
       note = 'Résultat différent du serveur : partie non classée désormais.';
       session = null;
@@ -323,15 +328,17 @@ function mount(ctx: GameContext): () => void {
 
   // --- Actions du joueur
   const act = (a: string) => {
-    if (running || s.over) return;
-    const err = applyAction(s, a);
+    if (s.over) return;
+    // Pendant une vague, l'action prend effet avant le prochain tick : on note lequel.
+    const err = running ? running.act(a) : applyAction(s, a);
     if (err) note = err.charAt(0).toUpperCase() + err.slice(1) + '.';
     else {
       note = '';
-      actions.push(a);
-      persist();
+      actions.push(running ? `${a}@${running.ticks()}` : a);
+      if (!running) persist();
     }
     render();
+    if (running) draw(Math.min(1, acc / TICK_MS));
   };
 
   const restart = () => {
@@ -403,8 +410,10 @@ function mount(ctx: GameContext): () => void {
     popKeys();
     // Vague en cours : le serveur l'a déjà simulée en entier ; on la termine instantanément
     // pour garder le même état et reprendre à la suivante.
-    if (running) {
-      while (running.tick());
+    // Vague en cours abandonnée : on revient à son début (le serveur ne l'a pas encore vue).
+    if (running && snapshot) {
+      s = snapshot.s;
+      actions = snapshot.actions;
       persist();
     }
   };

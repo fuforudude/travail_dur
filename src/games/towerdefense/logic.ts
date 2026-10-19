@@ -1,5 +1,5 @@
 // Tower defense : simulation 100 % entière et déterministe.
-// Doit rester identique à public.td_wave (supabase/migrations/0003_tower_defense.sql),
+// Doit rester identique à public.td_wave (supabase/migrations/0004_…sql),
 // qui rejoue chaque vague côté serveur. Unités : 1 case = 100, 1 tick = 100 ms.
 
 export const COLS = 16;
@@ -114,8 +114,9 @@ export interface State {
 
 export const newGame = (): State => ({ wave: 0, lives: START_LIVES, gold: START_GOLD, kills: 0, towers: [], over: false });
 
-// --- Actions de construction (entre deux vagues) -------------------------------------
+// --- Actions de construction ---------------------------------------------------------
 // Codage envoyé au serveur, séparé par « ; » : B<x>.<y>.<type>  U<x>.<y>  S<x>.<y>
+// Pendant une vague, l'action est suivie de @<tick> : elle s'applique juste avant ce tick.
 
 const towerAt = (s: State, x: number, y: number) => s.towers.findIndex((t) => t.x === x && t.y === y);
 
@@ -173,13 +174,20 @@ export function startWave(s: State) {
   const n = s.wave + 1;
   const w = waveInfo(n);
   const enemies: Enemy[] = Array.from({ length: w.count }, () => ({ progress: 0, hp: w.hp, maxHp: w.hp, state: 0 }));
-  const towers = s.towers.map((t) => ({
-    t,
-    cov: coverage(t),
-    damage: towerDamage(t.kind, t.level),
-    kind: KINDS[t.kind - 1],
-    cd: 0,
-  }));
+  type Live = { t: Tower; cov: Uint8Array; damage: number; kind: TowerKind; cd: number };
+  let towers: Live[] = [];
+  /** Recalcule les tours après une construction ; une tour existante garde sa recharge en cours. */
+  const derive = () => {
+    const cds = new Map(towers.map((tw) => [`${tw.t.x}.${tw.t.y}`, tw.cd]));
+    towers = s.towers.map((t) => ({
+      t,
+      cov: coverage(t),
+      damage: towerDamage(t.kind, t.level),
+      kind: KINDS[t.kind - 1],
+      cd: cds.get(`${t.x}.${t.y}`) ?? 0,
+    }));
+  };
+  derive();
   let spawned = 0;
   let first = 0; // tous les ennemis avant celui-ci sont morts ou passés
   let ticks = 0;
@@ -245,7 +253,15 @@ export function startWave(s: State) {
     return !done;
   }
 
-  return { wave: w, number: n, enemies, tick, ticks: () => ticks };
+  /** Construction pendant la vague : appliquée avant le prochain tick. Retourne l'erreur éventuelle. */
+  function act(a: string): string | null {
+    if (done) return 'vague terminée';
+    const err = applyAction(s, a);
+    if (!err) derive();
+    return err;
+  }
+
+  return { wave: w, number: n, enemies, tick, act, ticks: () => ticks, done: () => done };
 }
 
 /** Joue une vague d'un coup (tests, vérification). Retourne le nombre de ticks. */
