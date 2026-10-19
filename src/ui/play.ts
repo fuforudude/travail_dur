@@ -2,7 +2,6 @@ import { getSettings } from '../core/settings';
 import { getGame } from '../games/registry';
 import { navigate } from '../router';
 import { page } from './layout';
-import { localId } from '../net/identity';
 
 /** Partie solo : `#/game/<id>`. */
 export function playView(root: HTMLElement, [id]: string[]): (() => void) | void {
@@ -12,7 +11,7 @@ export function playView(root: HTMLElement, [id]: string[]): (() => void) | void
   return game.mount({
     root: content,
     mode: 'solo',
-    me: { id: localId, name: getSettings().name },
+    me: { id: 'local', name: getSettings().name },
     onExit: () => navigate('/'),
   });
 }

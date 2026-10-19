@@ -4,6 +4,8 @@
 -- des fonctions `security definer` qui identifient le joueur avec auth.uid() et valident tout.
 -- À exécuter une fois dans l'éditeur SQL de Supabase (ou `supabase db push`).
 
+set client_encoding = 'UTF8';
+
 -- ---------------------------------------------------------------------------
 -- Profils
 -- ---------------------------------------------------------------------------
@@ -263,22 +265,23 @@ begin
   return mid;
 end $$;
 
-create function public.c4_respond(match_id uuid, accept boolean) returns void
+create function public.c4_respond(match_id uuid, accept boolean) returns text
 language plpgsql security definer set search_path = '' as $$
 declare
   uid uuid := auth.uid();
   m public.c4_matches;
+  result text;
 begin
   select * into m from public.c4_matches where id = match_id for update;
   if not found or m.p2 is distinct from uid then raise exception 'défi inconnu' using errcode = 'P0002'; end if;
   if m.status <> 'pending' then raise exception 'défi déjà traité' using errcode = 'P0001'; end if;
-  if m.created_at < now() - interval '2 minutes' then
-    update public.c4_matches set status = 'expired', updated_at = now() where id = m.id;
-    return;
-  end if;
-  update public.c4_matches
-     set status = case when accept then 'playing' else 'declined' end, updated_at = now()
-   where id = m.id;
+  result := case
+    when m.created_at < now() - interval '2 minutes' then 'expired'
+    when accept then 'playing'
+    else 'declined'
+  end;
+  update public.c4_matches set status = result, updated_at = now() where id = m.id;
+  return result;
 end $$;
 
 -- Cherche un alignement de 4 passant par la case `cell` (0..41). Retourne les 4 cases ou null.

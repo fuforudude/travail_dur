@@ -9,12 +9,24 @@ let client: Promise<SupabaseClient | null> | null = null;
 
 /**
  * Client Supabase, ou null si non configuré. Chargé à la demande pour que le solo
- * n'embarque pas la librairie au démarrage.
+ * n'attende pas la librairie au démarrage.
  */
 export function getSupabase(): Promise<SupabaseClient | null> {
   if (!multiConfigured) return Promise.resolve(null);
   client ??= import('@supabase/supabase-js').then(({ createClient }) =>
-    createClient(url!, key!, { auth: { persistSession: false, autoRefreshToken: false } }),
+    createClient(url!, key!, {
+      // Flux implicite : le lien reçu par email marche aussi s'il est ouvert sur un autre appareil.
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
+    }),
   );
   return client;
+}
+
+/** Message lisible à partir d'une erreur Supabase / Postgres. */
+export function errorMessage(err: unknown): string {
+  const e = err as { message?: string; code?: string } | null;
+  if (!e) return 'Erreur inconnue';
+  if (e.code === '23505') return 'Ce pseudo est déjà pris.';
+  if (e.code === '23514') return 'Pseudo invalide : 2 à 16 caractères, lettres, chiffres, _ ou -.';
+  return e.message ?? String(err);
 }

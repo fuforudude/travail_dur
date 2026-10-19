@@ -1,22 +1,13 @@
 import { isTyping, pushKeys } from '../core/input';
 import { getSettings } from '../core/settings';
-import { games, getGame } from '../games/registry';
-import type { Game } from '../games/types';
-import { localId } from '../net/identity';
+import { connect4 } from '../games/connect4';
+import { cancelChallenge, challenge, pendingChallenges, respond, watchMyMatches, type MatchRow } from '../games/connect4/online';
+import { ensureAccount } from '../net/auth';
 import { isValidCode, normalizeCode, Room, type Player } from '../net/room';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { h, hints } from './dom';
 import { page } from './layout';
-
-/** État du salon diffusé par l'hôte. */
-interface LobbyState {
-  gameId: string;
-  /** Joueurs de la partie en cours, ou null si on est dans le salon. */
-  playing: string[] | null;
-}
-
-const multiGames = (): Game[] => games.filter((g) => g.modes.includes('multi'));
 
 /** `#/join` : saisie d'un code de salon. */
 export function joinView(root: HTMLElement): () => void {
@@ -65,7 +56,10 @@ function notConfigured(content: HTMLElement): () => void {
   });
 }
 
-/** `#/room/<CODE>` : salon, puis partie. */
+/**
+ * `#/room/<CODE>` : salon. On y voit qui est là et on se défie.
+ * Le défi, son acceptation et toute la partie passent par le serveur.
+ */
 export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) | void {
   const code = normalizeCode(rawCode);
   if (!isValidCode(code)) return navigate('/join');
@@ -73,66 +67,130 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
   if (!multiConfigured) return notConfigured(content);
 
   let room: Room | null = null;
+  let me = '';
   let disposed = false;
-  let state: LobbyState = { gameId: multiGames()[0]?.id ?? '', playing: null };
+  let selected = 0; // index dans la liste des autres joueurs
+  let incoming: MatchRow | null = null;
+  let outgoing: MatchRow | null = null;
   let unmountGame: (() => void) | null = null;
   let notice = '';
   const offs: (() => void)[] = [];
-  const lastNames = new Map<string, string>(); // pour nommer un joueur parti
 
   const status = h('p', { class: 'muted' }, `Connexion au salon ${code}…`);
   content.append(status);
 
-  const nameOf = (id: string) => room?.player(id)?.name ?? 'Un joueur';
+  const others = (): Player[] => room?.players.filter((p) => p.id !== me) ?? [];
+  const nameOf = (id: string) => room?.nameOf(id) ?? 'Un joueur';
+  // Tolérant aux horloges décalées : c'est le serveur qui fait respecter l'expiration (2 min).
+  const fresh = (m: MatchRow) => Date.now() - Date.parse(m.created_at) < 600_000;
+  const link = () => `${location.origin}${location.pathname}#/room/${code}`;
 
-  const broadcastState = () => {
-    if (room?.isHost) room.send('lobby:state', state);
-  };
-
-  const startGame = (gameId: string, players: string[]) => {
-    state = { gameId, playing: players };
-    if (!room || !players.includes(room.me.id)) return render();
-    const game = getGame(gameId);
-    if (!game) return;
+  const startGame = (matchId: string) => {
+    if (!room || unmountGame) return;
+    incoming = outgoing = null;
     notice = '';
     content.replaceChildren();
+    void room.setBusy(true);
     const r = room;
-    unmountGame = game.mount({
+    unmountGame = connect4.mount({
       root: content,
       mode: 'multi',
       room: r,
-      players,
-      me: { id: r.me.id, name: r.me.name },
+      match: matchId,
+      me: { id: me, name: getSettings().name },
       onExit: () => {
-        r.send('game:quit');
-        endGame('Tu as quitté la partie.');
+        unmountGame?.();
+        unmountGame = null;
+        void r.setBusy(false);
+        render();
       },
     });
   };
 
-  const endGame = (message: string) => {
-    unmountGame?.();
-    unmountGame = null;
-    state = { ...state, playing: null };
-    notice = message;
-    broadcastState();
+  const onMatch = (m: MatchRow) => {
+    if (m.room !== code || unmountGame) return;
+    if (m.status === 'playing' && m.moves === 0 && fresh(m)) return startGame(m.id);
+    if (m.status === 'pending' && fresh(m)) {
+      if (m.p2 === me) incoming = m;
+      else outgoing = m;
+    } else {
+      if (incoming?.id === m.id) incoming = null;
+      if (outgoing?.id === m.id) {
+        outgoing = null;
+        if (m.status === 'declined') notice = `${nameOf(m.p2)} a refusé le défi.`;
+        if (m.status === 'expired') notice = 'Le défi a expiré.';
+      }
+    }
     render();
   };
 
-  const tryStart = () => {
-    if (!room?.isHost || state.playing) return;
-    const game = getGame(state.gameId);
-    if (!game) return;
-    const ready = room.players.filter((p) => p.ready);
-    const min = game.minPlayers ?? 1;
-    const max = game.maxPlayers ?? Infinity;
-    if (!room.me.ready) return flash('Passe-toi « prêt » avant de lancer.');
-    if (ready.length < min) return flash(`Il faut au moins ${min} joueurs prêts.`);
-    if (ready.length > max) return flash(`${game.name} se joue à ${max} joueurs maximum.`);
-    const players = ready.map((p) => p.id);
-    room.send('lobby:start', { gameId: game.id, players });
-    startGame(game.id, players);
-    broadcastState();
+  const act = async (fn: () => Promise<unknown>) => {
+    try {
+      notice = '';
+      await fn();
+    } catch (e) {
+      notice = (e as Error).message;
+    }
+    render();
+  };
+
+  const sendChallenge = () => {
+    const target = others()[selected];
+    if (!room || !target || outgoing) return;
+    if (target.busy) {
+      notice = `${target.name} est déjà en partie.`;
+      return render();
+    }
+    void act(async () => {
+      const id = await challenge(target.id, code);
+      outgoing ??= { id, p1: me, p2: target.id, room: code, status: 'pending', created_at: new Date().toISOString() } as MatchRow;
+    });
+  };
+
+  const render = () => {
+    if (unmountGame || !room) return;
+    const list = others();
+    selected = Math.min(selected, Math.max(0, list.length - 1));
+
+    const items = room.players.map((p: Player) => {
+      const i = list.indexOf(p);
+      const li = h(
+        'li',
+        { class: (p.id === me ? 'me' : '') + (i === selected ? ' selected' : '') },
+        h('span', { class: 'dot' + (p.busy ? ' on' : '') }),
+        h('span', {}, p.name),
+        p.id === me ? h('span', { class: 'tag' }, 'toi') : null,
+        h('span', { class: 'muted small push' }, p.busy ? 'en partie' : i === selected ? 'Entrée : défier' : ''),
+      );
+      if (i >= 0) {
+        li.addEventListener('click', () => {
+          selected = i;
+          sendChallenge();
+        });
+      }
+      return li;
+    });
+
+    const banner = incoming
+      ? h('p', { class: 'notice' }, `${nameOf(incoming.p1)} te défie à Puissance 4. `, h('kbd', {}, 'O'), ' accepter · ', h('kbd', {}, 'N'), ' refuser')
+      : outgoing
+        ? h('p', { class: 'notice' }, `Défi envoyé à ${nameOf(outgoing.p2)}, en attente… `, h('kbd', {}, 'N'), ' annuler')
+        : null;
+
+    content.replaceChildren(
+      h(
+        'div',
+        { class: 'card' },
+        h('div', { class: 'lobby-head' }, h('h1', {}, 'Salon'), h('span', { class: 'code' }, code)),
+        h('p', { class: 'muted small link' }, link()),
+        h('h2', {}, `Joueurs (${room.players.length})`),
+        h('ul', { class: 'players' }, ...items),
+        list.length ? null : h('p', { class: 'muted small' }, 'Personne d’autre pour l’instant : partage le code.'),
+        banner,
+        notice ? h('p', { class: 'notice' }, notice) : null,
+      ),
+      hints(['↑ ↓', 'joueur'], ['Entrée', 'défier à Puissance 4'], ['C', 'copier le lien'], ['Retour arrière', 'quitter']),
+    );
   };
 
   const flash = (msg: string) => {
@@ -140,132 +198,66 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
     render();
   };
 
-  const render = () => {
-    if (unmountGame || !room) return;
-    const r = room;
-    const game = getGame(state.gameId);
-    const link = `${location.origin}${location.pathname}#/room/${code}`;
-
-    const list = h(
-      'ul',
-      { class: 'players' },
-      ...r.players.map((p: Player) =>
-        h(
-          'li',
-          { class: p.id === r.me.id ? 'me' : '' },
-          h('span', { class: 'dot' + (p.ready ? ' on' : '') }),
-          h('span', {}, p.name),
-          p.id === r.hostId ? h('span', { class: 'tag' }, 'hôte') : null,
-          p.id === r.me.id ? h('span', { class: 'tag' }, 'toi') : null,
-          h('span', { class: 'muted small push' }, p.ready ? 'prêt' : 'pas prêt'),
-        ),
-      ),
-    );
-
-    const picker = h(
-      'div',
-      { class: 'picker' },
-      h('span', { class: 'muted' }, 'Jeu'),
-      h('strong', {}, (r.isHost && multiGames().length > 1 ? '‹ ' : '') + (game?.name ?? '—') + (r.isHost && multiGames().length > 1 ? ' ›' : '')),
-      game ? h('span', { class: 'muted small' }, `${game.minPlayers ?? 1}–${game.maxPlayers ?? '∞'} joueurs`) : null,
-    );
-
-    const playing = state.playing
-      ? h('p', { class: 'notice' }, `Partie en cours : ${state.playing.map(nameOf).join(' contre ')}. Tu pourras jouer à la prochaine.`)
-      : null;
-
-    content.replaceChildren(
-      h(
-        'div',
-        { class: 'card' },
-        h('div', { class: 'lobby-head' }, h('h1', {}, 'Salon'), h('span', { class: 'code' }, code)),
-        h('p', { class: 'muted small link' }, link),
-        picker,
-        h('h2', {}, `Joueurs (${r.players.length})`),
-        list,
-        playing,
-        notice ? h('p', { class: 'notice' }, notice) : null,
-        h('p', { class: 'muted small' }, r.isHost ? 'Tu es l’hôte : choisis le jeu et lance la partie.' : 'L’hôte choisit le jeu et lance la partie.'),
-      ),
-      r.isHost
-        ? hints(['R', 'prêt'], ['← →', 'jeu'], ['Entrée', 'lancer'], ['C', 'copier le lien'], ['Retour arrière', 'quitter'])
-        : hints(['R', 'prêt'], ['C', 'copier le lien'], ['Retour arrière', 'quitter']),
-    );
-  };
-
-  const leave = () => navigate('/');
-
   offs.push(
     pushKeys((e) => {
       if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
       const key = e.key.toLowerCase();
       if (key === 'backspace') {
         e.preventDefault();
-        leave();
-      } else if (!room) {
-        return;
-      } else if (key === 'r') {
-        void room.setReady(!room.me.ready);
-      } else if (key === 'c') {
-        navigator.clipboard?.writeText(`${location.origin}${location.pathname}#/room/${code}`).then(
-          () => flash('Lien copié.'),
-          () => flash('Copie impossible : partage le code ' + code + '.'),
-        );
-      } else if ((key === 'arrowleft' || key === 'arrowright') && room.isHost && !state.playing) {
-        const list = multiGames();
-        const i = list.findIndex((g) => g.id === state.gameId);
-        state = { ...state, gameId: list[(i + (key === 'arrowright' ? 1 : list.length - 1)) % list.length].id };
-        broadcastState();
+        return navigate('/');
+      }
+      if (!room) return;
+      if (key === 'arrowdown' || key === 'arrowup') {
+        e.preventDefault();
+        const n = others().length;
+        if (n) selected = (selected + (key === 'arrowdown' ? 1 : n - 1)) % n;
         render();
       } else if (key === 'enter') {
         e.preventDefault();
-        tryStart();
+        sendChallenge();
+      } else if (key === 'o' && incoming) {
+        const m = incoming;
+        incoming = null;
+        void act(async () => {
+          const status = await respond(m.id, true);
+          if (status === 'playing') startGame(m.id);
+          else notice = 'Ce défi a expiré.';
+        });
+      } else if (key === 'n' && incoming) {
+        const m = incoming;
+        incoming = null;
+        void act(() => respond(m.id, false));
+      } else if (key === 'n' && outgoing) {
+        const m = outgoing;
+        outgoing = null;
+        void act(() => cancelChallenge(m.id));
+      } else if (key === 'c') {
+        navigator.clipboard?.writeText(link()).then(
+          () => flash('Lien copié.'),
+          () => flash(`Copie impossible : partage le code ${code}.`),
+        );
       }
     }),
   );
 
-  Room.join(code, { id: localId, name: getSettings().name }).then(
-    (r) => {
-      if (disposed) return void r.leave();
-      room = r;
-      offs.push(
-        r.onPlayers((players) => {
-          // Déconnexion d'un joueur en pleine partie : retour au salon.
-          if (state.playing) {
-            const gone = state.playing.find((id) => !players.some((p) => p.id === id));
-            if (gone) {
-              const name = lastNames.get(gone) ?? 'Un joueur';
-              if (unmountGame) endGame(`${name} s’est déconnecté. Retour au salon.`);
-              else state = { ...state, playing: null };
-            }
-          }
-          players.forEach((p) => lastNames.set(p.id, p.name));
-          // L'hôte (éventuellement nouveau) informe les arrivants de l'état du salon.
-          broadcastState();
-          render();
-        }),
-        r.on('lobby:state', (s: LobbyState, msg) => {
-          if (msg.from !== r.hostId) return;
-          if (unmountGame) return; // en partie, c'est notre propre état qui compte
-          state = s;
-          render();
-        }),
-        r.on('lobby:start', (s: { gameId: string; players: string[] }, msg) => {
-          if (msg.from !== r.hostId || unmountGame) return;
-          startGame(s.gameId, s.players);
-        }),
-        r.on('game:quit', (_p, msg) => {
-          if (unmountGame && state.playing?.includes(msg.from)) endGame(`${nameOf(msg.from)} a quitté la partie.`);
-        }),
-      );
-      render();
-    },
-    (err: Error) => {
-      if (disposed) return;
-      status.textContent = `${err.message}.`;
-      content.append(hints(['Retour arrière', 'accueil']));
-    },
-  );
+  (async () => {
+    const account = await ensureAccount();
+    if (!account) throw new Error('Connexion au serveur impossible');
+    me = account.id;
+    const r = await Room.join(code, me);
+    if (disposed) return void r.leave();
+    room = r;
+    offs.push(r.onPlayers(render));
+    const unwatch = await watchMyMatches(me, onMatch);
+    if (disposed) return unwatch();
+    offs.push(unwatch);
+    (await pendingChallenges(me, code)).forEach(onMatch);
+    render();
+  })().catch((err: Error) => {
+    if (disposed) return;
+    status.textContent = `${err.message}.`;
+    content.append(hints(['Retour arrière', 'accueil']));
+  });
 
   return () => {
     disposed = true;

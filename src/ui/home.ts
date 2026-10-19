@@ -1,5 +1,6 @@
 import { pushKeys } from '../core/input';
-import { getSettings, keyLabel, randomName, updateSettings } from '../core/settings';
+import { getSettings, keyLabel, randomName } from '../core/settings';
+import { setUsername } from '../net/auth';
 import { games } from '../games/registry';
 import { generateCode } from '../net/room';
 import { multiConfigured } from '../net/supabase';
@@ -26,6 +27,7 @@ export function homeView(root: HTMLElement): () => void {
     { label: 'Créer un salon', detail: off ?? 'Multijoueur · code à partager', action: () => navigate(`/room/${generateCode()}`) },
     { label: 'Rejoindre un salon', detail: off ?? 'Saisir un code', action: () => navigate('/join') },
   );
+  items.push({ label: 'Classements', detail: off ?? '2048 et Puissance 4', action: () => navigate('/scores') });
   items.push({ label: 'Réglages', detail: 'Pseudo, thème, son, touche panique', action: () => navigate('/settings') });
 
   const m = menu(items, lastIndex);
@@ -53,10 +55,13 @@ function namePrompt(root: HTMLElement): () => void {
     input,
     hints(['Entrée', 'valider'], ['Tab', 'pseudo au hasard']),
   );
-  form.addEventListener('submit', (e) => {
+  const error = h('p', { class: 'muted small' });
+  form.append(error);
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    updateSettings({ name: input.value.trim() || randomName(), nameChosen: true });
-    navigate('/');
+    const err = await setUsername(input.value.trim() || randomName());
+    if (err) error.textContent = err;
+    else navigate('/');
   });
   content.append(form);
   input.focus();

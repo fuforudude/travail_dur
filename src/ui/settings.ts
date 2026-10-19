@@ -1,5 +1,6 @@
 import { captureNextKey, isTyping, pushKeys } from '../core/input';
-import { getSettings, keyLabel, randomName, updateSettings } from '../core/settings';
+import { getSettings, keyLabel, updateSettings } from '../core/settings';
+import { setUsername } from '../net/auth';
 import { navigate } from '../router';
 import { h, hints } from './dom';
 import { page } from './layout';
@@ -9,7 +10,14 @@ export function settingsView(root: HTMLElement): () => void {
   const s = getSettings();
 
   const name = h('input', { class: 'field', maxlength: 16, value: s.name, 'aria-label': 'Pseudo' });
-  name.addEventListener('change', () => updateSettings({ name: name.value.trim() || randomName(), nameChosen: true }));
+  const nameError = h('p', { class: 'muted small' });
+  name.addEventListener('change', async () => {
+    const value = name.value.trim();
+    if (value === getSettings().name) return;
+    const err = await setUsername(value);
+    nameError.textContent = err ?? 'Pseudo enregistré.';
+    if (err) name.value = getSettings().name;
+  });
 
   const toggle = (label: () => string, flip: () => void) => {
     const b = h('button', { class: 'field toggle', type: 'button' }, label());
@@ -41,6 +49,8 @@ export function settingsView(root: HTMLElement): () => void {
       refreshHint();
     });
   });
+  const account = h('button', { class: 'field', type: 'button' }, 'Email, classements…');
+  account.addEventListener('click', () => navigate('/account'));
   const back = h('button', { class: 'field', type: 'button' }, 'Retour à l’accueil');
   back.addEventListener('click', () => navigate('/'));
 
@@ -51,17 +61,19 @@ export function settingsView(root: HTMLElement): () => void {
   };
   refreshHint();
 
-  const controls: HTMLElement[] = [name, theme.b, sound.b, panic, back];
+  const controls: HTMLElement[] = [name, theme.b, sound.b, panic, account, back];
   content.append(
     h(
       'div',
       { class: 'card' },
       h('h1', {}, 'Réglages'),
       row('Pseudo', name),
+      nameError,
       row('Thème', theme.b),
       row('Son', sound.b),
       row('Touche panique', panic),
       panicHint,
+      row('Compte', account),
       back,
     ),
     hints(['↑ ↓', 'naviguer'], ['← →', 'changer'], ['Entrée', 'valider'], ['Retour arrière', 'accueil']),
