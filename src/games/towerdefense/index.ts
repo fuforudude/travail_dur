@@ -18,7 +18,7 @@ import {
 } from './engine/sim';
 import { equippedFinish, loadMeta, saveLocalProgress, sendWave, startRun, type Meta } from './net';
 import { drawEnemy, drawTower, enemyLook, enemyRadius, previewItem, readPalette, towerLook, type Palette } from './render';
-import { ACTS, actOf, PROLOGUE, STORY, type Line } from './story';
+import { ACTS, actOf, bossName, PROLOGUE, STORY, type Line } from './story';
 import './td.css';
 
 interface Saved {
@@ -396,6 +396,22 @@ function mount(ctx: GameContext): () => void {
           g.arc(hl.x * cell, hl.y * cell, hl.r * cell, 0, Math.PI * 2);
           g.fill();
         }
+        // tunnels de Bagou : entrée et sortie reliées en pointillés
+        for (const tn of running.tunnels()) {
+          g.strokeStyle = pal.muted;
+          g.setLineDash([cell * 0.15, cell * 0.15]);
+          g.beginPath();
+          g.moveTo(tn.fx * cell, tn.fy * cell);
+          g.lineTo(tn.tx * cell, tn.ty * cell);
+          g.stroke();
+          g.setLineDash([]);
+          g.fillStyle = '#000000b0';
+          for (const [x, y] of [[tn.fx, tn.fy], [tn.tx, tn.ty]]) {
+            g.beginPath();
+            g.ellipse(x * cell, y * cell, cell * 0.38, cell * 0.22, 0, 0, Math.PI * 2);
+            g.fill();
+          }
+        }
       }
 
       // portée de la tour sous le curseur
@@ -602,7 +618,7 @@ function mount(ctx: GameContext): () => void {
         const plan = campaign ? planLevelWave(s.seed, s.level, s.wave + 1) : planWave(s.seed, s.wave + 1);
         const counts = new Map<number, number>();
         for (const sp of plan.spawns) counts.set(sp.enemy, (counts.get(sp.enemy) ?? 0) + 1);
-        const list = [...counts].map(([e, n]) => (ENEMIES[e].tier === 'boss' ? ENEMIES[e].name : `${n} ${ENEMIES[e].name}`)).join(', ');
+        const list = [...counts].map(([e, n]) => (ENEMIES[e].tier === 'boss' ? bossName(ENEMIES[e], s.level) : `${n} ${ENEMIES[e].name}`)).join(', ');
         const tag = plan.boss !== null ? ' · BOSS' : plan.theme ? ` · vague thématique « ${plan.theme} »` : '';
         blocks.push(h('p', { class: 'small' }, h('b', {}, `Vague ${plan.wave}${tag}`), ` : ${list}. Espace pour lancer.`));
         const intro = plan.intro ?? (plan.boss !== null ? plan.boss : null);
@@ -613,7 +629,7 @@ function mount(ctx: GameContext): () => void {
               'div',
               { class: 'td-intro' },
               previewItem(d.id, 40, equippedFinish(meta, 'es', d.id)),
-              h('div', {}, h('b', {}, `${d.tier === 'boss' ? 'Boss' : 'Nouvel ennemi'} : ${d.name}`), h('span', { class: 'small' }, ` — ${d.text}${d.flying ? ' · volant' : ''}${d.camo ? ' · camouflé' : ''}${d.armor ? ` · armure ${d.armor}` : ''}`), h('br'), h('span', { class: 'small muted' }, `Contres : ${d.counters}`)),
+              h('div', {}, h('b', {}, `${d.tier === 'boss' ? `Boss : ${bossName(d, s.level)}` : `Nouvel ennemi : ${d.name}`}`), h('span', { class: 'small' }, ` — ${d.text}${d.flying ? ' · volant' : ''}${d.camo ? ' · camouflé' : ''}${d.armor ? ` · armure ${d.armor}` : ''}`), h('br'), h('span', { class: 'small muted' }, `Contres : ${d.counters}`)),
             ),
           );
         }
@@ -629,7 +645,7 @@ function mount(ctx: GameContext): () => void {
       } else if (showVictory) {
         overlay.replaceChildren(
           h('strong', {}, 'Victoire !'),
-          h('span', {}, `Le Dévoreur est tombé : ${FINAL_WAVE} vagues tenues.`),
+          h('span', {}, `Bagou est tombé : ${FINAL_WAVE} vagues tenues.`),
           h('span', { class: 'muted small' }, 'Entrée pour continuer (les PV montent de 8 % par vague).'),
         );
         overlay.hidden = false;
@@ -665,7 +681,7 @@ function mount(ctx: GameContext): () => void {
         h('strong', {}, campaign ? `Perdu au niveau ${s.level}, vague ${s.wave + 1}` : `Perdu à la vague ${s.wave + 1}`),
         h('span', {}, `${plural(s.wave, 'vague')} tenue${s.wave > 1 ? 's' : ''} · ${plural(s.kills, 'ennemi')} vaincu${s.kills > 1 ? 's' : ''}${s.bossKills ? ` · ${plural(s.bossKills, 'boss')}` : ''}`),
         session && !campaign ? h('span', { class: 'small' }, `+${s.wave * (s.wave + 1)} points ◆ gagnés`) : '',
-        foe ? h('span', { class: 'small muted' }, `Vaincu par : ${foe.name}. Contre conseillé : ${foe.counters}.`) : '',
+        foe ? h('span', { class: 'small muted' }, `Vaincu par : ${foe.tier === 'boss' ? bossName(foe, s.level) : foe.name}. Contre conseillé : ${foe.counters}.`) : '',
         h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('Recommencer', retry, true)),
         h('span', { class: 'muted small' }, 'Entrée recommencer · M carte · C caisses'),
       ];

@@ -340,6 +340,12 @@ export function drawEnemy(g: CanvasRenderingContext2D, id: string, cx: number, c
       g.arc(0, 0, r * 0.8, -open, open);
       g.closePath();
       g.fill();
+      // Bagou : une invite de terminal sur le front
+      g.fillStyle = '#7dff8a';
+      g.font = `bold ${Math.max(6, r * 0.5)}px monospace`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('$_', -r * 0.2, -r * 0.45);
     } else if (id === 'runner') {
       g.globalAlpha *= 0.5;
       g.fillRect(-r * 2.2, -r * 0.15, r * 1.2, r * 0.3);

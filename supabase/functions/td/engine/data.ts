@@ -369,7 +369,7 @@ export const ENEMIES: EnemyDef[] = [
   // Titan : armure 5 à sa première apparition (vague 10), +2 à chacune des suivantes (sim.ts).
   // Réglé avec un joueur automatique (tours de départ seulement) : il passe la vague 10, la vague 20 reste un vrai défi.
   E({ id: 'titan', name: 'Titan', tier: 'boss', firstWave: 10, hp: 2000, speed: 0.4, armor: 5, abilities: ['titan'], bounty: 500, threat: 0, livesCost: 12, text: 'Invoque des Brutes à mi-vie (3, puis 6), plus fort à chaque apparition', counters: 'Tout ce qui frappe fort' }),
-  E({ id: 'devourer', name: 'Le Dévoreur', tier: 'boss', firstWave: 50, hp: 15000, speed: 0.35, armor: 12, abilities: ['devourer'], bounty: 3000, threat: 0, livesCost: -1, text: 'Désactive vos tours, bouclier, puis fonce', counters: 'Singularité, Railgun, Sniper U2' }),
+  E({ id: 'devourer', name: 'Bagou', tier: 'boss', firstWave: 50, hp: 15000, speed: 0.35, armor: 12, abilities: ['devourer'], bounty: 3000, threat: 0, livesCost: -1, text: 'Fan de Linux : « kill -9 » sur votre meilleure tour, creuse des tunnels pour son escorte, bouclier, puis fonce', counters: 'Singularité, Railgun, Sniper U2' }),
 ];
 
 export const enemyIndex = (id: string) => ENEMIES.findIndex((e) => e.id === id);
@@ -472,7 +472,7 @@ export const levelOffset = (L: number) => Math.floor(1.6 * (L - 1));
  */
 export const levelWave = (L: number, w: number) => levelOffset(L) + w;
 
-/** Boss à la dernière vague des niveaux 5, 10 et 15 (le Titan, de plus en plus fort) et 20 (le Dévoreur). */
+/** Boss à la dernière vague des niveaux 5, 10 et 15 (le Titan, de plus en plus fort) et 20 (Bagou). */
 export const levelBoss = (L: number): 'titan' | 'devourer' | null => (L === LEVEL_COUNT ? 'devourer' : L % 5 === 0 ? 'titan' : null);
 
 /**

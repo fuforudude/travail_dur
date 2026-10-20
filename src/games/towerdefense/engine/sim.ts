@@ -310,12 +310,13 @@ export interface Enemy {
   burnPure: boolean;
   noHealT: number;
   sinceHit: number;
-  clock: number; // fouisseur, nécromancien, Dévoreur
-  clock2: number; // Titan volant, invocations du Dévoreur
+  clock: number; // fouisseur, nécromancien, Bagou
+  clock2: number; // Titan volant, invocations de Bagou
   burrowed: boolean;
   airborne: boolean; // Titan v40 : vole par moments
   revealed: boolean;
   phase: number; // boss
+  dig: number; // Bagou : prochain tunnel
   diedAt: number;
 }
 
@@ -355,6 +356,16 @@ export interface Hole {
   collapseBoss: number;
 }
 
+/** Tunnel de Bagou : un ennemi au sol qui passe sur l'entrée ressort à la sortie. */
+export interface Tunnel {
+  from: number;
+  to: number;
+  fx: number;
+  fy: number;
+  tx: number;
+  ty: number;
+}
+
 /** Effets visuels d'un tick (ignorés par le serveur). */
 export type Fx =
   | { k: 'shot'; tower: number; x: number; y: number }
@@ -384,6 +395,7 @@ export function startWave(s: RunState) {
   const dead: Enemy[] = []; // pour le Nécromancien
   const patches: Patch[] = [];
   const holes: Hole[] = [];
+  const tunnels: Tunnel[] = [];
   let towers: Live[] = [];
   let fx: Fx[] | null = null;
   let nextSpawn = 0;
@@ -436,7 +448,7 @@ export function startWave(s: RunState) {
       uid: uid++, def, mini: Boolean(opts.mini), hp: maxHp * (opts.hpRatio ?? 1), maxHp, shield: maxShield, maxShield, pos, x, y, alive: true,
       bounty: opts.bounty ?? (opts.mini ? MINI.bounty : d.bounty), revived: Boolean(opts.revived), slow: 0, slowT: 0, stunT: 0, frozen: false,
       fragile: 0, fragileT: 0, dots: [], burn: 0, burnT: 0, burnPure: false, noHealT: 0, sinceHit: 0, clock: 0, clock2: 0,
-      burrowed: false, airborne: false, revealed: !d.camo, phase: 1, diedAt: 0,
+      burrowed: false, airborne: false, revealed: !d.camo, phase: 1, dig: 0, diedAt: 0,
     };
     enemies.push(e);
     return e;
@@ -802,6 +814,16 @@ export function startWave(s: RunState) {
             spawn(SPECTER, Math.max(0, e.pos - 0.4));
           }
         }
+        // Tunnels : creusés sous ses pieds, toutes les 10 s (5 s à la fin) ; son escorte le rattrape.
+        e.dig += dt;
+        if (e.dig >= (e.phase >= 3 ? 5 : 10) - 1e-9 && e.pos + 3 < len) {
+          e.dig = 0;
+          const to = e.pos + 2.5;
+          const [fx, fy] = pathPos(s.map, e.pos);
+          const [tx, ty] = pathPos(s.map, to);
+          tunnels.push({ from: e.pos, to, fx, fy, tx, ty });
+          if (tunnels.length > 4) tunnels.shift();
+        }
         if (e.phase === 2 && e.hp < e.maxHp * 0.25) {
           e.phase = 3;
           e.slowT = 0;
@@ -844,7 +866,9 @@ export function startWave(s: RunState) {
       if (e.slowT > 0) speed *= 1 - e.slow;
       if (e.stunT > 0) speed = 0;
       else e.frozen = false;
+      const before = e.pos;
       e.pos += speed * dt;
+      if (!flying(e)) for (const tn of tunnels) if (before < tn.from && e.pos >= tn.from) e.pos = Math.max(e.pos, tn.to);
       if (e.pos >= len) {
         e.alive = false;
         const cost = ENEMIES[e.def].livesCost;
@@ -936,6 +960,7 @@ export function startWave(s: RunState) {
     enemies: () => enemies,
     towers: () => towers,
     holes: () => holes,
+    tunnels: () => tunnels,
     patches: () => patches,
     tick,
     act,
