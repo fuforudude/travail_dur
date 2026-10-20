@@ -55,6 +55,7 @@ export const givePoints = (target: string, amount: number, reason: string) => rp
 export const renamePlayer = (target: string, name: string) => rpc<void>('admin_rename', { target, name });
 export const setCurse = (target: string, enabled: boolean, lvl: number) => rpc<void>('admin_curse', { target, enabled, lvl });
 export const scareNow = (target: string) => rpc<void>('admin_scare', { target });
+export const deletePlayer = (target: string) => rpc<void>('admin_delete_player', { target });
 export const giveItem = (target: string, item: string) => rpc<void>('admin_give', { target, item });
 
 /** Envoie une photo dans le stockage « artworks » puis l'ajoute à la liste des photos à accrocher. */

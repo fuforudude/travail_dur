@@ -3,6 +3,7 @@ import {
   addArtwork,
   adminLog,
   deleteArtwork,
+  deletePlayer,
   findPlayers,
   givePoints,
   giveItem,
@@ -29,6 +30,7 @@ const ACTIONS: Record<string, string> = {
   uncurse: 'Fin de malédiction',
   scare: 'Screamer',
   give: 'Don d’objet',
+  delete: 'Joueur supprimé',
   artwork_add: 'Photo ajoutée',
   artwork_delete: 'Photo supprimée',
 };
@@ -66,15 +68,41 @@ export function adminView(root: HTMLElement): () => void {
       players = await findPlayers(search.value.trim());
       results.replaceChildren(
         ...players.map((p) => {
-          const tr = h(
+          // Les trois actions courantes, directement sur la ligne.
+          const edit = h('button', { class: 'field small-btn', type: 'button' }, 'Modifier');
+          edit.addEventListener('click', () => {
+            select(p);
+            detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          });
+          const curse = h('button', { class: 'field small-btn' + (p.cursed ? ' on' : ''), type: 'button', disabled: p.is_admin }, p.cursed ? 'Libérer' : 'Maudire');
+          curse.addEventListener('click', async () => {
+            if (await run(() => setCurse(p.id, !p.cursed, p.curse_level), p.cursed ? `${p.username} est libéré.` : `${p.username} est maudit (niveau ${p.curse_level}).`)) void loadPlayers();
+          });
+          const del = h('button', { class: 'field small-btn danger', type: 'button', disabled: p.is_admin }, 'Supprimer');
+          let sure = false;
+          del.addEventListener('click', async () => {
+            if (!sure) {
+              sure = true;
+              del.textContent = 'Confirmer ?';
+              say(`Supprimer ${p.username} efface son compte, ses scores, ses points et ses objets. Clique à nouveau pour confirmer.`);
+              return;
+            }
+            if (await run(() => deletePlayer(p.id), `${p.username} a été supprimé.`)) {
+              if (selected?.id === p.id) {
+                selected = null;
+                detail.hidden = true;
+              }
+              void loadPlayers();
+            }
+          });
+          return h(
             'tr',
             { class: selected?.id === p.id ? 'me' : '' },
             h('td', {}, nameEl(p.id, p.username), p.is_admin ? h('span', { class: 'tag' }, 'admin') : '', p.verified ? '' : h('span', { class: 'muted small' }, ' invité')),
             h('td', {}, formatPoints(p.balance)),
-            h('td', {}, p.cursed ? `maudit · ${p.curse_level}` : ''),
+            h('td', {}, p.cursed ? h('span', { class: 'tag danger-tag' }, `maudit · ${p.curse_level}`) : ''),
+            h('td', { class: 'admin-actions' }, edit, curse, del),
           );
-          tr.addEventListener('click', () => select(p));
-          return tr;
         }),
       );
       if (selected) {
@@ -140,6 +168,7 @@ export function adminView(root: HTMLElement): () => void {
       h('p', { class: 'muted small' }, `Identifiant : ${p.id}`),
     );
     results.querySelectorAll('tr').forEach((tr, i) => tr.classList.toggle('me', players[i]?.id === p.id));
+    // Les malédictions se gèrent aussi ici : niveau et screamer immédiat.
   };
 
   // --- Photos --------------------------------------------------------------
@@ -207,7 +236,7 @@ export function adminView(root: HTMLElement): () => void {
     wrap.replaceChildren(
       h('h1', {}, 'Administration'),
       notice,
-      h('section', { class: 'card' }, h('h2', {}, 'Joueurs'), search, h('table', { class: 'scores admin-players' }, h('thead', {}, h('tr', {}, h('th', {}, 'Joueur'), h('th', {}, 'Solde'), h('th', {}, ''))), results)),
+      h('section', { class: 'card' }, h('h2', {}, 'Joueurs'), search, h('table', { class: 'scores admin-players' }, h('thead', {}, h('tr', {}, h('th', {}, 'Joueur'), h('th', {}, 'Solde'), h('th', {}, ''), h('th', {}, 'Actions'))), results)),
       detail,
       h('section', { class: 'card' }, h('h2', {}, 'Photos des cadres'), h('div', { class: 'admin-controls' }, file, title, upload), gallery),
       h('section', { class: 'card' }, h('h2', {}, 'Journal'), log),

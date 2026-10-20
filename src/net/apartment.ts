@@ -4,9 +4,30 @@
 import { serverError, rpc } from './admin';
 import { getSupabase } from './supabase';
 
-export const COLS = 12;
-export const FLOOR_ROWS = 7;
+/** Sol carré N × N ; murs : x de 0 à N−1 = mur de gauche, de N à 2N−1 = mur de droite, sur 2 hauteurs. */
+export const N = 8;
+export const WALL_COLS = 2 * N;
 export const WALL_ROWS = 2;
+
+/** Nettoyage du début : mêmes coûts que public.apartment_clean_cost, dans le même ordre. */
+export const CLEAN_TASKS: { name: string; cost: number }[] = [
+  { name: 'Sortir les cartons', cost: 300 },
+  { name: 'Jeter les ordures', cost: 800 },
+  { name: 'Enlever les toiles d’araignée', cost: 1500 },
+  { name: 'Aspirer la poussière', cost: 3000 },
+  { name: 'Réparer le parquet', cost: 6000 },
+  { name: 'Repeindre les murs', cost: 10000 },
+];
+export const CLEAN_RATE = 20; // points par heure pour chaque tâche faite
+export const CAP_HOURS = 24;
+const RARITY_MULT: Record<string, number> = { standard: 1, common: 1.5, rare: 2.5, epic: 4, legendary: 8, mythic: 20 };
+
+/** Revenu par heure d'un meuble posé (comme public.apartment_rate). */
+export function itemIncome(item: string): number {
+  const base = BASES.find((b) => b.id === item.split(':')[0]);
+  const fin = FINISHES.find((f) => f.id === item.split(':')[1]);
+  return ((base?.price ?? 0) / 40) * (RARITY_MULT[fin?.rarity ?? 'standard'] ?? 1);
+}
 
 export interface Base {
   id: string;
@@ -113,12 +134,34 @@ async function client() {
   return supabase;
 }
 
-export async function loadLayout(uid: string): Promise<Layout> {
-  const { data, error } = await (await client()).from('apartments').select('layout').eq('user_id', uid).maybeSingle();
+export interface ApartmentState {
+  layout: Layout;
+  cleanStep: number;
+  rate: number; // points par heure
+  banked: number;
+  lastTick: number; // ms
+}
+
+export async function loadApartment(uid: string): Promise<ApartmentState> {
+  const { data, error } = await (await client()).from('apartments').select('layout, clean_step, rate, banked, last_tick').eq('user_id', uid).maybeSingle();
   if (error) throw serverError(error);
   const l = (data?.layout as Layout | undefined) ?? { floor: [], wall: [] };
-  return { floor: l.floor ?? [], wall: l.wall ?? [] };
+  return {
+    layout: { floor: l.floor ?? [], wall: l.wall ?? [] },
+    cleanStep: Number(data?.clean_step ?? 0),
+    rate: Number(data?.rate ?? 0),
+    banked: Number(data?.banked ?? 0),
+    lastTick: data?.last_tick ? Date.parse(data.last_tick as string) : Date.now(),
+  };
 }
+
+/** Revenus accumulés à l'instant t (même calcul que public.apartment_settle). */
+export function pending(a: ApartmentState, t = Date.now()): number {
+  return Math.min(a.banked + (a.rate * (t - a.lastTick)) / 3_600_000, Math.max(a.rate, 1) * CAP_HOURS);
+}
+
+export const cleanApartment = () => rpc<{ balance: number; clean_step: number }>('apartment_clean');
+export const collectIncome = () => rpc<{ gain: number }>('apartment_collect');
 
 export async function myFurniture(uid: string): Promise<Owned[]> {
   const { data, error } = await (await client()).from('furniture_owned').select('id, item_id').eq('user_id', uid).order('id');
