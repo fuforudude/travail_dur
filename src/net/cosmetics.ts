@@ -37,6 +37,7 @@ export function cosmeticOf(id: string | null | undefined): Cosmetic {
 /** Les demandes sont regroupées : une seule requête pour tous les pseudos d'une page. */
 function request(id: string): void {
   if (!multiConfigured || inflight.has(id)) return;
+  void watch();
   queue.add(id);
   timer ??= window.setTimeout(flush, 30);
 }
@@ -52,8 +53,8 @@ async function flush(): Promise<void> {
   ids.forEach((id) => inflight.delete(id));
   const now = Date.now();
   if (error) {
-    // Boutique pas encore installée : pseudos normaux, sans redemander à chaque affichage.
-    for (const id of ids) cache.set(id, { value: EMPTY, at: now });
+    // Serveur indisponible ou pas encore à jour : pseudos normaux, nouvel essai dans 10 s.
+    for (const id of ids) cache.set(id, { value: EMPTY, at: now - TTL + 10_000 });
     return;
   }
   for (const id of ids) cache.set(id, { value: EMPTY, at: now });
@@ -62,6 +63,25 @@ async function flush(): Promise<void> {
   }
   paintNames();
   listeners.forEach((cb) => cb());
+}
+
+let watching = false;
+
+/** Changements d'apparence en direct (un joueur qui achète ou porte un objet). */
+async function watch(): Promise<void> {
+  if (watching || !multiConfigured) return;
+  watching = true;
+  const supabase = await getSupabase();
+  supabase
+    ?.channel('cosmetics')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'cosmetics' }, (p) => {
+      const row = p.new as (Cosmetic & { user_id: string }) | undefined;
+      if (!row?.user_id) return;
+      cache.set(row.user_id, { value: { name_color: row.name_color, name_effect: row.name_effect, title: row.title, skins: row.skins ?? {} }, at: Date.now() });
+      paintNames();
+      listeners.forEach((cb) => cb());
+    })
+    .subscribe();
 }
 
 /** Après un achat ou un changement d'équipement : on relit son apparence. */
