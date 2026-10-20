@@ -24,6 +24,24 @@ Dans chaque jeu de plateau, `I` (ou le bouton *Règles*) affiche les règles com
 
 Partout : `↑` `↓` + `Entrée` pour naviguer, `Retour arrière` pour revenir.
 
+## Points et casino
+
+Chaque partie terminée rapporte des **points**, attribués par le serveur quand il enregistre la partie (le client ne peut ni choisir ni gonfler ses gains). Le barème complet est sur la page *Points* (◆ en haut à droite) :
+
+| Jeu | Points |
+| --- | --- |
+| 2048 | √score, + 30 / 150 / 400 pour les tuiles 1024 / 2048 / 4096 |
+| Tetris | √score |
+| Flappy Bird | tuyaux^1,5 ÷ 4 |
+| Tower defense | 2 × n pour chaque vague n terminée |
+| Wordle | trouvé en n essais : 40 + 15 × (6 − n) ; raté : 5 |
+| À deux | victoire : Morpion 15 · Puissance 4 30 · Quarto 40 · Quoridor 60 · Dames 90 · Échecs 100 ; nul un tiers ; défaite 3 ; abandon ou temps : moitié |
+| Records | record personnel +100, record absolu (tous joueurs) +500 |
+
+Le barème vise environ 20 à 30 points par minute de jeu, quel que soit le jeu. 100 points de bienvenue ; les parties jouées avant l’arrivée des points ont été comptées (sans les bonus de record). Anti-abus : les parties à deux trop courtes ne rapportent rien, ni au-delà de 10 parties par jour contre le même adversaire.
+
+Les points se misent à la **roulette** (européenne : rouge, noir, vert, pair, impair, manque, passe, douzaines, numéro plein ; retour 97,3 %) et à la **machine à sous** (3 rouleaux, jusqu’à ×400 ; retour 95,9 %). Le tirage est fait par le serveur ; mise maximale 500 par tour. Un onglet *Points* s’ajoute aux classements.
+
 ## Touche panique
 
 `Échap` (modifiable dans les Réglages) ou `Ctrl+Maj+Espace` masque immédiatement le jeu et affiche **un PDF de cours** dans une visionneuse (titre de l’onglet = nom du fichier), ou à défaut un faux carnet de notes. La même touche ramène au jeu, qui est en pause pendant ce temps. Dans le PDF : molette, flèches, `Page↑` `Page↓`, `Espace`.
@@ -67,7 +85,7 @@ Limites connues : le serveur garantit qu’un score correspond à une vraie part
 ## Configurer Supabase
 
 1. Créer un compte sur https://supabase.com, puis **New project** (le plan gratuit suffit).
-2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql`, `0004_td_wordle_flappy.sql`, `0005_chat.sql` (discussion des salons) et `0006_plateaux.sql` (Échecs, Dames, Quoridor, Quarto en ligne). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
+2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql`, `0004_td_wordle_flappy.sql`, `0005_chat.sql` (discussion des salons) `0006_plateaux.sql` (Échecs, Dames, Quoridor, Quarto en ligne) et `0007_points_casino.sql` (points, roulette, machine à sous). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
 3. **Authentication → Sign In / Providers** :
    - activer **Allow anonymous sign-ins** ;
    - dans **Email**, laisser **Confirm email** activé.

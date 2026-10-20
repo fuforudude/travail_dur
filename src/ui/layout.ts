@@ -1,4 +1,5 @@
 import { getSettings } from '../core/settings';
+import { formatPoints, getWallet } from '../net/points';
 import { navigate } from '../router';
 import { h } from './dom';
 import { drawerButton } from './drawer';
@@ -19,9 +20,19 @@ export function page(root: HTMLElement, title: string): HTMLElement {
       home,
       h('a', { class: 'brand', href: '#/' }, 'Notes'),
       h('span', { class: 'crumb' }, title),
+      pointsBadge(),
       h('span', { class: 'who' }, getSettings().name),
     ),
     content,
   );
   return content;
+}
+
+/** Solde de points dans la barre du haut (mis à jour par ui/toast.ts) ; un clic ouvre la page Points. */
+function pointsBadge(): HTMLElement {
+  const w = getWallet();
+  const b = h('button', { class: 'points-badge', type: 'button', title: 'Mes points', hidden: !w }, w ? `◆ ${formatPoints(w.balance)}` : '');
+  b.addEventListener('mousedown', (e) => e.preventDefault());
+  b.addEventListener('click', () => navigate('/points'));
+  return b;
 }

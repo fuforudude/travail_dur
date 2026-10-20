@@ -13,6 +13,7 @@ interface Board {
 }
 
 const BOARDS: Board[] = [
+  { title: 'Points', view: 'leaderboard_points', order: 'balance', columns: [['balance', 'Solde'], ['earned', 'Gagnés en jouant']] },
   { title: '2048', view: 'leaderboard_2048', order: 'best', columns: [['best', 'Record'], ['max_tile', 'Tuile'], ['games', 'Parties']] },
   { title: 'Tetris', view: 'leaderboard_tetris', order: 'best', columns: [['best', 'Record'], ['lines', 'Lignes'], ['games', 'Parties']] },
   { title: 'Wordle', view: 'leaderboard_wordle', order: 'solved', columns: [['solved', 'Trouvés'], ['games', 'Jours'], ['average', 'Moyenne']] },

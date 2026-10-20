@@ -3,6 +3,7 @@ import { getSettings, keyLabel, randomName } from '../core/settings';
 import { setUsername } from '../net/auth';
 import { games } from '../games/registry';
 import type { Game } from '../games/types';
+import { formatPoints, getWallet } from '../net/points';
 import { generateCode } from '../net/room';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
@@ -76,6 +77,12 @@ export function homeView(root: HTMLElement): () => void {
       ...duel.map(gameCard),
       card('room', 'Créer un salon', off ? 'Multijoueur non configuré' : 'Un code à partager', '+', 1, () => navigate(`/room/${generateCode()}`), { disabled: off }),
       card('join', 'Rejoindre un salon', off ? 'Multijoueur non configuré' : 'Avec le code d’un ami', '→', 1, () => navigate('/join'), { disabled: off }),
+    ),
+    section(
+      'Points et casino',
+      card('points', 'Mes points', off ? 'Serveur non configuré' : getWallet() ? `◆ ${formatPoints(getWallet()!.balance)}` : 'Chaque partie en rapporte', '◆', 4, () => navigate('/points'), { disabled: off }),
+      card('roulette', 'Roulette', 'Rouge, noir ou vert : mise tes points', '◎', 2, () => navigate('/roulette'), { tags: ['Casino'], disabled: off }),
+      card('slots', 'Machine à sous', 'Trois rouleaux, jusqu’à ×400', '7', 5, () => navigate('/slots'), { tags: ['Casino'], disabled: off }),
     ),
     hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'ouvrir'], ['M', 'menu (réglages, classements, compte)'], [keyLabel(getSettings().panicKey), 'masquer l’écran']),
   );

@@ -25,6 +25,7 @@ export function toggleDrawer(): void {
   const entries = (): Entry[] => [
     { icon: '⌂', label: 'Accueil', action: () => navigate('/') },
     { icon: '★', label: 'Classements', action: () => navigate('/scores'), hidden: !multiConfigured },
+    { icon: '◆', label: 'Points et casino', action: () => navigate('/points'), hidden: !multiConfigured },
     { icon: '⚙', label: 'Réglages', action: () => navigate('/settings') },
     {
       icon: '@',
