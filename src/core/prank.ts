@@ -37,7 +37,7 @@ function scream(): void {
       o.frequency.exponentialRampToValueAtTime(f / 3, t + 0.9);
       o.connect(out);
       o.start(t);
-      o.stop(t + 0.9);
+      o.stop(t + 0.1);
     }
     const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const data = noise.getChannelData(0);
