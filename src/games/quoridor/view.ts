@@ -1,4 +1,5 @@
 import { isTyping, pushKeys } from '../../core/input';
+import { applySkins } from '../../net/cosmetics';
 import { h } from '../../ui/dom';
 import { boardShell, legendItems, type Side } from '../board';
 import { statusText, type DuelView, type ViewHandlers, type ViewState } from '../duel';
@@ -46,7 +47,7 @@ export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints
   grid.append(walls);
   const side = h('div', { class: 'qd-side' });
 
-  const { legend, status, toggleRules } = boardShell(root, {
+  const { game, legend, status, toggleRules } = boardShell(root, {
     board: grid,
     side,
     keys: [['← ↑ → ↓', 'case'], ['Entrée', 'jouer'], ['M', 'mode mur'], ['Espace', 'tourner'], ...extraHints],
@@ -81,6 +82,7 @@ export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints
     if (!state) return;
     const s = state;
     const b = s.board;
+    applySkins(game, 'quoridor', s.ids);
     legend.replaceChildren(...legendItems(s, (p) => h('span', { class: `qd-mark p${p + 1}` })));
     const me = mySide();
     const targets = new Set(myTurn() && !wallMode ? pawnMoves(b, me!) : []);

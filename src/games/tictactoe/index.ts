@@ -1,5 +1,6 @@
 import { isPanicked, onPanicChange } from '../../core/panic';
 import { blip } from '../../core/sound';
+import { getAccount } from '../../net/auth';
 import type { ViewState } from '../duel';
 import { mountOnline } from '../online';
 import type { Game, GameContext } from '../types';
@@ -18,6 +19,7 @@ function mountSolo(ctx: GameContext): () => void {
     line: [],
     last: null,
     scores: [0, 0],
+    ids: [getAccount()?.id ?? null, null],
   };
   let starter: 0 | 1 = 0;
   let aiTimer: number | undefined;

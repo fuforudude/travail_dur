@@ -1,4 +1,5 @@
 import { isTyping, pushKeys } from '../../core/input';
+import { applySkins } from '../../net/cosmetics';
 import { h } from '../../ui/dom';
 import { boardShell, legendItems, type Side } from '../board';
 import { statusText, type DuelView, type ViewHandlers, type ViewState } from '../duel';
@@ -23,7 +24,7 @@ export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints
 
   const cells = Array.from({ length: 100 }, (_, v) => h('div', { class: 'dm-sq', 'data-v': v }));
   const board = h('div', { class: 'dames' }, ...cells);
-  const { legend, status, toggleRules } = boardShell(root, {
+  const { game, legend, status, toggleRules } = boardShell(root, {
     board,
     keys: [['← ↑ → ↓', 'case'], ['Entrée', 'choisir / jouer'], ...extraHints],
     rules: RULES,
@@ -45,6 +46,7 @@ export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints
   const render = () => {
     if (!state) return;
     const s = state;
+    applySkins(game, 'checkers', s.ids);
     legend.replaceChildren(...legendItems(s, (p) => h('span', { class: `dm-mark p${p + 1}` })));
     const all = legal();
     const fit = matching();

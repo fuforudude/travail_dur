@@ -1,5 +1,6 @@
 import { pushKeys } from '../core/input';
 import { getAccount } from '../net/auth';
+import { nameEl } from '../net/cosmetics';
 import { errorMessage, getSupabase, multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { h, hints } from './dom';
@@ -72,7 +73,7 @@ export function scoresView(root: HTMLElement): () => void {
             'tr',
             { class: row.user_id === me?.id ? 'me' : '' },
             h('td', {}, String(i + 1)),
-            h('td', {}, String(row.username)),
+            h('td', {}, nameEl(String(row.user_id), String(row.username))),
             ...b.columns.map(([k]) => h('td', {}, String(row[k] ?? 0))),
           ),
         ),

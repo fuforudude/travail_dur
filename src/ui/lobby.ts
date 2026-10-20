@@ -6,6 +6,7 @@ import { ensureAccount } from '../net/auth';
 import { isValidCode, normalizeCode, Room, type Player } from '../net/room';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
+import { nameEl } from '../net/cosmetics';
 import { chatPanel } from './chat';
 import { h, hints } from './dom';
 import { page } from './layout';
@@ -175,7 +176,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
         'li',
         { class: (p.id === me ? 'me' : '') + (i === selected ? ' selected' : '') },
         h('span', { class: 'dot' + (p.busy ? ' on' : '') }),
-        h('span', {}, p.name),
+        nameEl(p.id, p.name),
         p.id === me ? h('span', { class: 'tag' }, 'toi') : null,
         h('span', { class: 'muted small push' }, p.busy ? 'en partie' : i === selected ? 'Entrée : défier' : ''),
       );

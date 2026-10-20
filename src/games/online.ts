@@ -187,6 +187,7 @@ export function mountOnline(ctx: GameContext, createView: CreateView): () => voi
       scores: [tally.get(r.p1) ?? 0, tally.get(r.p2) ?? 0],
       message,
       history: r.history ?? [],
+      ids: [r.p1, r.p2],
     };
     view.update(state);
   };

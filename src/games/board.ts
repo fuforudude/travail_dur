@@ -4,6 +4,8 @@
 
 import { isPanicked, onPanicChange } from '../core/panic';
 import { blip } from '../core/sound';
+import { cosmeticOf, nameEl } from '../net/cosmetics';
+import { getAccount } from '../net/auth';
 import { h, hints } from '../ui/dom';
 import type { CreateView, ViewState } from './duel';
 import type { GameContext } from './types';
@@ -103,6 +105,7 @@ export function mountSoloBoard(ctx: GameContext, createView: CreateView, rules: 
     last: null,
     scores: [0, 0],
     history,
+    ids: [getAccount()?.id ?? null, null],
   };
   let starter: 0 | 1 = 0;
   let mySide: 0 | 1 = 0; // les camps s'échangent à chaque revanche, comme en ligne
@@ -149,7 +152,9 @@ export function mountSoloBoard(ctx: GameContext, createView: CreateView, rules: 
       history = [];
       const names: [string, string] = mySide === 0 ? [ctx.me.name, 'Ordinateur'] : ['Ordinateur', ctx.me.name];
       const scores: [number, number] = [s.scores[1], s.scores[0]];
-      s = { ...s, board, history, names, scores, me: mySide, turn: 0, result: null, line: [], last: null };
+      const myId = getAccount()?.id ?? null;
+      const ids: [string | null, string | null] = mySide === 0 ? [myId, null] : [null, myId];
+      s = { ...s, board, history, names, scores, ids, me: mySide, turn: 0, result: null, line: [], last: null };
       view.update(s);
       scheduleAi();
     },
@@ -172,7 +177,7 @@ export function mountSoloBoard(ctx: GameContext, createView: CreateView, rules: 
 export function boardShell(
   root: HTMLElement,
   opts: { board: HTMLElement; side?: HTMLElement; keys: [string, string][]; rules: string[] },
-): { legend: HTMLElement; status: HTMLElement; toggleRules(): void } {
+): { game: HTMLElement; legend: HTMLElement; status: HTMLElement; toggleRules(): void } {
   const legend = h('div', { class: 'game-bar' });
   const status = h('p', { class: 'status' }, 'Chargement…');
   const rules = h('div', { class: 'rules card', hidden: true }, h('h2', {}, 'Règles'), ...opts.rules.map((p) => h('p', {}, p)));
@@ -182,19 +187,18 @@ export function boardShell(
   };
   button.addEventListener('mousedown', (e) => e.preventDefault());
   button.addEventListener('click', toggleRules);
-  root.append(
-    h(
-      'div',
-      { class: 'game' },
-      legend,
-      h('div', { class: 'board-wrap' }, opts.board, opts.side ?? null),
-      status,
-      button,
-      rules,
-      hints(...opts.keys, ['I', 'règles'], ['R', 'revanche'], ['Retour arrière', 'quitter']),
-    ),
+  const game = h(
+    'div',
+    { class: 'game' },
+    legend,
+    h('div', { class: 'board-wrap' }, opts.board, opts.side ?? null),
+    status,
+    button,
+    rules,
+    hints(...opts.keys, ['I', 'règles'], ['R', 'revanche'], ['Retour arrière', 'quitter']),
   );
-  return { legend, status, toggleRules };
+  root.append(game);
+  return { game, legend, status, toggleRules };
 }
 
 /** Pastilles des deux joueurs dans la barre du haut. */
@@ -205,9 +209,16 @@ export function legendItems(s: ViewState, mark: (p: 0 | 1) => Node): HTMLElement
       { class: 'stat' + (s.result === null && s.turn === p ? ' active' : '') },
       mark(p as 0 | 1),
       ' ',
-      s.me === p ? `${s.names[p]} (toi)` : s.names[p],
+      playerName(s, p as 0 | 1),
       ' ',
       h('b', {}, String(s.scores[p])),
     ),
   );
+}
+
+/** Pseudo d'un joueur dans la barre du haut, avec sa couleur et son effet, et « (toi) ». */
+export function playerName(s: ViewState, p: 0 | 1): HTMLElement {
+  const id = s.ids?.[p] ?? null;
+  void cosmeticOf(id); // lance le chargement si besoin
+  return h('span', {}, nameEl(id, s.names[p]), s.me === p ? ' (toi)' : '');
 }

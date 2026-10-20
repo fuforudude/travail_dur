@@ -14,6 +14,7 @@ import { scoresView } from './ui/scores';
 import { pointsView } from './ui/points';
 import { rouletteView } from './ui/roulette';
 import { settingsView } from './ui/settings';
+import { shopView } from './ui/shop';
 import { slotsView } from './ui/slots';
 import { initPointsUi } from './ui/toast';
 
@@ -32,6 +33,7 @@ route(/^\/room\/(\w+)$/, lobbyView);
 route(/^\/points$/, pointsView);
 route(/^\/roulette$/, rouletteView);
 route(/^\/slots$/, slotsView);
+route(/^\/shop$/, shopView);
 
 // Retour d'un lien reçu par email : Supabase lit les jetons avant que le routeur ne touche au hash.
 consumeAuthRedirect().finally(() => {

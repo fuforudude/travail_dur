@@ -1,6 +1,7 @@
 import { isTyping } from '../core/input';
 import { blip } from '../core/sound';
 import { say, watchChat, type ChatMessage } from '../net/chat';
+import { nameEl } from '../net/cosmetics';
 import type { Room } from '../net/room';
 import { h } from './dom';
 
@@ -34,7 +35,7 @@ export function chatPanel(room: Room): { el: HTMLElement; destroy(): void } {
           'li',
           { class: m.sender === room.myId ? 'mine' : '' },
           h('span', { class: 'chat-time' }, time(m.created_at)),
-          h('b', {}, room.nameOf(m.sender) ?? m.profiles?.username ?? 'Joueur'),
+          h('b', {}, nameEl(m.sender, room.nameOf(m.sender) ?? m.profiles?.username ?? 'Joueur')),
           ' ',
           m.body,
         ),

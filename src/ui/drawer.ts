@@ -26,6 +26,7 @@ export function toggleDrawer(): void {
     { icon: '⌂', label: 'Accueil', action: () => navigate('/') },
     { icon: '★', label: 'Classements', action: () => navigate('/scores'), hidden: !multiConfigured },
     { icon: '◆', label: 'Points et casino', action: () => navigate('/points'), hidden: !multiConfigured },
+    { icon: '✦', label: 'Boutique', action: () => navigate('/shop'), hidden: !multiConfigured },
     { icon: '⚙', label: 'Réglages', action: () => navigate('/settings') },
     {
       icon: '@',

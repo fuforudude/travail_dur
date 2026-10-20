@@ -82,6 +82,7 @@ export function homeView(root: HTMLElement): () => void {
       'Points et casino',
       card('points', 'Mes points', off ? 'Serveur non configuré' : getWallet() ? `◆ ${formatPoints(getWallet()!.balance)}` : 'Chaque partie en rapporte', '◆', 4, () => navigate('/points'), { disabled: off }),
       card('roulette', 'Roulette', 'Rouge, noir ou vert : mise tes points', '◎', 2, () => navigate('/roulette'), { tags: ['Casino'], disabled: off }),
+      card('shop', 'Boutique', 'Couleurs de pseudo, effets, skins', '✦', 3, () => navigate('/shop'), { disabled: off }),
       card('slots', 'Machine à sous', 'Trois rouleaux, jusqu’à ×400', '7', 5, () => navigate('/slots'), { tags: ['Casino'], disabled: off }),
     ),
     hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'ouvrir'], ['M', 'menu (réglages, classements, compte)'], [keyLabel(getSettings().panicKey), 'masquer l’écran']),

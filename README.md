@@ -42,6 +42,16 @@ Le barème vise environ 20 à 30 points par minute de jeu, quel que soit le jeu.
 
 Les points se misent à la **roulette** (européenne : rouge, noir, vert, pair, impair, manque, passe, douzaines, numéro plein ; retour 97,3 %) et à la **machine à sous** (3 rouleaux, jusqu’à ×400 ; retour 95,9 %). Le tirage est fait par le serveur ; mise maximale 500 par tour. Un onglet *Points* s’ajoute aux classements.
 
+## Boutique
+
+Les points s’échangent dans la *Boutique* (✦) contre des objets **très chers** (une heure de jeu rapporte environ 1 500 points) :
+
+- **couleurs de pseudo** (5 000 à 150 000) et **effets de pseudo** animés (15 000 à 250 000), visibles par tout le monde : salon, discussion, parties, classements, barre du haut ;
+- **skins** pour les jeux à deux (jetons, symboles, pièces, pions), visibles par l’adversaire pendant la partie ;
+- **titres** : prévus mais pas encore en vente. Pour en ajouter un : une ligne dans `TITLES` (`src/net/shop.ts`) et une ligne dans `public.shop_items` (exemples en commentaire dans `0008_boutique.sql`) ; un objet avec `active = false` n’est ni visible ni achetable.
+
+Le prix et la possession sont vérifiés par le serveur (`shop_buy`, `shop_equip`) ; un objet acheté est porté tout de suite, et peut être retiré ou remis à tout moment.
+
 ## Touche panique
 
 `Échap` (modifiable dans les Réglages) ou `Ctrl+Maj+Espace` masque immédiatement le jeu et affiche **un PDF de cours** dans une visionneuse (titre de l’onglet = nom du fichier), ou à défaut un faux carnet de notes. La même touche ramène au jeu, qui est en pause pendant ce temps. Dans le PDF : molette, flèches, `Page↑` `Page↓`, `Espace`.
@@ -85,7 +95,7 @@ Limites connues : le serveur garantit qu’un score correspond à une vraie part
 ## Configurer Supabase
 
 1. Créer un compte sur https://supabase.com, puis **New project** (le plan gratuit suffit).
-2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql`, `0004_td_wordle_flappy.sql`, `0005_chat.sql` (discussion des salons) `0006_plateaux.sql` (Échecs, Dames, Quoridor, Quarto en ligne) et `0007_points_casino.sql` (points, roulette, machine à sous). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
+2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql`, `0004_td_wordle_flappy.sql`, `0005_chat.sql` (discussion des salons) `0006_plateaux.sql` (Échecs, Dames, Quoridor, Quarto en ligne) `0007_points_casino.sql` (points, roulette, machine à sous) et `0008_boutique.sql` (boutique). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
 3. **Authentication → Sign In / Providers** :
    - activer **Allow anonymous sign-ins** ;
    - dans **Email**, laisser **Confirm email** activé.

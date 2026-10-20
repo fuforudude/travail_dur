@@ -15,6 +15,8 @@ export interface ViewState {
   scores: [number, number];
   /** Remplace le texte de statut calculé par défaut. */
   message?: string;
+  /** Comptes des deux joueurs (null : ordinateur) : pseudos colorés et skins. */
+  ids?: [string | null, string | null];
   /** Coups joués (jeux dont les coups sont du texte). */
   history?: string[];
 }

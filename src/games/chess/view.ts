@@ -1,4 +1,5 @@
 import { isTyping, pushKeys } from '../../core/input';
+import { applySkins } from '../../net/cosmetics';
 import { h } from '../../ui/dom';
 import { boardShell, legendItems, type Side } from '../board';
 import { statusText, type DuelView, type ViewHandlers, type ViewState } from '../duel';
@@ -31,7 +32,7 @@ export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints
   const cells = Array.from({ length: 64 }, (_, v) => h('div', { class: 'ch-sq', 'data-v': v }));
   const board = h('div', { class: 'chess' }, ...cells);
   const picker = h('div', { class: 'ch-promo', hidden: true });
-  const { legend, status, toggleRules } = boardShell(root, {
+  const { game, legend, status, toggleRules } = boardShell(root, {
     board,
     side: picker,
     keys: [['← ↑ → ↓', 'case'], ['Entrée', 'choisir / jouer'], ...extraHints],
@@ -48,6 +49,7 @@ export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints
     if (!state) return;
     const s = state;
     const b = s.board;
+    applySkins(game, 'chess', s.ids);
     legend.replaceChildren(...legendItems(s, (p) => h('span', { class: `ch-mark ch-${p === 0 ? 'w' : 'b'}` }, GLYPH[KING])));
     const all = legal();
     const targets = new Set(selected === null ? [] : all.filter((m) => parseSquare(m) === selected).map((m) => parseSquare(m.slice(2, 4))));

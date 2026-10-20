@@ -1,5 +1,7 @@
 import { isTyping, pushKeys } from '../../core/input';
+import { applySkins } from '../../net/cosmetics';
 import { h, hints } from '../../ui/dom';
+import { playerName } from '../board';
 import { statusText, type DuelView, type ViewHandlers, type ViewState } from '../duel';
 import { COLS, ROWS } from './logic';
 
@@ -11,22 +13,22 @@ export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints
   const heads = Array.from({ length: COLS }, (_, c) => h('div', { class: 'c4-head', 'data-col': c }));
   const legend = h('div', { class: 'game-bar' });
   const status = h('p', { class: 'status' }, 'Chargement…');
-  root.append(
-    h(
-      'div',
-      { class: 'game' },
-      legend,
-      h('div', { class: 'c4' }, h('div', { class: 'c4-heads' }, ...heads), h('div', { class: 'c4-board' }, ...cells)),
-      status,
-      hints(['← →', 'colonne'], ['Entrée', 'jouer'], ['R', 'revanche'], ...extraHints, ['Retour arrière', 'quitter']),
-    ),
+  const game = h(
+    'div',
+    { class: 'game' },
+    legend,
+    h('div', { class: 'c4' }, h('div', { class: 'c4-heads' }, ...heads), h('div', { class: 'c4-board' }, ...cells)),
+    status,
+    hints(['← →', 'colonne'], ['Entrée', 'jouer'], ['R', 'revanche'], ...extraHints, ['Retour arrière', 'quitter']),
   );
+  root.append(game);
 
   const myTurn = () => state !== null && state.result === null && state.me !== null && state.turn === state.me;
 
   const render = () => {
     if (!state) return;
     const s = state;
+    applySkins(game, 'connect4', s.ids);
     legend.replaceChildren(
       ...[0, 1].map((p) =>
         h(
@@ -34,7 +36,7 @@ export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints
           { class: 'stat' + (s.result === null && s.turn === p ? ' active' : '') },
           h('span', { class: `disc p${p + 1}` }),
           ' ',
-          s.me === p ? `${s.names[p]} (toi)` : s.names[p],
+          playerName(s, p as 0 | 1),
           ' ',
           h('b', {}, String(s.scores[p])),
         ),

@@ -124,6 +124,15 @@ export async function startPoints(me: string): Promise<void> {
     .subscribe();
 }
 
+/** Relit le solde (après un achat). */
+export async function refreshWallet(): Promise<void> {
+  try {
+    setWallet(await rpc<Wallet>('points_wallet'));
+  } catch {
+    // le solde se mettra à jour par Realtime
+  }
+}
+
 export async function history(limit = 40): Promise<PointEvent[]> {
   const supabase = await getSupabase();
   if (!supabase) return [];

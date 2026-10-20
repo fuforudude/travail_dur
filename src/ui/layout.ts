@@ -1,4 +1,6 @@
 import { getSettings } from '../core/settings';
+import { getAccount, onAccount } from '../net/auth';
+import { nameEl } from '../net/cosmetics';
 import { formatPoints, getWallet } from '../net/points';
 import { navigate } from '../router';
 import { h } from './dom';
@@ -21,7 +23,7 @@ export function page(root: HTMLElement, title: string): HTMLElement {
       h('a', { class: 'brand', href: '#/' }, 'Notes'),
       h('span', { class: 'crumb' }, title),
       pointsBadge(),
-      h('span', { class: 'who' }, getSettings().name),
+      whoEl(),
     ),
     content,
   );
@@ -35,4 +37,18 @@ function pointsBadge(): HTMLElement {
   b.addEventListener('mousedown', (e) => e.preventDefault());
   b.addEventListener('click', () => navigate('/points'));
   return b;
+}
+
+/** Mon pseudo, décoré dès que le compte est connu (il peut arriver après l'affichage de la page). */
+function whoEl(): HTMLElement {
+  const el = h('span', { class: 'who' }, nameEl(getAccount()?.id, getSettings().name));
+  if (!getAccount()) {
+    // La session est d'abord annoncée vide, puis avec le compte : on attend ce dernier.
+    const off = onAccount((a) => {
+      if (!a) return;
+      off();
+      el.replaceChildren(nameEl(a.id, getSettings().name));
+    });
+  }
+  return el;
 }
