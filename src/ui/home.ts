@@ -3,6 +3,7 @@ import { getSettings, keyLabel, randomName } from '../core/settings';
 import { setUsername } from '../net/auth';
 import { games } from '../games/registry';
 import type { Game } from '../games/types';
+import { isAdmin } from '../net/admin';
 import { formatPoints, getWallet } from '../net/points';
 import { generateCode } from '../net/room';
 import { multiConfigured } from '../net/supabase';
@@ -89,6 +90,19 @@ export function homeView(root: HTMLElement): () => void {
   );
   content.classList.add('wide');
   content.append(wrap);
+
+  // Appart et administration : réservés aux admins pour l'instant.
+  void isAdmin().then((admin) => {
+    if (!admin || !wrap.isConnected) return;
+    wrap.lastElementChild!.before(
+      section(
+        'Admin',
+        card('appart', 'Mon appart', 'Meubles, cadres, et ton lien à partager', '⌂', 3, () => navigate('/appart'), { tags: ['Bêta'] }),
+        card('caisses', 'Meubles et caisses', 'Finitions rares à gagner', '▣', 5, () => navigate('/caisses'), { tags: ['Bêta'] }),
+        card('admin', 'Administration', 'Joueurs, points, malédictions, photos', '⚑', 2, () => navigate('/admin')),
+      ),
+    );
+  });
 
   const start = wrap.querySelector<HTMLElement>(`[data-id="${lastFocus}"]:not(:disabled)`) ?? wrap.querySelector<HTMLElement>('.tile');
   start?.focus();

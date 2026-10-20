@@ -11,7 +11,7 @@ function csp(supabaseUrl: string | undefined): Plugin {
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self'",
-    "img-src 'self' data:",
+    `img-src 'self' data:${origin ? ` https://${origin}` : ''}`, // photos des cadres (stockage Supabase)
     `connect-src ${connect}`,
     "object-src 'none'",
     "base-uri 'none'",

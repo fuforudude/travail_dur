@@ -7,6 +7,9 @@ import { startPoints } from './net/points';
 import { multiConfigured } from './net/supabase';
 import { route, startRouter } from './router';
 import { accountView } from './ui/account';
+import { adminView } from './ui/admin';
+import { apartmentView } from './ui/apartment';
+import { cratesView } from './ui/crates';
 import { homeView } from './ui/home';
 import { joinView, lobbyView } from './ui/lobby';
 import { playView } from './ui/play';
@@ -34,6 +37,9 @@ route(/^\/points$/, pointsView);
 route(/^\/roulette$/, rouletteView);
 route(/^\/slots$/, slotsView);
 route(/^\/shop$/, shopView);
+route(/^\/admin$/, adminView);
+route(/^\/appart(?:\/([0-9a-f-]{36}))?$/, apartmentView);
+route(/^\/caisses$/, cratesView);
 
 // Retour d'un lien reçu par email : Supabase lit les jetons avant que le routeur ne touche au hash.
 consumeAuthRedirect().finally(() => {

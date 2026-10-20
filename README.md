@@ -52,6 +52,14 @@ Les points s’échangent dans la *Boutique* (✦) contre des objets **très che
 
 Le prix et la possession sont vérifiés par le serveur (`shop_buy`, `shop_equip`) ; un objet acheté est porté tout de suite, et peut être retiré ou remis à tout moment.
 
+## Administration et appartement
+
+- **Admins** : la table `public.admins` (le compte `8d86e772-…` est admin). Pour en ajouter un : `insert into public.admins (user_id) values ('<id>');` dans *SQL Editor*. Les admins n’apparaissent dans aucun classement.
+- Page *Administration* (accueil ou menu ☰, admins seulement) : chercher un joueur, lui donner ou retirer des points, le renommer, lui donner un objet (boutique ou meuble), le **maudire** (screamer de temps en temps, 3 niveaux de fréquence) ou lui envoyer un screamer immédiat, ajouter ou supprimer les **photos** à accrocher dans les cadres. Chaque action est notée dans le journal.
+- **Appartement** (`#/appart`, lien à partager `#/appart/<id>`) : un mur et un sol en grille où l’on pose ses meubles (`E` pour aménager) ; les cadres affichent une photo choisie parmi celles des admins. L’aménagement est vérifié et enregistré par le serveur.
+- **Meubles et caisses** : chaque meuble existe en finition standard (achetable) et en finitions rares (Rubis, Or, Néon, Diamant, Arc-en-ciel, Spectre…), qu’on n’obtient qu’en ouvrant des caisses (tirage serveur, chances affichées).
+- Pour l’instant, l’appartement, les meubles et les caisses sont **réservés aux admins**. Pour les ouvrir à tous : remplacer le corps de `public.apartment_allowed()` par `select auth.uid() is not null`, et retirer la condition « admin » dans `src/ui/apartment.ts`, `src/ui/crates.ts`, `src/ui/home.ts` et `src/ui/drawer.ts`.
+
 ## Touche panique
 
 `Échap` (modifiable dans les Réglages) ou `Ctrl+Maj+Espace` masque immédiatement le jeu et affiche **un PDF de cours** dans une visionneuse (titre de l’onglet = nom du fichier), ou à défaut un faux carnet de notes. La même touche ramène au jeu, qui est en pause pendant ce temps. Dans le PDF : molette, flèches, `Page↑` `Page↓`, `Espace`.
@@ -95,7 +103,7 @@ Limites connues : le serveur garantit qu’un score correspond à une vraie part
 ## Configurer Supabase
 
 1. Créer un compte sur https://supabase.com, puis **New project** (le plan gratuit suffit).
-2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql`, `0004_td_wordle_flappy.sql`, `0005_chat.sql` (discussion des salons) `0006_plateaux.sql` (Échecs, Dames, Quoridor, Quarto en ligne) `0007_points_casino.sql` (points, roulette, machine à sous) et `0008_boutique.sql` (boutique). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
+2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql`, `0004_td_wordle_flappy.sql`, `0005_chat.sql` (discussion des salons) `0006_plateaux.sql` (Échecs, Dames, Quoridor, Quarto en ligne) `0007_points_casino.sql` (points, roulette, machine à sous) `0008_boutique.sql` (boutique) et `0009_appart_admin.sql` (admins, appartement, meubles, caisses). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
 3. **Authentication → Sign In / Providers** :
    - activer **Allow anonymous sign-ins** ;
    - dans **Email**, laisser **Confirm email** activé.

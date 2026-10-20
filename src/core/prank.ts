@@ -1,17 +1,24 @@
+import type { RealtimeChannel } from '@supabase/supabase-js';
+import { onAccount } from '../net/auth';
+import { getSupabase, multiConfigured } from '../net/supabase';
 import { isPanicked } from './panic';
-import { getSettings } from './settings';
 
-// Blague ciblée : un « screamer » de temps en temps pour un seul pseudo.
+// « Malédiction » : un screamer de temps en temps pour les joueurs qu'un admin a maudits
+// (public.curses, 0009_appart_admin.sql). Un admin peut aussi en déclencher un tout de suite.
 // Garde-fous : aucun clignotement (photosensibilité), son plafonné et bref,
-// jamais pendant le faux écran de la touche panique. Pour retirer : supprimer ce fichier
-// et son appel dans main.ts.
+// jamais pendant le faux écran de la touche panique.
 
-const TARGET = 'lutz_67';
 const FIRST_DELAY_MS = 60_000; // jamais dans la première minute
-const MIN_GAP_MS = 3 * 60_000;
-const MAX_GAP_MS = 8 * 60_000;
+/** Écart entre deux screamers selon le niveau de malédiction : [min, max] en minutes. */
+const GAPS: Record<number, [number, number]> = { 1: [8, 15], 2: [3, 8], 3: [1, 3] };
 
-const isTarget = () => getSettings().name.toLowerCase() === TARGET;
+interface Curse {
+  active: boolean;
+  level: number;
+  scare_at: string | null;
+}
+let curse: Curse | null = null;
+let lastScare = Date.now(); // un screamer « immédiat » plus ancien que l'ouverture de la page est ignoré
 
 function scream(): void {
   try {
@@ -84,14 +91,50 @@ export function showPrank(): void {
   setTimeout(close, 1800);
 }
 
+const gap = () => {
+  const [min, max] = GAPS[curse?.level ?? 2] ?? GAPS[2];
+  return (min + Math.random() * (max - min)) * 60_000;
+};
+
 function schedule(delay: number): void {
   setTimeout(() => {
     // Pas pendant le faux écran (il doit rester crédible), ni onglet caché.
-    if (isTarget() && !isPanicked() && !document.hidden) showPrank();
-    schedule(MIN_GAP_MS + Math.random() * (MAX_GAP_MS - MIN_GAP_MS));
+    if (curse?.active && !isPanicked() && !document.hidden) showPrank();
+    schedule(gap());
   }, delay);
 }
 
+/** Nouvelle ligne de malédiction : screamer immédiat si un admin vient de le demander. */
+function update(next: Curse | null): void {
+  curse = next;
+  const at = next?.scare_at ? Date.parse(next.scare_at) : 0;
+  if (at > lastScare && Date.now() - at < 60_000) {
+    lastScare = at;
+    if (!isPanicked()) showPrank();
+  }
+}
+
+let channel: RealtimeChannel | null = null;
+
+async function watch(uid: string): Promise<void> {
+  const supabase = await getSupabase();
+  if (!supabase) return;
+  if (channel) void supabase.removeChannel(channel);
+  channel = supabase
+    .channel(`curse:${uid}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'curses', filter: `user_id=eq.${uid}` }, (p) => update((p.new as Curse) ?? null))
+    .subscribe();
+  const { data } = await supabase.from('curses').select('active, level, scare_at').eq('user_id', uid).maybeSingle();
+  update((data as Curse | null) ?? null);
+}
+
 export function initPrank(): void {
+  if (!multiConfigured) return;
+  let current = '';
+  onAccount((a) => {
+    if (!a || a.id === current) return;
+    current = a.id;
+    void watch(a.id);
+  });
   schedule(FIRST_DELAY_MS + Math.random() * 60_000);
 }

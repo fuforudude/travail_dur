@@ -1,6 +1,7 @@
 import { pushKeys } from '../core/input';
 import { getSettings } from '../core/settings';
 import { getAccount, signOut } from '../net/auth';
+import { adminKnown } from '../net/admin';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { h } from './dom';
@@ -27,6 +28,9 @@ export function toggleDrawer(): void {
     { icon: '★', label: 'Classements', action: () => navigate('/scores'), hidden: !multiConfigured },
     { icon: '◆', label: 'Points et casino', action: () => navigate('/points'), hidden: !multiConfigured },
     { icon: '✦', label: 'Boutique', action: () => navigate('/shop'), hidden: !multiConfigured },
+    // Réservé aux admins pour l'instant (le serveur refuse de toute façon aux autres).
+    { icon: '⌂', label: 'Mon appart', action: () => navigate('/appart'), hidden: !adminKnown() },
+    { icon: '⚑', label: 'Admin', action: () => navigate('/admin'), hidden: !adminKnown() },
     { icon: '⚙', label: 'Réglages', action: () => navigate('/settings') },
     {
       icon: '@',
