@@ -391,7 +391,9 @@ export function startWave(s: RunState) {
   const armorOf = (e: Enemy) => {
     let shred = 0;
     for (const d of e.dots) shred += d.shred;
-    return Math.max(0, ENEMIES[e.def].armor - shred);
+    // Le Titan s'endurcit à chaque apparition : +2 d'armure par niveau.
+    const bonus = e.def === TITAN ? 2 * (titanLevel - 1) : 0;
+    return Math.max(0, ENEMIES[e.def].armor + bonus - shred);
   };
 
   const kill = (e: Enemy) => {
@@ -720,7 +722,8 @@ export function startWave(s: RunState) {
         }
         if (e.phase === 1 && e.hp < e.maxHp * 0.5) {
           e.phase = 2;
-          for (let k = 0; k < 6; k++) spawn(BRUTE, Math.max(0, e.pos - 0.12 * k));
+          // 3 Brutes à la première apparition (vague 10), 6 ensuite.
+          for (let k = 0; k < (titanLevel === 1 ? 3 : 6); k++) spawn(BRUTE, Math.max(0, e.pos - 0.12 * k));
         }
       }
       if (e.def === DEVOURER) {

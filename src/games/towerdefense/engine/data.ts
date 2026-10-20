@@ -243,7 +243,9 @@ export const ENEMIES: EnemyDef[] = [
   E({ id: 'golem', name: 'Golem de givre', tier: 'late', firstWave: 32, hp: 1200, speed: 0.6, armor: 6, magicResist: 0.3, abilities: ['immune_slow'], bounty: 70, threat: 22, livesCost: 4, text: 'Insensible au gel, résiste à la magie', counters: 'Physique, pur, Feu bleu' }),
   E({ id: 'wyvern', name: 'Wyverne', tier: 'late', firstWave: 35, hp: 900, speed: 1.3, armor: 10, flying: true, bounty: 60, threat: 18, livesCost: 3, text: 'Volante et blindée', counters: 'Sniper U1, Railgun, Tesla' }),
   E({ id: 'necromancer', name: 'Nécromancien', tier: 'late', firstWave: 38, hp: 700, speed: 0.8, armor: 2, camo: true, abilities: ['revive'], bounty: 90, threat: 20, livesCost: 3, text: 'Camouflé, ressuscite 2 alliés toutes les 6 s', counters: 'Détection + burst, Sniper U2' }),
-  E({ id: 'titan', name: 'Titan', tier: 'boss', firstWave: 10, hp: 3000, speed: 0.4, armor: 10, abilities: ['titan'], bounty: 500, threat: 0, livesCost: 20, text: 'Invoque 6 Brutes à mi-vie, plus fort à chaque apparition', counters: 'Tout ce qui frappe fort' }),
+  // Titan : armure 5 à sa première apparition (vague 10), +2 à chacune des suivantes (sim.ts).
+  // Réglé avec un joueur automatique (tours de départ seulement) : il passe la vague 10, la vague 20 reste un vrai défi.
+  E({ id: 'titan', name: 'Titan', tier: 'boss', firstWave: 10, hp: 2000, speed: 0.4, armor: 5, abilities: ['titan'], bounty: 500, threat: 0, livesCost: 12, text: 'Invoque des Brutes à mi-vie (3, puis 6), plus fort à chaque apparition', counters: 'Tout ce qui frappe fort' }),
   E({ id: 'devourer', name: 'Le Dévoreur', tier: 'boss', firstWave: 50, hp: 15000, speed: 0.35, armor: 12, abilities: ['devourer'], bounty: 3000, threat: 0, livesCost: -1, text: 'Désactive vos tours, bouclier, puis fonce', counters: 'Singularité, Railgun, Sniper U2' }),
 ];
 

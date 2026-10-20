@@ -41,7 +41,7 @@ export const CLEAN_TASKS: { name: string; cost: number }[] = [
   { name: 'Réparer le parquet', cost: 600 },
   { name: 'Repeindre les murs', cost: 1000 },
 ];
-export const CLEAN_RATE = 20; // points par heure pour chaque tâche faite
+export const CLEAN_RATE = 50; // points par heure pour chaque tâche faite (comme public.apartment_rate)
 export const CAP_HOURS = 24;
 const RARITY_MULT: Record<string, number> = { standard: 1, common: 1.5, rare: 2.5, epic: 4, legendary: 8, mythic: 20 };
 
@@ -49,7 +49,7 @@ const RARITY_MULT: Record<string, number> = { standard: 1, common: 1.5, rare: 2.
 export function itemIncome(item: string): number {
   const base = BASES.find((b) => b.id === item.split(':')[0]);
   const fin = FINISHES.find((f) => f.id === item.split(':')[1]);
-  return ((base?.price ?? 0) / 10) * (RARITY_MULT[fin?.rarity ?? 'standard'] ?? 1);
+  return ((base?.price ?? 0) / 5) * (RARITY_MULT[fin?.rarity ?? 'standard'] ?? 1);
 }
 
 export interface Base {
@@ -115,7 +115,11 @@ export const RARITY_NAMES: Record<Rarity, string> = {
 export const CRATES: { id: string; name: string; text: string }[] = [
   { id: 'classic', name: 'Caisse classique', text: 'Toutes les finitions, de Commun à Mythique.' },
   { id: 'prestige', name: 'Caisse prestige', text: 'Rien en dessous de Rare, et bien plus de chances de Légendaire et Mythique.' },
+  { id: 'photos', name: 'Caisse souvenirs', text: '5 % de chances de débloquer une photo pour tes cadres ; sinon un meuble, comme la caisse classique.' },
 ];
+
+/** Caisse souvenirs : chance de débloquer une photo (comme public.crate_open). */
+export const PHOTO_CHANCE = 0.05;
 
 export const baseOf = (item: string) => BASES.find((b) => b.id === item.split(':')[0]);
 export const finishOf = (item: string) => FINISHES.find((f) => f.id === item.split(':')[1]) ?? FINISHES[0];

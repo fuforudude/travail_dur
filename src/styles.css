@@ -1355,6 +1355,9 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .rar-epic { --rar: #8847ff; }
 .rar-legendary { --rar: #d32ce6; }
 .rar-mythic { --rar: #e4ae39; }
+.rar-photo { --rar: #23c4b0; }
+.cr-photo-icon { font-size: 2.6rem; line-height: 1; }
+.cr-photo { max-width: min(320px, 80vw); max-height: 240px; border-radius: 8px; box-shadow: 0 0 0 4px var(--rar), var(--shadow); }
 .fin-ruby { filter: sepia(1) saturate(5) hue-rotate(-40deg) brightness(0.95); }
 .fin-ocean { filter: sepia(1) saturate(4) hue-rotate(170deg); }
 .fin-jade { filter: sepia(1) saturate(3.5) hue-rotate(95deg); }

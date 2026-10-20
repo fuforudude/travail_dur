@@ -28,8 +28,8 @@ export function toggleDrawer(): void {
     { icon: '★', label: 'Classements', action: () => navigate('/scores'), hidden: !multiConfigured },
     { icon: '◆', label: 'Points et casino', action: () => navigate('/points'), hidden: !multiConfigured },
     { icon: '✦', label: 'Boutique', action: () => navigate('/shop'), hidden: !multiConfigured },
-    // Réservé aux admins pour l'instant (le serveur refuse de toute façon aux autres).
-    { icon: '⌂', label: 'Mon appart', action: () => navigate('/appart'), hidden: !adminKnown() },
+    { icon: '⌂', label: 'Mon appart', action: () => navigate('/appart'), hidden: !multiConfigured },
+    // Réservé aux admins (le serveur refuse de toute façon aux autres).
     { icon: '⚑', label: 'Admin', action: () => navigate('/admin'), hidden: !adminKnown() },
     { icon: '⚙', label: 'Réglages', action: () => navigate('/settings') },
     {

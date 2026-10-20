@@ -89,7 +89,18 @@ export async function crateInfo(): Promise<{ prices: Map<string, number>; odds: 
 }
 
 export const buyFurniture = (base: string) => rpc<{ balance: number; owned: number; item: string }>('furniture_buy', { base_id: base });
-export const openCrate = (crate: string) => rpc<{ balance: number; owned: number; item: string; rarity: Rarity }>('crate_open', { crate });
+/** Résultat d'une caisse : un meuble, ou (caisse souvenirs) une photo débloquée. */
+export type CrateResult =
+  | { balance: number; owned: number; item: string; rarity: Rarity; photo?: undefined }
+  | { balance: number; photo: Artwork; rarity: 'photo'; item?: undefined };
+export const openCrate = (crate: string) => rpc<CrateResult>('crate_open', { crate });
+
+/** Photos débloquées par ce joueur (caisse souvenirs). */
+export async function ownedPhotos(uid: string): Promise<Set<number>> {
+  const { data, error } = await (await client()).from('artwork_owned').select('artwork_id').eq('user_id', uid);
+  if (error) throw serverError(error);
+  return new Set(((data as { artwork_id: number }[] | null) ?? []).map((r) => Number(r.artwork_id)));
+}
 export const saveLayout = (layout: Layout) =>
   rpc<Layout>('apartment_save', {
     layout: Object.fromEntries(

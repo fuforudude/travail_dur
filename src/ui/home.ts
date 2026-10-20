@@ -90,17 +90,17 @@ export function homeView(root: HTMLElement): () => void {
   content.classList.add('wide');
   content.append(wrap);
 
-  // Appart et administration : réservés aux admins pour l'instant.
+  // L'appart est ouvert à tous ; l'administration, aux admins seulement.
+  wrap.lastElementChild!.before(
+    section(
+      'Appart',
+      card('appart', 'Mon appart', off ? 'Serveur non configuré' : 'Meubles, cadres, revenus, et ton lien à partager', '⌂', 3, () => navigate('/appart'), { disabled: off }),
+      card('caisses', 'Meubles et caisses', 'Finitions rares et photos à gagner', '▣', 5, () => navigate('/caisses'), { tags: ['Caisses'], disabled: off }),
+    ),
+  );
   void isAdmin().then((admin) => {
     if (!admin || !wrap.isConnected) return;
-    wrap.lastElementChild!.before(
-      section(
-        'Admin',
-        card('appart', 'Mon appart', 'Meubles, cadres, et ton lien à partager', '⌂', 3, () => navigate('/appart'), { tags: ['Bêta'] }),
-        card('caisses', 'Meubles et caisses', 'Finitions rares à gagner', '▣', 5, () => navigate('/caisses'), { tags: ['Bêta'] }),
-        card('admin', 'Administration', 'Joueurs, points, malédictions, photos', '⚑', 2, () => navigate('/admin')),
-      ),
-    );
+    wrap.lastElementChild!.before(section('Admin', card('admin', 'Administration', 'Joueurs, points, malédictions, photos', '⚑', 2, () => navigate('/admin'))));
   });
 
   const start = wrap.querySelector<HTMLElement>(`[data-id="${lastFocus}"]:not(:disabled)`) ?? wrap.querySelector<HTMLElement>('.tile');

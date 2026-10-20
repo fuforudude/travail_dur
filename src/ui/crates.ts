@@ -1,7 +1,6 @@
 import { pushKeys } from '../core/input';
 import { blip } from '../core/sound';
-import { isAdmin } from '../net/admin';
-import { BASES, buyFurniture, crateInfo, CRATES, finishOf, itemName, itemsOfRarity, openCrate, RARITY_NAMES, type Rarity } from '../net/apartment';
+import { BASES, buyFurniture, crateInfo, CRATES, finishOf, itemName, itemsOfRarity, openCrate, PHOTO_CHANCE, RARITY_NAMES, type Rarity } from '../net/apartment';
 import { ensureAccount } from '../net/auth';
 import { formatPoints, getWallet, holdWallet, onWallet, refreshWallet } from '../net/points';
 import { navigate } from '../router';
@@ -37,6 +36,7 @@ export function cratesView(root: HTMLElement): () => void {
   const reveal = h('div', { class: 'cr-reveal', hidden: true });
 
   const randomItem = (crate: string) => {
+    if (crate === 'photos' && Math.random() < PHOTO_CHANCE) return 'photo';
     const table = odds.get(crate) ?? [];
     const total = table.reduce((a, [, w]) => a + w, 0);
     let r = Math.random() * total;
@@ -50,7 +50,10 @@ export function cratesView(root: HTMLElement): () => void {
     return itemsOfRarity('common')[0];
   };
 
-  const cell = (item: string) => h('div', { class: `cr-cell rar-${finishOf(item).rarity}` }, furnitureEl(item), h('span', {}, itemName(item)));
+  const cell = (item: string) =>
+    item === 'photo'
+      ? h('div', { class: 'cr-cell rar-photo' }, h('span', { class: 'cr-photo-icon' }, '📷'), h('span', {}, 'Photo'))
+      : h('div', { class: `cr-cell rar-${finishOf(item).rarity}` }, furnitureEl(item), h('span', {}, itemName(item)));
 
   const open = async (crate: string) => {
     if (busy) return;
@@ -60,7 +63,7 @@ export function cratesView(root: HTMLElement): () => void {
     status.textContent = 'Ouverture…';
     try {
       const r = await openCrate(crate);
-      const items = Array.from({ length: REEL_LENGTH }, (_, i) => (i === WIN_INDEX ? r.item : randomItem(crate)));
+      const items = Array.from({ length: REEL_LENGTH }, (_, i) => (i === WIN_INDEX ? (r.photo ? 'photo' : r.item) : randomItem(crate)));
       reelTrack.replaceChildren(...items.map(cell));
       reel.hidden = false;
       reelTrack.style.transition = 'none';
@@ -86,13 +89,23 @@ export function cratesView(root: HTMLElement): () => void {
       if (disposed) return;
       reveal.hidden = false;
       reveal.className = `cr-reveal rar-${r.rarity}`;
-      reveal.replaceChildren(
-        h('span', { class: 'cr-rarity' }, RARITY_NAMES[r.rarity]),
-        furnitureEl(r.item),
-        h('strong', {}, itemName(r.item)),
-        h('span', { class: 'muted small' }, 'Ajouté à tes meubles.'),
-      );
-      blip(r.rarity === 'mythic' || r.rarity === 'legendary' ? 1320 : 660);
+      if (r.photo) {
+        reveal.replaceChildren(
+          h('span', { class: 'cr-rarity' }, 'Photo débloquée !'),
+          h('img', { class: 'cr-photo', src: r.photo.url, alt: r.photo.title }),
+          h('strong', {}, r.photo.title),
+          h('span', { class: 'muted small' }, 'Tu peux l’accrocher dans un cadre de ton appart.'),
+        );
+        blip(1320);
+      } else {
+        reveal.replaceChildren(
+          h('span', { class: 'cr-rarity' }, RARITY_NAMES[r.rarity]),
+          furnitureEl(r.item),
+          h('strong', {}, itemName(r.item)),
+          h('span', { class: 'muted small' }, 'Ajouté à tes meubles.'),
+        );
+        blip(r.rarity === 'mythic' || r.rarity === 'legendary' ? 1320 : 660);
+      }
       void refreshWallet();
       status.textContent = '';
     } catch (e) {
@@ -123,8 +136,8 @@ export function cratesView(root: HTMLElement): () => void {
   };
 
   (async () => {
-    if (!(await ensureAccount()) || !(await isAdmin())) {
-      wrap.replaceChildren(h('div', { class: 'card narrow' }, h('h1', {}, 'Bientôt'), h('p', { class: 'muted' }, 'Les apparts ne sont pas encore ouverts.')));
+    if (!(await ensureAccount())) {
+      wrap.replaceChildren(h('div', { class: 'card narrow' }, h('h1', {}, 'Connexion impossible'), h('p', { class: 'muted' }, 'Le serveur ne répond pas : réessaie dans un instant.')));
       return;
     }
     ({ prices, odds } = await crateInfo());

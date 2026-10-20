@@ -18,6 +18,7 @@ import {
   itemName,
   loadApartment,
   myFurniture,
+  ownedPhotos,
   pending,
   ROOM_COSTS,
   roomOf,
@@ -324,6 +325,9 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   let state: ApartmentState = { layout: {}, rooms: ['entree'], cleanStep: 0, rate: 0, banked: 0, lastTick: Date.now() };
   let owned: Owned[] = [];
   let photos: Artwork[] = [];
+  let unlockedPhotos = new Set<number>(); // photos débloquées (caisse souvenirs)
+  let admin = false; // un admin peut accrocher toutes les photos
+  const pickable = () => photos.filter((a) => admin || unlockedPhotos.has(a.id));
   let room = 'entree';
   let geom = geometry(roomOf(room));
   let editing = false;
@@ -771,7 +775,8 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
             'div',
             { class: 'ap-photos' },
             h('h3', {}, 'Photo du cadre'),
-            ...photos.map((a) => {
+            pickable().length ? '' : h('p', { class: 'muted small' }, 'Aucune photo débloquée : tente ta chance avec la caisse souvenirs.'),
+            ...pickable().map((a) => {
               const b = h('button', { class: 'ap-photo', type: 'button', title: a.title }, h('img', { src: a.url, alt: a.title, loading: 'lazy' }));
               b.addEventListener('click', () => setPhoto(pickingPhoto!, a.id));
               return b;
@@ -843,10 +848,6 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   (async () => {
     const account = await ensureAccount();
     if (!account) throw new Error('Connexion au serveur impossible.');
-    if (!(await isAdmin())) {
-      wrap.replaceChildren(h('div', { class: 'card narrow' }, h('h1', {}, 'Bientôt'), h('p', { class: 'muted' }, 'Les apparts ne sont pas encore ouverts.')));
-      return;
-    }
     me = account.id;
     // Le routeur transmet « undefined » quand l'identifiant est absent (#/appart).
     owner = /^[0-9a-f-]{36}$/.test(ownerParam ?? '') ? ownerParam : me;
@@ -856,7 +857,9 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     state = a;
     photos = p;
     ownerName = (prof.data?.username as string | undefined) ?? 'Inconnu';
-    if (mine()) owned = await myFurniture(me);
+    if (mine()) {
+      [owned, unlockedPhotos, admin] = await Promise.all([myFurniture(me), ownedPhotos(me), isAdmin()]);
+    }
     if (disposed) return;
     wrap.replaceChildren(header, income, tabs, h('div', { class: 'ap-main' }, h('div', { class: 'ap-stage' }, svg, zoomBar), side), statusEl);
     resetView();
