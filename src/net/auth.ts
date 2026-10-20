@@ -1,5 +1,6 @@
 import type { User } from '@supabase/supabase-js';
 import { getSettings, updateSettings } from '../core/settings';
+import { load, remove, save } from '../core/storage';
 import { errorMessage, getSupabase } from './supabase';
 
 /** Mêmes règles que la contrainte de public.profiles.username. */
@@ -80,6 +81,9 @@ export function ensureAccount(): Promise<Account | null> {
   return session;
 }
 
+/** Code (à usage unique) qui permet au compte retrouvé de reprendre le pseudo du compte invité. */
+const TRANSFER_KEY = 'name-transfer';
+
 /** Le pseudo du serveur fait foi ; à la première connexion, on y envoie le pseudo local. */
 async function syncName(a: Account | null): Promise<void> {
   const supabase = await getSupabase();
@@ -88,6 +92,14 @@ async function syncName(a: Account | null): Promise<void> {
   if (!data) return;
   const local = getSettings();
   if (/^Joueur\d{5}$/.test(data.username)) {
+    // Compte retrouvé depuis un compte invité : le pseudo choisi sur celui-ci revient ici
+    // (sinon il resterait « déjà pris » par le compte invité abandonné).
+    const code = load<string | null>(TRANSFER_KEY, null);
+    if (code) {
+      const { data: name, error } = await supabase.rpc('name_transfer_claim', { transfer_code: code });
+      if (!error) remove(TRANSFER_KEY);
+      if (typeof name === 'string' && name) return updateSettings({ name, nameChosen: true });
+    }
     // Pseudo par défaut du serveur : si l'utilisateur n'a pas encore choisi, l'invite s'en chargera.
     if (!local.nameChosen) return;
     if (USERNAME_RE.test(local.name)) {
@@ -129,6 +141,10 @@ export async function linkEmail(email: string): Promise<string | null> {
 export async function sendLoginLink(email: string): Promise<string | null> {
   const supabase = await getSupabase();
   if (!supabase) return 'Connexion au serveur impossible.';
+  if (current?.anonymous) {
+    const { data: code } = await supabase.rpc('name_transfer_code');
+    if (typeof code === 'string' && code) save(TRANSFER_KEY, code);
+  }
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: { shouldCreateUser: false, emailRedirectTo: redirectUrl() },
