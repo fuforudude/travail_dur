@@ -150,7 +150,7 @@ export function cratesView(root: HTMLElement): () => void {
         h('span', { class: 'shop-preview' }, furnitureEl(`${base.id}:standard`)),
         h('span', { class: 'shop-name' }, base.name),
         h('span', { class: 'shop-price' }, `◆ ${formatPoints(base.price)}`),
-        h('span', { class: 'muted small' }, base.place === 'wall' ? 'mur' : `${base.w} × ${base.h}`),
+        h('span', { class: 'muted small' }, base.place === 'wall' ? (base.w > 1 ? `mur, ${base.w} emplacements` : 'mur') : `${base.w} × ${base.h}`),
       );
       b.addEventListener('click', () => void buy(base.id));
       return b;

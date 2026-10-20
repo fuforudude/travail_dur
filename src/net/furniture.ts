@@ -1,11 +1,33 @@
-// Meubles : catalogue, finitions et géométrie de la pièce. Aucun accès au serveur ici
+// Meubles : catalogue, finitions, pièces et leur géométrie. Aucun accès au serveur ici
 // (module utilisé tel quel par les tests). Mêmes identifiants, tailles et prix que
-// public.furniture_bases et public.furniture_finishes ; footprint() comme public.apartment_save.
+// public.furniture_bases et public.furniture_finishes ; footprint() et fitsIn() comme public.apartment_save.
 
-/** Sol carré N × N ; murs : x de 0 à N−1 = mur de gauche, de N à 2N−1 = mur de droite, sur 2 hauteurs. */
-export const N = 8;
-export const WALL_COLS = 2 * N;
 export const WALL_ROWS = 2;
+
+/**
+ * Pièces (comme public.apartment_room) : sol w × d (w le long de x, d le long de y) ;
+ * murs : x de 0 à d − 1 = mur de gauche, de d à d + w − 1 = mur de droite, sur WALL_ROWS hauteurs.
+ * On commence avec l'entrée ; les autres s'achètent dans n'importe quel ordre.
+ */
+export interface Room {
+  id: string;
+  name: string;
+  glyph: string;
+  w: number;
+  d: number;
+}
+export const ROOMS: Room[] = [
+  { id: 'entree', name: 'Entrée', glyph: '🚪', w: 6, d: 5 },
+  { id: 'salon', name: 'Salon', glyph: '🛋️', w: 8, d: 7 },
+  { id: 'cuisine', name: 'Cuisine', glyph: '🍳', w: 7, d: 6 },
+  { id: 'chambre', name: 'Chambre', glyph: '🛏️', w: 7, d: 7 },
+  { id: 'sdb', name: 'Salle de bain', glyph: '🛁', w: 6, d: 5 },
+  { id: 'bureau', name: 'Bureau', glyph: '🖥️', w: 6, d: 6 },
+  { id: 'jeux', name: 'Salle de jeux', glyph: '🕹️', w: 8, d: 8 },
+];
+export const roomOf = (id: string) => ROOMS.find((r) => r.id === id) ?? ROOMS[0];
+/** Prix de la pièce suivante selon le nombre déjà achetées (comme public.apartment_room_cost). */
+export const ROOM_COSTS = [3000, 8000, 20000, 50000, 120000, 300000];
 
 /** Nettoyage du début : mêmes coûts que public.apartment_clean_cost, dans le même ordre. */
 export const CLEAN_TASKS: { name: string; cost: number }[] = [
@@ -54,7 +76,7 @@ export const BASES: Base[] = [
   { id: 'bath', name: 'Baignoire', glyph: '🛁', place: 'floor', w: 2, h: 1, price: 900 },
   { id: 'piano', name: 'Piano', glyph: '🎹', place: 'floor', w: 2, h: 1, price: 1200 },
   { id: 'bed', name: 'Lit', glyph: '🛏️', place: 'floor', w: 2, h: 2, price: 800 },
-  { id: 'frame', name: 'Cadre', glyph: '🖼️', place: 'wall', w: 1, h: 1, price: 300 },
+  { id: 'frame', name: 'Cadre', glyph: '🖼️', place: 'wall', w: 2, h: 1, price: 300 },
   { id: 'window', name: 'Fenêtre', glyph: '🪟', place: 'wall', w: 1, h: 1, price: 400 },
   { id: 'clock', name: 'Horloge', glyph: '🕰️', place: 'wall', w: 1, h: 1, price: 250 },
   { id: 'mirror', name: 'Miroir', glyph: '🪞', place: 'wall', w: 1, h: 1, price: 300 },
@@ -111,18 +133,22 @@ export interface Placed {
 }
 
 export type Zone = 'floor' | 'wall';
-export const ZONE_DIMS: Record<Zone, { cols: number; rows: number }> = { floor: { cols: N, rows: N }, wall: { cols: WALL_COLS, rows: WALL_ROWS } };
+export function zoneDims(room: string, zone: Zone): { cols: number; rows: number } {
+  const r = roomOf(room);
+  return zone === 'floor' ? { cols: r.w, rows: r.d } : { cols: r.d + r.w, rows: WALL_ROWS };
+}
 
 /**
  * Cases occupées par un meuble selon son orientation : au sol, un quart de tour échange largeur
- * et profondeur (un canapé 2 × 1 devient 1 × 2) ; au mur, toujours un emplacement.
- * Doit rester identique à public.apartment_save (0012_rotation.sql).
+ * et profondeur (un canapé 2 × 1 devient 1 × 2) ; au mur, l'emprise ne change pas (un cadre fait
+ * toujours 2 emplacements de large). Doit rester identique à public.apartment_save (0013_pieces.sql).
  */
 export function footprint(item: string, r = 0): { w: number; h: number; place: Zone } {
   const b = baseOf(item);
   const w = b?.w ?? 1;
   const h = b?.h ?? 1;
-  return r % 2 === 1 ? { w: h, h: w, place: b?.place ?? 'floor' } : { w, h, place: b?.place ?? 'floor' };
+  const place = b?.place ?? 'floor';
+  return place === 'floor' && r % 2 === 1 ? { w: h, h: w, place } : { w, h, place };
 }
 
 /** Le meuble en question est-il dans la case (x, y) ? */
@@ -131,15 +157,22 @@ export function covers(p: Placed, x: number, y: number): boolean {
   return x >= p.x && x < p.x + f.w && y >= p.y && y < p.y + f.h;
 }
 
-/** Peut-on poser `item` (orientation r) en (x, y), sans déborder ni chevaucher un meuble de `others` ? */
-export function fitsIn(others: Placed[], zone: Zone, item: string, r: number, x: number, y: number): boolean {
+/**
+ * Peut-on poser `item` (orientation r) en (x, y) dans la pièce `room`, sans déborder, sans être
+ * à cheval sur les deux murs, ni chevaucher un meuble de `others` ?
+ */
+export function fitsIn(others: Placed[], room: string, zone: Zone, item: string, r: number, x: number, y: number): boolean {
   const f = footprint(item, r);
-  const d = ZONE_DIMS[zone];
+  const d = zoneDims(room, zone);
   if (f.place !== zone || x < 0 || y < 0 || x + f.w > d.cols || y + f.h > d.rows) return false;
+  const corner = roomOf(room).d;
+  if (zone === 'wall' && x < corner && x + f.w > corner) return false;
   for (let dy = 0; dy < f.h; dy++) for (let dx = 0; dx < f.w; dx++) if (others.some((p) => covers(p, x + dx, y + dy))) return false;
   return true;
 }
-export interface Layout {
+export interface RoomLayout {
   floor: Placed[];
   wall: Placed[];
 }
+/** Aménagement de chaque pièce débloquée, par identifiant de pièce. */
+export type Layout = Record<string, RoomLayout>;

@@ -1427,7 +1427,7 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .ap-inv .ap-glyph, .ap-inv .ap-frame { font-size: 1.4rem; width: 1.6rem; height: 1.6rem; }
 .ap-photos { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.6rem; }
 .ap-photos h3 { width: 100%; margin: 0; font-size: 0.9rem; }
-.ap-photo { width: 4rem; height: 3rem; padding: 0; border: 2px solid var(--border); border-radius: 4px; overflow: hidden; cursor: pointer; background: none; }
+.ap-photo { width: calc(50% - 0.15rem); aspect-ratio: 4 / 3; padding: 0; border: 2px solid var(--border); border-radius: 4px; overflow: hidden; cursor: pointer; background: none; }
 .ap-photo:hover { border-color: var(--accent); }
 .ap-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
@@ -1511,23 +1511,49 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 /* ---------------------------------------------------------------------------
    Appartement en vue isométrique
    --------------------------------------------------------------------------- */
-.ap-stage { flex: 1 1 560px; min-width: 0; }
-.iso-room { display: block; width: 100%; height: auto; user-select: none; }
-.iso-wall.left { fill: #e9dcc3; }
-.iso-wall.right { fill: #d6c4a3; }
+.ap-stage { flex: 1 1 560px; min-width: 0; position: relative; }
+.iso-room {
+  display: block; width: 100%; height: auto; user-select: none; touch-action: pan-y; /* défilement vertical de la page, pincement pour zoomer */
+  /* Couleurs de la pièce (l'entrée) ; chaque pièce a les siennes, plus bas. */
+  --wall-l: #e9dcc3; --wall-r: #d6c4a3; --tile-a: #c0905e; --tile-b: #b5844f; --tile-hover: #cfa06b; --board: #8a6a43;
+}
+.iso-room.room-salon { --wall-l: #dfe6d2; --wall-r: #c6d0b6; --tile-a: #d6b48a; --tile-b: #cba77c; --tile-hover: #e2c39c; --board: #6f5a3e; }
+.iso-room.room-cuisine { --wall-l: #f3efe4; --wall-r: #ddd6c4; --tile-a: #f4f4f0; --tile-b: #3b3f46; --tile-hover: #b9c7d6; --board: #5c6470; }
+.iso-room.room-chambre { --wall-l: #d9e2f0; --wall-r: #bccadf; --tile-a: #8fa3c4; --tile-b: #889cbd; --tile-hover: #a6b8d6; --board: #f1f1f1; }
+.iso-room.room-sdb { --wall-l: #dff2f4; --wall-r: #c2e1e5; --tile-a: #e9f6f8; --tile-b: #bfe0e6; --tile-hover: #a5d4dc; --board: #7fb3bd; }
+.iso-room.room-bureau { --wall-l: #e4ddd3; --wall-r: #cbc1b2; --tile-a: #7a5236; --tile-b: #6e4a30; --tile-hover: #8d6444; --board: #3b2a1c; }
+.iso-room.room-jeux { --wall-l: #3e3566; --wall-r: #302953; --tile-a: #6b3fa0; --tile-b: #5e3590; --tile-hover: #8250c0; --board: #22c3e6; }
+.iso-room.locked { filter: grayscale(0.7) brightness(0.85); }
+.iso-room.zoomed { cursor: grab; touch-action: none; }
+.iso-room.zoomed:active { cursor: grabbing; }
+.ap-zoom { position: absolute; top: 0.4rem; right: 0.4rem; display: flex; gap: 0.25rem; }
+.ap-zoom .field { width: auto; min-width: 2.2rem; padding: 0.2rem 0.5rem; background: color-mix(in srgb, var(--surface) 85%, transparent); }
+.ap-rooms { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.ap-rooms[hidden] { display: none; }
+.ap-room { border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.7rem; background: none; color: inherit; font: inherit; font-size: 0.88rem; cursor: pointer; }
+.ap-room:hover { border-color: var(--accent); }
+.ap-room.on { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.ap-room.locked { color: var(--muted); border-style: dashed; }
+.iso-slot.photo { cursor: zoom-in; }
+.ap-lightbox { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 1rem; background: rgb(0 0 0 / 80%); cursor: zoom-out; }
+.ap-lightbox figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; max-width: 100%; }
+.ap-lightbox img { max-width: min(92vw, 1200px); max-height: 82vh; object-fit: contain; border: 8px solid #6b4a2b; border-radius: 3px; box-shadow: 0 10px 40px rgb(0 0 0 / 50%); }
+.ap-lightbox figcaption { color: #fff; font-size: 0.95rem; }
+.iso-wall.left { fill: var(--wall-l); }
+.iso-wall.right { fill: var(--wall-r); }
 .iso-wall.dirty.left { fill: #b8ab90; }
 .iso-wall.dirty.right { fill: #a99a7d; }
 .iso-wall-seam { stroke: rgb(0 0 0 / 6%); stroke-width: 1; }
 .iso-stain { fill: rgb(90 70 40 / 28%); }
-.iso-baseboard { fill: none; stroke: #8a6a43; stroke-width: 7; stroke-linejoin: round; }
+.iso-baseboard { fill: none; stroke: var(--board); stroke-width: 7; stroke-linejoin: round; }
 .iso-tile { stroke: rgb(0 0 0 / 14%); stroke-width: 1; }
-.iso-tile.a { fill: #c0905e; }
-.iso-tile.b { fill: #b5844f; }
+.iso-tile.a { fill: var(--tile-a); }
+.iso-tile.b { fill: var(--tile-b); }
 .iso-tile.broken { fill: #6e5236; }
 .iso-crack { fill: none; stroke: #2e2116; stroke-width: 2; stroke-linecap: round; }
 .iso-dust { fill: rgb(120 120 115 / 40%); pointer-events: none; }
 .iso-tile.edit, .iso-slot.edit { cursor: pointer; }
-.iso-tile.edit:hover { fill: #cfa06b; }
+.iso-tile.edit:hover { fill: var(--tile-hover); }
 .iso-cursor { fill: color-mix(in srgb, var(--accent) 30%, transparent); stroke: var(--accent); stroke-width: 2.5; pointer-events: none; }
 .iso-slot { fill: transparent; }
 .iso-slot.edit { fill: rgb(255 255 255 / 0%); stroke: rgb(0 0 0 / 10%); stroke-dasharray: 4 4; }
@@ -1539,6 +1565,20 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 /* Meuble vu « de dos » (orientations 180° et 270°) : un peu plus sombre. */
 .iso-item.back { filter: brightness(0.8); } /* se cumule avec le filtre de la finition, posé sur le glyphe */
 .iso-glyph { text-anchor: middle; dominant-baseline: auto; }
+/* Meubles dessinés (furnitureArt.ts) : contour discret ; la finition colore le meuble elle-même,
+   les classes fin-* n'ajoutent ici qu'un halo (et gardent les effets des finitions mythiques). */
+.iso-model .m { stroke: rgb(0 0 0 / 22%); stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.iso-model.fin-ruby, .iso-model.fin-ocean, .iso-model.fin-jade, .iso-model.fin-pastel { filter: none; }
+.iso-model.fin-night { filter: drop-shadow(0 0 3px #4b69ff); }
+.iso-model.fin-gold { filter: drop-shadow(0 0 4px #f2c94c); }
+.iso-model.fin-neon { filter: drop-shadow(0 0 3px #ff2bd6) drop-shadow(0 0 6px #2bf3ff); }
+.iso-model.fin-obsidian { filter: drop-shadow(0 0 4px #8847ff); }
+.iso-model.fin-ghost { animation: ghost-model 3s ease-in-out infinite; }
+@keyframes ghost-model { 50% { transform: translateY(-6px); opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .iso-model.fin-ghost { animation: none; } }
+.iso-item.ghost.bad .iso-model { filter: grayscale(1) sepia(1) hue-rotate(-50deg) saturate(5); }
+.ap-model { width: 1.2em; height: 1.2em; vertical-align: middle; }
+.ap-model svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .iso-frame-border { fill: #6b4a2b; stroke: #3d2a18; stroke-width: 1.5; }
 .iso-frame-empty { fill: #efe6d6; }
 .iso-frame.fin-gold .iso-frame-border { fill: #d4a017; stroke: #8a6100; }
