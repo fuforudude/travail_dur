@@ -423,8 +423,8 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
    --------------------------------------------------------------------------- */
 .stack { display: flex; flex-direction: column; gap: 0.45rem; margin: 0.9rem 0; }
 .card > button.field { margin-top: 0.75rem; }
-.tabs { display: inline-flex; gap: 0.25rem; padding: 0.25rem; margin-bottom: 0.9rem; background: var(--surface-2); border-radius: 999px; }
-.tab { font: inherit; font-size: 0.9rem; color: var(--muted); background: none; border: 0; border-radius: 999px; padding: 0.25rem 0.9rem; cursor: pointer; }
+.tabs { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.25rem; margin-bottom: 0.9rem; background: var(--surface-2); border-radius: 18px; }
+.tab { font: inherit; font-size: 0.9rem; white-space: nowrap; color: var(--muted); background: none; border: 0; border-radius: 999px; padding: 0.25rem 0.9rem; cursor: pointer; }
 .tab.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 550; }
 .scores { width: 100%; border-collapse: collapse; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
 .scores th { text-align: left; color: var(--muted); font-weight: 500; font-size: 0.8rem; border-bottom: 1px solid var(--border); padding: 0.35rem 0.5rem; }
