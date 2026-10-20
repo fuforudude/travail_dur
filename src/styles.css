@@ -422,6 +422,33 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .picker-games { display: inline-flex; gap: 0.3rem; padding: 0.2rem; background: var(--surface-2); border-radius: 999px; }
 .chip { font-size: 0.85rem; padding: 0.15rem 0.7rem; border-radius: 999px; color: var(--muted); }
 .chip.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 550; }
+.picker-games .chip { font: inherit; font-size: 0.85rem; border: 0; background: none; cursor: pointer; }
+.picker-games .chip:hover { color: var(--text); }
+.picker-games .chip.on { background: var(--surface); }
+
+/* ---------------------------------------------------------------------------
+   Discussion du salon
+   --------------------------------------------------------------------------- */
+.chat { margin-top: 1rem; padding: 1rem 1.1rem; }
+.chat h2 { margin: 0 0 0.5rem; font-size: 1rem; }
+.chat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  height: 11rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.chat-list li.mine b { color: var(--accent); }
+.chat-time { color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; margin-right: 0.4rem; }
+.chat-status:empty { display: none; }
+.chat-form { display: flex; gap: 0.4rem; margin-top: 0.6rem; }
+.chat-form .field { width: auto; }
+.chat-form input.field { flex: 1; }
 
 /* ---------------------------------------------------------------------------
    Morpion

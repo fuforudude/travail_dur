@@ -58,7 +58,7 @@ Limites connues : le serveur garantit qu’un score correspond à une vraie part
 ## Configurer Supabase
 
 1. Créer un compte sur https://supabase.com, puis **New project** (le plan gratuit suffit).
-2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql` et `0004_td_wordle_flappy.sql`. Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
+2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql`, `0004_td_wordle_flappy.sql` et `0005_chat.sql` (discussion des salons). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
 3. **Authentication → Sign In / Providers** :
    - activer **Allow anonymous sign-ins** ;
    - dans **Email**, laisser **Confirm email** activé.
@@ -122,7 +122,8 @@ Facultatif : **Authentication → Emails → Templates** permet de traduire les 
 
 - **Créer un salon** dans l’accueil : un code de 4 lettres est généré. `C` copie le lien à partager.
 - Les autres choisissent **Rejoindre un salon** et saisissent le code, ou ouvrent directement le lien (`…/#/room/ABCD`).
-- Dans le salon, `←` `→` pour choisir le jeu (Puissance 4 ou Morpion), `↑` `↓` pour choisir un joueur, `Entrée` pour le **défier**. Le joueur défié accepte avec `O` ou refuse avec `N`. Un défi expire au bout de 2 minutes.
+- Dans le salon, `←` `→` (ou un clic) pour choisir le jeu (Puissance 4 ou Morpion), `↑` `↓` pour choisir un joueur, `Entrée` pour le **défier**. Le joueur défié accepte avec `O` ou refuse avec `N`. Un défi expire au bout de 2 minutes.
+- Le salon a une **discussion**, visible aussi pendant les parties : `T` pour écrire, `Entrée` pour envoyer, `Échap` pour revenir au jeu. Les messages sont gardés une journée.
 - En partie : `Retour arrière` deux fois pour abandonner ; si l’adversaire ne joue plus pendant 45 s, `V` réclame la victoire.
 
 Pour tester seul : deux onglets du même navigateur partagent le même compte. Utiliser deux navigateurs, ou une fenêtre de navigation privée.

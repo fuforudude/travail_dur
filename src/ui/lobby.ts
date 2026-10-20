@@ -6,8 +6,12 @@ import { ensureAccount } from '../net/auth';
 import { isValidCode, normalizeCode, Room, type Player } from '../net/room';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
+import { chatPanel } from './chat';
 import { h, hints } from './dom';
 import { page } from './layout';
+
+const DUEL_GAMES: DuelGame[] = ['connect4', 'tictactoe'];
+let lastGame = 0; // jeu proposé par défaut : le dernier choisi
 
 /** `#/join` : saisie d'un code de salon. */
 export function joinView(root: HTMLElement): () => void {
@@ -70,22 +74,25 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
   let me = '';
   let disposed = false;
   let selected = 0; // index dans la liste des autres joueurs
-  let gameIndex = 0; // jeu proposé lors du prochain défi
+  let gameIndex = lastGame; // jeu proposé lors du prochain défi
   let incoming: MatchRow | null = null;
   let outgoing: MatchRow | null = null;
   let unmountGame: (() => void) | null = null;
+  let chat: ReturnType<typeof chatPanel> | null = null;
   let notice = '';
   const offs: (() => void)[] = [];
 
+  // La scène affiche le salon ou la partie en cours ; la discussion reste en dessous.
+  const stage = h('div', { class: 'lobby-stage' });
   const status = h('p', { class: 'muted' }, `Connexion au salon ${code}…`);
-  content.append(status);
+  stage.append(status);
+  content.append(stage);
 
   const others = (): Player[] => room?.players.filter((p) => p.id !== me) ?? [];
   const nameOf = (id: string) => room?.nameOf(id) ?? 'Un joueur';
   // Tolérant aux horloges décalées : c'est le serveur qui fait respecter l'expiration (2 min).
   const fresh = (m: MatchRow) => Date.now() - Date.parse(m.created_at) < 600_000;
   const link = () => `${location.origin}${location.pathname}#/room/${code}`;
-  const DUEL_GAMES: DuelGame[] = ['connect4', 'tictactoe'];
   const gameName = (id: string) => getGame(id)?.name ?? id;
 
   const startGame = (matchId: string, gameId: DuelGame) => {
@@ -93,11 +100,11 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
     if (!room || unmountGame || !game) return;
     incoming = outgoing = null;
     notice = '';
-    content.replaceChildren();
+    stage.replaceChildren();
     void room.setBusy(true);
     const r = room;
     unmountGame = game.mount({
-      root: content,
+      root: stage,
       mode: 'multi',
       room: r,
       match: matchId,
@@ -152,6 +159,11 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
     });
   };
 
+  const pickGame = (i: number) => {
+    gameIndex = lastGame = (i + DUEL_GAMES.length) % DUEL_GAMES.length;
+    render();
+  };
+
   const render = () => {
     if (unmountGame || !room) return;
     const list = others();
@@ -182,7 +194,14 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
         ? h('p', { class: 'notice' }, `Défi au ${gameName(outgoing.game)} envoyé à ${nameOf(outgoing.p2)}, en attente… `, h('kbd', {}, 'N'), ' annuler')
         : null;
 
-    content.replaceChildren(
+    const chips = DUEL_GAMES.map((g, i) => {
+      const b = h('button', { class: 'chip' + (i === gameIndex ? ' on' : ''), type: 'button', 'aria-pressed': String(i === gameIndex) }, gameName(g));
+      b.addEventListener('mousedown', (e) => e.preventDefault()); // le focus reste au salon (Entrée = défier)
+      b.addEventListener('click', () => pickGame(i));
+      return b;
+    });
+
+    stage.replaceChildren(
       h(
         'div',
         { class: 'card' },
@@ -192,7 +211,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
           'div',
           { class: 'picker' },
           h('span', { class: 'muted small' }, 'Jeu du défi'),
-          h('span', { class: 'picker-games' }, ...DUEL_GAMES.map((g, i) => h('span', { class: 'chip' + (i === gameIndex ? ' on' : '') }, gameName(g)))),
+          h('span', { class: 'picker-games', role: 'group', 'aria-label': 'Jeu du défi' }, ...chips),
         ),
         h('h2', {}, `Joueurs (${room.players.length})`),
         h('ul', { class: 'players' }, ...items),
@@ -200,7 +219,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
         banner,
         notice ? h('p', { class: 'notice' }, notice) : null,
       ),
-      hints(['↑ ↓', 'joueur'], ['← →', 'jeu'], ['Entrée', `défier au ${gameName(DUEL_GAMES[gameIndex])}`], ['C', 'copier le lien'], ['Retour arrière', 'quitter']),
+      hints(['↑ ↓', 'joueur'], ['← →', 'jeu'], ['Entrée', `défier au ${gameName(DUEL_GAMES[gameIndex])}`], ['T', 'discuter'], ['C', 'copier le lien'], ['Retour arrière', 'quitter']),
     );
   };
 
@@ -225,8 +244,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
         render();
       } else if (key === 'arrowleft' || key === 'arrowright') {
         e.preventDefault();
-        gameIndex = (gameIndex + (key === 'arrowright' ? 1 : DUEL_GAMES.length - 1)) % DUEL_GAMES.length;
-        render();
+        pickGame(gameIndex + (key === 'arrowright' ? 1 : -1));
       } else if (key === 'enter') {
         e.preventDefault();
         sendChallenge();
@@ -263,6 +281,8 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
     if (disposed) return void r.leave();
     room = r;
     offs.push(r.onPlayers(render));
+    chat = chatPanel(r);
+    content.append(chat.el);
     const unwatch = await watchMyMatches(me, onMatch);
     if (disposed) return unwatch();
     offs.push(unwatch);
@@ -271,12 +291,13 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
   })().catch((err: Error) => {
     if (disposed) return;
     status.textContent = `${err.message}.`;
-    content.append(hints(['Retour arrière', 'accueil']));
+    stage.append(hints(['Retour arrière', 'accueil']));
   });
 
   return () => {
     disposed = true;
     unmountGame?.();
+    chat?.destroy();
     offs.forEach((off) => off());
     void room?.leave();
   };
