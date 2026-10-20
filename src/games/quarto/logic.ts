@@ -9,7 +9,7 @@
 // Coups : « g5 » (premier coup : donner la pièce 5), « p10g3 » (poser en case 10, donner la 3),
 // « p10 » (poser sans rien donner : seulement si la pose gagne ou remplit le plateau).
 
-import type { Outcome, Rules, Side } from '../board';
+import type { Outcome, Rules, Side } from '../engine';
 
 export const LINES = [
   [0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15],

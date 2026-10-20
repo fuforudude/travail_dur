@@ -1528,11 +1528,10 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .iso-dust { fill: rgb(120 120 115 / 40%); pointer-events: none; }
 .iso-tile.edit, .iso-slot.edit { cursor: pointer; }
 .iso-tile.edit:hover { fill: #cfa06b; }
-.iso-tile.cursor { fill: color-mix(in srgb, var(--accent) 45%, #c0905e); stroke: var(--accent); stroke-width: 2.5; }
+.iso-cursor { fill: color-mix(in srgb, var(--accent) 30%, transparent); stroke: var(--accent); stroke-width: 2.5; pointer-events: none; }
 .iso-slot { fill: transparent; }
 .iso-slot.edit { fill: rgb(255 255 255 / 0%); stroke: rgb(0 0 0 / 10%); stroke-dasharray: 4 4; }
 .iso-slot.edit:hover { fill: rgb(255 255 255 / 25%); }
-.iso-slot.cursor { fill: color-mix(in srgb, var(--accent) 25%, transparent); stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: none; }
 .iso-item { pointer-events: none; }
 .iso-item.ghost { opacity: 0.55; }
 .iso-item.ghost.bad .iso-glyph, .iso-item.ghost.bad .iso-frame { filter: grayscale(1) sepia(1) hue-rotate(-50deg) saturate(5); }

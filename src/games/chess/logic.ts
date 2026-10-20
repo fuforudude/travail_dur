@@ -8,7 +8,7 @@
 //   66     demi-coups depuis la dernière prise ou le dernier coup de pion (règle des 50 coups)
 // Camp 1 = blancs, camp 2 = noirs. Coups en notation UCI : « e2e4 », « e7e8q ».
 
-import type { Outcome, Rules, Side } from '../board';
+import type { Outcome, Rules, Side } from '../engine';
 
 export const PAWN = 1;
 export const KNIGHT = 2;

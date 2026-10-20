@@ -1,4 +1,4 @@
-import { negamax, WIN, type Side } from '../board';
+import { negamax, WIN, type Side } from '../engine';
 import { isKing, rowOf, rules, sideOf } from './logic';
 
 /** Pions 100, dames 320, et un bonus pour les pions qui avancent. */

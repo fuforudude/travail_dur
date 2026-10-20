@@ -1,8 +1,7 @@
 import { pushKeys } from '../core/input';
 import { getSettings, keyLabel, randomName } from '../core/settings';
 import { setUsername } from '../net/auth';
-import { games } from '../games/registry';
-import type { Game } from '../games/types';
+import { games, type GameInfo } from '../games/registry';
 import { isAdmin } from '../net/admin';
 import { formatPoints, getWallet } from '../net/points';
 import { generateCode } from '../net/room';
@@ -52,7 +51,7 @@ export function homeView(root: HTMLElement): () => void {
     return b;
   };
 
-  const gameCard = (g: Game) => {
+  const gameCard = (g: GameInfo) => {
     const look = LOOK[g.id] ?? { icon: '▸', tone: 3, tags: [] };
     return card(g.id, g.name, g.description ?? '', look.icon, look.tone, () => navigate(`/game/${g.id}`), { tags: look.tags });
   };

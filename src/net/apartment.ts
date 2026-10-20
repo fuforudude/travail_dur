@@ -11,12 +11,12 @@ export const WALL_ROWS = 2;
 
 /** Nettoyage du début : mêmes coûts que public.apartment_clean_cost, dans le même ordre. */
 export const CLEAN_TASKS: { name: string; cost: number }[] = [
-  { name: 'Sortir les cartons', cost: 300 },
-  { name: 'Jeter les ordures', cost: 800 },
-  { name: 'Enlever les toiles d’araignée', cost: 1500 },
-  { name: 'Aspirer la poussière', cost: 3000 },
-  { name: 'Réparer le parquet', cost: 6000 },
-  { name: 'Repeindre les murs', cost: 10000 },
+  { name: 'Sortir les cartons', cost: 30 },
+  { name: 'Jeter les ordures', cost: 80 },
+  { name: 'Enlever les toiles d’araignée', cost: 150 },
+  { name: 'Aspirer la poussière', cost: 300 },
+  { name: 'Réparer le parquet', cost: 600 },
+  { name: 'Repeindre les murs', cost: 1000 },
 ];
 export const CLEAN_RATE = 20; // points par heure pour chaque tâche faite
 export const CAP_HOURS = 24;
@@ -26,7 +26,7 @@ const RARITY_MULT: Record<string, number> = { standard: 1, common: 1.5, rare: 2.
 export function itemIncome(item: string): number {
   const base = BASES.find((b) => b.id === item.split(':')[0]);
   const fin = FINISHES.find((f) => f.id === item.split(':')[1]);
-  return ((base?.price ?? 0) / 40) * (RARITY_MULT[fin?.rarity ?? 'standard'] ?? 1);
+  return ((base?.price ?? 0) / 10) * (RARITY_MULT[fin?.rarity ?? 'standard'] ?? 1);
 }
 
 export interface Base {
@@ -41,25 +41,25 @@ export interface Base {
 
 /** Mêmes identifiants, emplacements, tailles et prix que public.furniture_bases. */
 export const BASES: Base[] = [
-  { id: 'chair', name: 'Chaise', glyph: '🪑', place: 'floor', w: 1, h: 1, price: 800 },
-  { id: 'plant', name: 'Plante', glyph: '🪴', place: 'floor', w: 1, h: 1, price: 600 },
-  { id: 'teddy', name: 'Nounours', glyph: '🧸', place: 'floor', w: 1, h: 1, price: 700 },
-  { id: 'lamp', name: 'Lampe', glyph: '💡', place: 'floor', w: 1, h: 1, price: 900 },
-  { id: 'books', name: 'Bibliothèque', glyph: '📚', place: 'floor', w: 1, h: 1, price: 1500 },
-  { id: 'guitar', name: 'Guitare', glyph: '🎸', place: 'floor', w: 1, h: 1, price: 2000 },
-  { id: 'tv', name: 'Télévision', glyph: '📺', place: 'floor', w: 1, h: 1, price: 2500 },
-  { id: 'computer', name: 'Ordinateur', glyph: '🖥️', place: 'floor', w: 1, h: 1, price: 3500 },
-  { id: 'aquarium', name: 'Aquarium', glyph: '🐠', place: 'floor', w: 1, h: 1, price: 3500 },
-  { id: 'arcade', name: 'Borne d’arcade', glyph: '🕹️', place: 'floor', w: 1, h: 1, price: 5000 },
-  { id: 'trophy', name: 'Trophée', glyph: '🏆', place: 'floor', w: 1, h: 1, price: 8000 },
-  { id: 'sofa', name: 'Canapé', glyph: '🛋️', place: 'floor', w: 2, h: 1, price: 3000 },
-  { id: 'bath', name: 'Baignoire', glyph: '🛁', place: 'floor', w: 2, h: 1, price: 4500 },
-  { id: 'piano', name: 'Piano', glyph: '🎹', place: 'floor', w: 2, h: 1, price: 6000 },
-  { id: 'bed', name: 'Lit', glyph: '🛏️', place: 'floor', w: 2, h: 2, price: 4000 },
-  { id: 'frame', name: 'Cadre', glyph: '🖼️', place: 'wall', w: 1, h: 1, price: 1500 },
-  { id: 'window', name: 'Fenêtre', glyph: '🪟', place: 'wall', w: 1, h: 1, price: 2000 },
-  { id: 'clock', name: 'Horloge', glyph: '🕰️', place: 'wall', w: 1, h: 1, price: 1200 },
-  { id: 'mirror', name: 'Miroir', glyph: '🪞', place: 'wall', w: 1, h: 1, price: 1500 },
+  { id: 'chair', name: 'Chaise', glyph: '🪑', place: 'floor', w: 1, h: 1, price: 150 },
+  { id: 'plant', name: 'Plante', glyph: '🪴', place: 'floor', w: 1, h: 1, price: 100 },
+  { id: 'teddy', name: 'Nounours', glyph: '🧸', place: 'floor', w: 1, h: 1, price: 120 },
+  { id: 'lamp', name: 'Lampe', glyph: '💡', place: 'floor', w: 1, h: 1, price: 150 },
+  { id: 'books', name: 'Bibliothèque', glyph: '📚', place: 'floor', w: 1, h: 1, price: 300 },
+  { id: 'guitar', name: 'Guitare', glyph: '🎸', place: 'floor', w: 1, h: 1, price: 400 },
+  { id: 'tv', name: 'Télévision', glyph: '📺', place: 'floor', w: 1, h: 1, price: 500 },
+  { id: 'computer', name: 'Ordinateur', glyph: '🖥️', place: 'floor', w: 1, h: 1, price: 700 },
+  { id: 'aquarium', name: 'Aquarium', glyph: '🐠', place: 'floor', w: 1, h: 1, price: 700 },
+  { id: 'arcade', name: 'Borne d’arcade', glyph: '🕹️', place: 'floor', w: 1, h: 1, price: 1000 },
+  { id: 'trophy', name: 'Trophée', glyph: '🏆', place: 'floor', w: 1, h: 1, price: 1500 },
+  { id: 'sofa', name: 'Canapé', glyph: '🛋️', place: 'floor', w: 2, h: 1, price: 600 },
+  { id: 'bath', name: 'Baignoire', glyph: '🛁', place: 'floor', w: 2, h: 1, price: 900 },
+  { id: 'piano', name: 'Piano', glyph: '🎹', place: 'floor', w: 2, h: 1, price: 1200 },
+  { id: 'bed', name: 'Lit', glyph: '🛏️', place: 'floor', w: 2, h: 2, price: 800 },
+  { id: 'frame', name: 'Cadre', glyph: '🖼️', place: 'wall', w: 1, h: 1, price: 300 },
+  { id: 'window', name: 'Fenêtre', glyph: '🪟', place: 'wall', w: 1, h: 1, price: 400 },
+  { id: 'clock', name: 'Horloge', glyph: '🕰️', place: 'wall', w: 1, h: 1, price: 250 },
+  { id: 'mirror', name: 'Miroir', glyph: '🪞', place: 'wall', w: 1, h: 1, price: 300 },
 ];
 
 export type Rarity = 'standard' | 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';

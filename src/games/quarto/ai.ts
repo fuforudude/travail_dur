@@ -1,4 +1,4 @@
-import { negamax, type Ai } from '../board';
+import { negamax, type Ai } from '../engine';
 import { moves, rules, winningLine } from './logic';
 
 const pick = <T>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];

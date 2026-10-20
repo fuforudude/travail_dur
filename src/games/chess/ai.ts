@@ -1,4 +1,4 @@
-import { negamax, WIN, type Side } from '../board';
+import { negamax, WIN, type Side } from '../engine';
 import { colorOf, inCheck, PAWN, rules, typeOf } from './logic';
 
 const VALUE = [0, 100, 320, 330, 500, 900, 0];

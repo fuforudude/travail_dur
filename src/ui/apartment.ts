@@ -102,17 +102,19 @@ interface Scene {
   cleanStep: number;
   photos: Artwork[];
   editing: boolean;
-  cursor: { zone: Zone; x: number; y: number } | null;
-  ghost: { item: string; ok: boolean } | null;
   onCell(zone: Zone, x: number, y: number): void;
   onHover(zone: Zone, x: number, y: number): void;
 }
 
-function drawScene(svg: SVGSVGElement, s: Scene): void {
+/** Curseur et meuble en main : redessinés seuls au survol, sans toucher au reste de la pièce. */
+interface Overlay {
+  draw(cursor: { zone: Zone; x: number; y: number } | null, ghost: { item: string; ok: boolean } | null): void;
+}
+
+function drawScene(svg: SVGSVGElement, s: Scene): Overlay {
   const clean = s.cleanStep;
   const parts: SVGElement[] = [];
   const dirtyWalls = clean < 6;
-  const isCursor = (zone: Zone, x: number, y: number) => s.cursor?.zone === zone && s.cursor.x === x && s.cursor.y === y;
 
   // Murs (le gauche plus clair, le droit plus sombre : la lumière vient de la gauche), joints et plinthe
   const top = P(0, 0, WH);
@@ -136,7 +138,7 @@ function drawScene(svg: SVGSVGElement, s: Scene): void {
       const broken = clean < 5 && BROKEN.some(([a, b]) => a === x && b === y);
       const tile = el('polygon', {
         points: pts(P(x, y), P(x + 1, y), P(x + 1, y + 1), P(x, y + 1)),
-        class: `iso-tile ${(x + y) % 2 ? 'b' : 'a'}${broken ? ' broken' : ''}${s.editing ? ' edit' : ''}${isCursor('floor', x, y) ? ' cursor' : ''}`,
+        class: `iso-tile ${(x + y) % 2 ? 'b' : 'a'}${broken ? ' broken' : ''}${s.editing ? ' edit' : ''}`,
       });
       tile.addEventListener('click', () => s.onCell('floor', x, y));
       tile.addEventListener('mouseenter', () => s.onHover('floor', x, y));
@@ -157,7 +159,7 @@ function drawScene(svg: SVGSVGElement, s: Scene): void {
   for (let row = 0; row < WALL_ROWS; row++)
     for (let x = 0; x < WALL_COLS; x++) {
       const w = wallSlot(x, row);
-      const slot = el('polygon', { points: w.poly, class: `iso-slot${s.editing ? ' edit' : ''}${isCursor('wall', x, row) ? ' cursor' : ''}` });
+      const slot = el('polygon', { points: w.poly, class: `iso-slot${s.editing ? ' edit' : ''}` });
       slot.addEventListener('click', () => s.onCell('wall', x, row));
       slot.addEventListener('mouseenter', () => s.onHover('wall', x, row));
       parts.push(slot);
@@ -198,14 +200,32 @@ function drawScene(svg: SVGSVGElement, s: Scene): void {
   for (const p of s.layout.floor) floorItem(p.i, p.x, p.y);
   if (clean < 1) for (const [x, y] of BOXES) floorItem('mess', x, y, false, '📦');
   if (clean < 2) for (const [x, y] of TRASH) floorItem('mess', x, y, false, '🗑️');
-  if (s.ghost && s.cursor?.zone === 'floor') floorItem(s.ghost.item, s.cursor.x, s.cursor.y, true).classList.toggle('bad', !s.ghost.ok);
   sprites.sort((a, b) => a.depth - b.depth).forEach((sp) => parts.push(sp.node));
-  if (s.ghost && s.cursor?.zone === 'wall') {
-    const g = wallItem({ i: s.ghost.item, x: s.cursor.x, y: s.cursor.y }, true);
-    g.classList.toggle('bad', !s.ghost.ok);
-    parts.push(g);
-  }
+  sprites.length = 0;
+  const overlay = el('g', { class: 'iso-overlay' });
+  parts.push(overlay);
   svg.replaceChildren(...parts);
+
+  return {
+    draw(cursor, ghost) {
+      const out: SVGElement[] = [];
+      if (cursor?.zone === 'floor') {
+        const { x, y } = cursor;
+        out.push(el('polygon', { points: pts(P(x, y), P(x + 1, y), P(x + 1, y + 1), P(x, y + 1)), class: 'iso-cursor' }));
+        if (ghost) floorItem(ghost.item, x, y, true).classList.toggle('bad', !ghost.ok);
+        out.push(...sprites.map((sp) => sp.node));
+        sprites.length = 0;
+      } else if (cursor?.zone === 'wall') {
+        out.push(el('polygon', { points: wallSlot(cursor.x, cursor.y).poly, class: 'iso-cursor' }));
+        if (ghost) {
+          const g = wallItem({ i: ghost.item, x: cursor.x, y: cursor.y }, true);
+          g.classList.toggle('bad', !ghost.ok);
+          out.push(g);
+        }
+      }
+      overlay.replaceChildren(...out);
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -314,17 +334,22 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     setLayout({ ...layout(), wall: layout().wall.map((q) => (q.o === p.o ? { ...q, art } : q)) });
   };
 
+  // Compteur de revenus : chaque seconde, seuls les textes changent.
+  const rateEl = h('b', {});
+  const perHourEl = h('span', { class: 'muted small' });
+  const pendingLabel = h('span', { class: 'muted small' });
+  const collectBtn = h('button', { class: 'field rl-spin', type: 'button' });
+  collectBtn.addEventListener('mousedown', (e) => e.preventDefault());
+  collectBtn.addEventListener('click', () => void doCollect());
   const renderIncome = () => {
     const p = pending(state);
-    const perSec = state.rate / 3600;
     const full = p >= Math.max(state.rate, 1) * CAP_HOURS - 0.5;
-    const collect = h('button', { class: 'field rl-spin', type: 'button', disabled: p < 1 || busy }, `Récolter ${formatPoints(Math.floor(p))} (C)`);
-    collect.addEventListener('mousedown', (e) => e.preventDefault());
-    collect.addEventListener('click', () => void doCollect());
-    income.replaceChildren(
-      h('div', {}, h('b', {}, `${perSec.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} pt/s`), h('span', { class: 'muted small' }, ` · ${formatPoints(Math.round(state.rate))} par heure`)),
-      mine() ? h('div', { class: 'ap-pending' }, h('span', { class: 'muted small' }, full ? `Coffre plein (${CAP_HOURS} h) : récolte !` : 'À récolter'), collect) : '',
-    );
+    rateEl.textContent = `${(state.rate / 3600).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} pt/s`;
+    perHourEl.textContent = ` · ${formatPoints(Math.round(state.rate))} par heure`;
+    pendingLabel.textContent = full ? `Coffre plein (${CAP_HOURS} h) : récolte !` : 'À récolter';
+    collectBtn.textContent = `Récolter ${formatPoints(Math.floor(p))} (C)`;
+    collectBtn.disabled = p < 1 || busy;
+    if (!income.firstChild) income.append(h('div', {}, rateEl, perHourEl), mine() ? h('div', { class: 'ap-pending' }, pendingLabel, collectBtn) : '');
   };
 
   const doCollect = async () => {
@@ -441,21 +466,30 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     );
   };
 
+  let overlay: Overlay | null = null;
+  let sceneKey = '';
+  const drawOverlay = () =>
+    overlay?.draw(editing ? cursor : null, editing && hand ? { item: hand.item_id, ok: fits(hand.item_id, cursor.zone, cursor.x, cursor.y) } : null);
+
   const render = () => {
-    drawScene(svg, {
-      layout: layout(),
-      cleanStep: state.cleanStep,
-      photos,
-      editing,
-      cursor: editing ? cursor : null,
-      ghost: editing && hand ? { item: hand.item_id, ok: fits(hand.item_id, cursor.zone, cursor.x, cursor.y) } : null,
-      onCell: activate,
-      onHover: (zone, x, y) => {
-        if (!editing || (cursor.zone === zone && cursor.x === x && cursor.y === y)) return;
-        cursor = { zone, x, y };
-        render();
-      },
-    });
+    // La pièce (des centaines de formes) n'est redessinée que si son contenu a changé.
+    const key = JSON.stringify([layout(), state.cleanStep, editing, photos.length]);
+    if (key !== sceneKey || !overlay) {
+      sceneKey = key;
+      overlay = drawScene(svg, {
+        layout: layout(),
+        cleanStep: state.cleanStep,
+        photos,
+        editing,
+        onCell: activate,
+        onHover: (zone, x, y) => {
+          if (!editing || (cursor.zone === zone && cursor.x === x && cursor.y === y)) return;
+          cursor = { zone, x, y };
+          drawOverlay();
+        },
+      });
+    }
+    drawOverlay();
     svg.classList.toggle('editing', editing);
     statusEl.textContent = status;
     renderIncome();

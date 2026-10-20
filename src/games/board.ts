@@ -8,91 +8,14 @@ import { cosmeticOf, nameEl } from '../net/cosmetics';
 import { getAccount } from '../net/auth';
 import { h, hints } from '../ui/dom';
 import type { CreateView, ViewState } from './duel';
+import type { Ai, Rules, Side } from './engine';
 import type { GameContext } from './types';
 
-export type Side = 1 | 2;
-
-/** Fin de partie : vainqueur (null = nul) et éventuelles cases à surligner. */
-export interface Outcome {
-  winner: Side | null;
-  line?: number[];
-}
-
-export interface Rules {
-  initial(): number[];
-  /** Tous les coups légaux du camp `side`. */
-  moves(b: number[], side: Side): string[];
-  isLegal(b: number[], side: Side, mv: string): boolean;
-  /** Joue un coup supposé légal ; ne modifie pas `b`. */
-  apply(b: number[], side: Side, mv: string): number[];
-  /** Après un coup : `next` est le camp qui doit jouer, `history` contient tous les coups joués. */
-  outcome(b: number[], next: Side, history: string[]): Outcome | null;
-}
-
-/** Ordinateur : un coup pour `side`. */
-export type Ai = (b: number[], side: Side, history: string[]) => string;
-
-/**
- * Recherche alpha-bêta générique (negamax), pour l'ordinateur.
- * - `evaluate` note la position du point de vue de `side` (positif = bon pour lui) ;
- * - `over` détecte, juste après un coup, une fin de partie immédiate (pion arrivé, ligne complète…) ;
- * - `stuck` note la position quand `side` n'a plus de coup (mat, pat, plus de pièces…).
- * On n'appelle pas `rules.outcome`, trop coûteux à chaque nœud (répétitions, etc.).
- */
-export function negamax(
-  rules: Rules,
-  opts: {
-    depth: number | ((b: number[]) => number);
-    evaluate(b: number[], side: Side): number;
-    over?(b: number[], mover: Side): Outcome | null;
-    stuck(b: number[], side: Side): number;
-    moves?(b: number[], side: Side): string[];
-    order?(b: number[], side: Side, moves: string[]): string[];
-  },
-): Ai {
-  const gen = (b: number[], side: Side) => {
-    const m = (opts.moves ?? rules.moves)(b, side);
-    return opts.order ? opts.order(b, side, m) : m;
-  };
-  const scoreOver = (o: Outcome, mover: Side, depth: number) => (o.winner === mover ? WIN + depth : o.winner ? -WIN - depth : 0);
-  const search = (b: number[], side: Side, depth: number, alpha: number, beta: number): number => {
-    if (depth === 0) return opts.evaluate(b, side);
-    const moves = gen(b, side);
-    if (!moves.length) return opts.stuck(b, side);
-    let best = -Infinity;
-    for (const mv of moves) {
-      const nb = rules.apply(b, side, mv);
-      const o = opts.over?.(nb, side);
-      const score = o ? scoreOver(o, side, depth) : -search(nb, (3 - side) as Side, depth - 1, -beta, -alpha);
-      if (score > best) best = score;
-      if (best > alpha) alpha = best;
-      if (alpha >= beta) break;
-    }
-    return best;
-  };
-  return (b, side) => {
-    const depth = typeof opts.depth === 'number' ? opts.depth : opts.depth(b);
-    const moves = gen(b, side);
-    let best = moves[0];
-    let bestScore = -Infinity;
-    for (const mv of moves) {
-      const nb = rules.apply(b, side, mv);
-      const o = opts.over?.(nb, side);
-      // Un peu de hasard entre coups équivalents, pour ne pas rejouer toujours la même partie.
-      const score = (o ? scoreOver(o, side, depth) : -search(nb, (3 - side) as Side, depth - 1, -Infinity, -bestScore + 1)) + Math.random();
-      if (score > bestScore) {
-        bestScore = score;
-        best = mv;
-      }
-    }
-    return best;
-  };
-}
-
-export const WIN = 1e6;
+export type { Ai, Outcome, Rules, Side } from './engine';
+export { negamax, WIN } from './engine';
 
 /** Partie solo contre l'ordinateur, entièrement locale (non classée). */
-export function mountSoloBoard(ctx: GameContext, createView: CreateView, rules: Rules, ai: Ai): () => void {
+export function mountSoloBoard(ctx: GameContext, createView: CreateView, rules: Rules, ai: Ai | ((b: number[], side: Side, history: string[]) => Promise<string>)): () => void {
   let board = rules.initial();
   let history: string[] = [];
   let s: ViewState = {
@@ -110,6 +33,8 @@ export function mountSoloBoard(ctx: GameContext, createView: CreateView, rules: 
   let starter: 0 | 1 = 0;
   let mySide: 0 | 1 = 0; // les camps s'échangent à chaque revanche, comme en ligne
   let aiTimer: number | undefined;
+  let generation = 0;
+  let disposed = false;
 
   const play = (mv: string) => {
     if (s.result !== null) return;
@@ -133,12 +58,18 @@ export function mountSoloBoard(ctx: GameContext, createView: CreateView, rules: 
     scheduleAi();
   };
 
+  let thinking = 0; // numéro de la réflexion en cours : une réponse arrivée après une revanche est ignorée
   const scheduleAi = () => {
-    if (s.result !== null || s.turn === mySide || aiTimer) return;
-    aiTimer = window.setTimeout(() => {
+    if (s.result !== null || s.turn === mySide || aiTimer || thinking) return;
+    aiTimer = window.setTimeout(async () => {
       aiTimer = undefined;
       if (isPanicked()) return; // reprise à la sortie du faux écran
-      play(ai(board, (s.turn + 1) as Side, history));
+      const ticket = ++generation;
+      thinking = ticket;
+      const mv = await ai(board, (s.turn + 1) as Side, history);
+      if (thinking !== ticket || disposed) return;
+      thinking = 0;
+      play(mv);
     }, 350);
   };
 
@@ -146,6 +77,7 @@ export function mountSoloBoard(ctx: GameContext, createView: CreateView, rules: 
     play: (mv) => typeof mv === 'string' && s.turn === mySide && play(mv),
     rematch: () => {
       if (s.result === null) return;
+      thinking = 0;
       starter = (1 - starter) as 0 | 1;
       mySide = starter; // le camp 1 commence toujours : on change de camp
       board = rules.initial();
@@ -164,6 +96,7 @@ export function mountSoloBoard(ctx: GameContext, createView: CreateView, rules: 
   view.update(s);
 
   return () => {
+    disposed = true;
     clearTimeout(aiTimer);
     offPanic();
     view.destroy();

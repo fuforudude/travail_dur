@@ -30,5 +30,7 @@ export default defineConfig(({ mode }) => {
   return {
     base: '/travail_dur/',
     plugins: [csp(env.VITE_SUPABASE_URL)],
+    // Le worker de l'ordinateur charge le code de chaque jeu à la demande : format module requis.
+    worker: { format: 'es' as const },
   };
 });

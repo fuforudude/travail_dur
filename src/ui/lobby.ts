@@ -2,6 +2,7 @@ import { isTyping, pushKeys } from '../core/input';
 import { getSettings } from '../core/settings';
 import { cancelChallenge, challenge, pendingChallenges, respond, watchMyMatches, type DuelGame, type MatchRow } from '../games/online';
 import { getGame } from '../games/registry';
+import type { Game } from '../games/types';
 import { ensureAccount } from '../net/auth';
 import { isValidCode, normalizeCode, Room, type Player } from '../net/room';
 import { multiConfigured } from '../net/supabase';
@@ -96,14 +97,31 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
   const link = () => `${location.origin}${location.pathname}#/room/${code}`;
   const gameName = (id: string) => getGame(id)?.name ?? id;
 
+  let loadingGame = false;
   const startGame = (matchId: string, gameId: DuelGame) => {
-    const game = getGame(gameId);
-    if (!room || unmountGame || !game) return;
+    const info = getGame(gameId);
+    if (!room || unmountGame || loadingGame || !info) return;
     incoming = outgoing = null;
     notice = '';
-    stage.replaceChildren();
+    stage.replaceChildren(h('p', { class: 'muted' }, `Chargement du ${info.name}…`));
     void room.setBusy(true);
     const r = room;
+    loadingGame = true;
+    // Le code du jeu n'est téléchargé qu'au début de la partie.
+    void info.load().then((game) => {
+      loadingGame = false;
+      if (disposed || unmountGame) return;
+      stage.replaceChildren();
+      mountGame(game, matchId, r);
+    }, (e: Error) => {
+      loadingGame = false;
+      notice = `Chargement impossible : ${e.message}`;
+      void r.setBusy(false);
+      render();
+    });
+  };
+
+  const mountGame = (game: Game, matchId: string, r: Room) => {
     unmountGame = game.mount({
       root: stage,
       mode: 'multi',
@@ -120,7 +138,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
   };
 
   const onMatch = (m: MatchRow) => {
-    if (m.room !== code || unmountGame) return;
+    if (m.room !== code || unmountGame || loadingGame) return;
     if (m.status === 'playing' && m.moves === 0 && fresh(m)) return startGame(m.id, m.game);
     if (m.status === 'pending' && fresh(m)) {
       if (m.p2 === me) incoming = m;
@@ -166,7 +184,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
   };
 
   const render = () => {
-    if (unmountGame || !room) return;
+    if (unmountGame || loadingGame || !room) return;
     const list = others();
     selected = Math.min(selected, Math.max(0, list.length - 1));
 

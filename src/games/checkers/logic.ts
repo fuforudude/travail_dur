@@ -7,7 +7,7 @@
 // Camp 1 = blancs (en bas, ils commencent), camp 2 = noirs.
 // Coups : « 31-27 » pour un déplacement, « 27x18x9 » pour une rafle (cases d'arrivée successives).
 
-import type { Outcome, Rules, Side } from '../board';
+import type { Outcome, Rules, Side } from '../engine';
 
 export const rowOf = (i: number) => Math.floor(i / 5);
 export const colOf = (i: number) => {

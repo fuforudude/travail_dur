@@ -1,4 +1,4 @@
-import { negamax, type Side } from '../board';
+import { negamax, type Side } from '../engine';
 import { blocked, distance, goalRow, N, pawnMoves, rules, wallLegal } from './logic';
 
 /** Plus court chemin (cases successives) du pion de `side` vers son but. */

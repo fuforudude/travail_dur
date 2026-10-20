@@ -9,7 +9,7 @@
 // Camp 1 part d'en bas et doit atteindre la ligne 0 ; camp 2 part d'en haut et vise la ligne 8.
 // Coups : « m40 » pour aller en case 40, « h34 » / « v34 » pour un mur à l'intersection (3, 4).
 
-import type { Outcome, Rules, Side } from '../board';
+import type { Outcome, Rules, Side } from '../engine';
 
 export const N = 9;
 export const WALLS = 10;
