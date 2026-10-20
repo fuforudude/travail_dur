@@ -5,7 +5,7 @@ import type { CreateView, ViewState } from './duel';
 import type { GameContext } from './types';
 
 /** Jeux à deux arbitrés par le serveur (colonne `game` de public.matches). */
-export type DuelGame = 'connect4' | 'tictactoe';
+export type DuelGame = 'connect4' | 'tictactoe' | 'chess' | 'checkers' | 'quoridor' | 'quarto';
 
 /** Ligne de public.matches telle que renvoyée par Supabase. */
 export interface MatchRow {
@@ -26,10 +26,13 @@ export interface MatchRow {
   next_match: string | null;
   created_at: string;
   updated_at: string;
+  /** Coups joués, pour les jeux dont les coups sont du texte (0006_plateaux.sql). */
+  history?: string[];
 }
 
 const FINISHED = ['won', 'draw', 'forfeit', 'timeout'];
-const TIMEOUT_MS = 45_000;
+/** Délai avant de pouvoir réclamer la victoire : doit rester identique à public.match_claim_timeout. */
+const timeoutMs = (game: DuelGame) => (game === 'connect4' || game === 'tictactoe' ? 45_000 : game === 'quarto' ? 90_000 : 180_000);
 
 async function rpc<T = unknown>(fn: string, args: Record<string, unknown>): Promise<T> {
   const supabase = await getSupabase();
@@ -95,7 +98,8 @@ export function mountOnline(ctx: GameContext, createView: CreateView): () => voi
   const view = createView(
     ctx.root,
     {
-      play: (cell) => send('match_play', { match_id: matchId, cell }),
+      play: (move) =>
+        typeof move === 'string' ? send('match_move', { match_id: matchId, mv: move }) : send('match_play', { match_id: matchId, cell: move }),
       rematch: () => {
         if (row && FINISHED.includes(row.status)) send('match_rematch', { match_id: matchId });
       },
@@ -122,7 +126,7 @@ export function mountOnline(ctx: GameContext, createView: CreateView): () => voi
   const opponentId = () => (row ? (row.p1 === me ? row.p2 : row.p1) : '');
 
   const canClaim = () =>
-    row !== null && row.status === 'playing' && mySide() !== null && row.turn - 1 !== mySide() && Date.now() - lastChange > TIMEOUT_MS;
+    row !== null && row.status === 'playing' && mySide() !== null && row.turn - 1 !== mySide() && Date.now() - lastChange > timeoutMs(row.game);
 
   async function send(fn: string, args: Record<string, unknown>) {
     if (busy) return;
@@ -173,7 +177,7 @@ export function mountOnline(ctx: GameContext, createView: CreateView): () => voi
     }
     const names: [string, string] = [r.p1 === me ? ctx.me.name : nameOf(r.p1), r.p2 === me ? ctx.me.name : nameOf(r.p2)];
     const state: ViewState = {
-      board: r.board.map((v) => (v === 1 || v === 2 ? v : 0)),
+      board: r.board,
       names,
       me: side,
       turn: (r.turn - 1) as 0 | 1,
@@ -182,6 +186,7 @@ export function mountOnline(ctx: GameContext, createView: CreateView): () => voi
       last: r.last_cell,
       scores: [tally.get(r.p1) ?? 0, tally.get(r.p2) ?? 0],
       message,
+      history: r.history ?? [],
     };
     view.update(state);
   };

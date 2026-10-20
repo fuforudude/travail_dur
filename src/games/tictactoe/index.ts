@@ -49,7 +49,7 @@ function mountSolo(ctx: GameContext): () => void {
   };
 
   const view = createView(ctx.root, {
-    play: (cell) => s.turn === 0 && apply(cell),
+    play: (cell) => typeof cell === 'number' && s.turn === 0 && apply(cell),
     rematch: () => {
       if (s.result === null) return;
       starter = (1 - starter) as 0 | 1;

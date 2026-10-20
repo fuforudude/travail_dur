@@ -10,7 +10,7 @@ import { chatPanel } from './chat';
 import { h, hints } from './dom';
 import { page } from './layout';
 
-const DUEL_GAMES: DuelGame[] = ['connect4', 'tictactoe'];
+const DUEL_GAMES: DuelGame[] = ['connect4', 'tictactoe', 'chess', 'checkers', 'quoridor', 'quarto'];
 let lastGame = 0; // jeu proposé par défaut : le dernier choisi
 
 /** `#/join` : saisie d'un code de salon. */

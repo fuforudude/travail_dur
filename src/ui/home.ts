@@ -20,6 +20,10 @@ const LOOK: Record<string, { icon: string; tone: number; tags: string[] }> = {
   td: { icon: '♜', tone: 2, tags: ['Solo', 'Classé'] },
   connect4: { icon: '●', tone: 2, tags: ['Solo', 'À deux'] },
   tictactoe: { icon: '✕', tone: 3, tags: ['Solo', 'À deux'] },
+  chess: { icon: '♞︎', tone: 5, tags: ['Solo', 'À deux'] },
+  checkers: { icon: '◉', tone: 4, tags: ['Solo', 'À deux'] },
+  quoridor: { icon: '▥', tone: 3, tags: ['Solo', 'À deux'] },
+  quarto: { icon: '◧', tone: 1, tags: ['Solo', 'À deux'] },
 };
 
 let lastFocus = ''; // pour revenir sur la même carte en rentrant à l'accueil

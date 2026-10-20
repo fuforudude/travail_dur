@@ -20,6 +20,10 @@ const BOARDS: Board[] = [
   { title: 'Tower defense', view: 'leaderboard_td', order: 'best', columns: [['best', 'Vagues'], ['kills', 'Victimes'], ['games', 'Parties']] },
   { title: 'Puissance 4', view: 'leaderboard_c4', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
   { title: 'Morpion', view: 'leaderboard_ttt', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
+  { title: 'Échecs', view: 'leaderboard_chess', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
+  { title: 'Dames', view: 'leaderboard_checkers', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
+  { title: 'Quoridor', view: 'leaderboard_quoridor', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
+  { title: 'Quarto', view: 'leaderboard_quarto', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
 ];
 
 let tab = 0;

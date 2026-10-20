@@ -11,6 +11,8 @@ export interface Settings {
   palette: Palette;
   sound: boolean;
   panicKey: string;
+  /** Ce que montre la touche panique : le PDF choisi dans les réglages (s'il y en a un) ou un faux carnet de notes. */
+  panicScreen: 'pdf' | 'notes';
 }
 
 const ANIMALS = ['Hibou', 'Loutre', 'Renard', 'Blaireau', 'Lynx', 'Héron', 'Castor', 'Moineau', 'Marmotte', 'Belette'];
@@ -27,6 +29,7 @@ const defaults: Settings = {
   palette: 'color',
   sound: false,
   panicKey: 'Escape',
+  panicScreen: 'pdf',
 };
 
 let current: Settings = { ...defaults, ...load<Partial<Settings>>('settings', {}) };

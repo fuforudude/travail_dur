@@ -4,3 +4,5 @@ dist
 .env.*.local
 *.log
 .DS_Store
+# Documents de cours : protégés, jamais publiés avec le site
+*.pdf

@@ -1,4 +1,5 @@
 import { setInterceptor } from './input';
+import { preparePdfScreen, readyPdfScreen, scrollPdf } from './panicPdf';
 import { getSettings } from './settings';
 
 // Icône de document neutre, identique en mode normal et en mode panique.
@@ -43,10 +44,8 @@ export function togglePanic(): void {
     savedFocus = document.activeElement;
     // Masquer d'abord : rien du jeu ne doit rester affiché à la prochaine frame.
     app.hidden = true;
-    if (!screen.firstChild) screen.append(buildFakeScreen());
+    showCover(screen);
     screen.hidden = false;
-    document.title = PANIC_TITLE;
-    screen.querySelector<HTMLElement>('.fake-doc')?.focus();
   } else {
     screen.hidden = true;
     app.hidden = false;
@@ -55,6 +54,42 @@ export function togglePanic(): void {
   }
   setFavicon(NEUTRAL_ICON);
   listeners.forEach((cb) => cb(active));
+}
+
+let notes: HTMLElement | null = null;
+
+/** Met en place l'écran de secours : le PDF (s'il est prêt, sinon dès qu'il l'est) ou le faux carnet. */
+function showCover(screen: HTMLElement): void {
+  if (getSettings().panicScreen === 'notes') {
+    notes ??= buildFakeScreen();
+    screen.replaceChildren(notes);
+    document.title = PANIC_TITLE;
+    notes.querySelector<HTMLElement>('.fake-doc')?.focus();
+    return;
+  }
+  const show = (viewer: { el: HTMLElement; name: string }) => {
+    screen.replaceChildren(viewer.el);
+    document.title = viewer.name;
+    viewer.el.querySelector<HTMLElement>('.pdf-scroll')?.focus();
+  };
+  const ready = readyPdfScreen();
+  if (ready) return show(ready);
+  // Pas encore prêt (touche pressée dès l'ouverture) : une visionneuse vide, remplie juste après.
+  // Sans PDF choisi dans les réglages, la préparation échoue et on montre le faux carnet.
+  const wait = document.createElement('div');
+  wait.className = 'pdf-viewer';
+  wait.innerHTML = '<div class="pdf-bar"><span class="pdf-title">Chargement…</span></div><div class="pdf-scroll"></div>';
+  screen.replaceChildren(wait);
+  document.title = 'Document PDF';
+  preparePdfScreen().then(
+    (viewer) => active && screen.firstChild === wait && show(viewer),
+    () => {
+      if (!active || screen.firstChild !== wait) return;
+      notes ??= buildFakeScreen(); // pas de PDF, ou PDF illisible : faux carnet
+      screen.replaceChildren(notes);
+      document.title = PANIC_TITLE;
+    },
+  );
 }
 
 function isToggle(e: KeyboardEvent): boolean {
@@ -71,8 +106,14 @@ export function initPanic(): void {
       return true;
     }
     // Pendant le faux écran, aucune touche n'atteint le jeu (il est en pause) ;
-    // la saisie dans le faux document reste possible.
+    // la saisie dans le faux document reste possible, et le PDF défile au clavier.
+    if (active) scrollPdf(document.getElementById('panic')!, e.key, e.shiftKey);
     return active ? !isEditable(e.target) : false;
+  });
+  // Le PDF se prépare dès que le navigateur est libre, pour s'afficher instantanément.
+  const idle = window.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 1500));
+  idle(() => {
+    if (getSettings().panicScreen === 'pdf') void preparePdfScreen().catch(() => {});
   });
 }
 

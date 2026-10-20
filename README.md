@@ -15,12 +15,20 @@ En ligne : https://fuforudude.github.io/travail_dur/
 | Tower defense | solo, classé (vagues infinies) | flèches case · `1` `2` `3` construire · `U` améliorer · `S` vendre · `Espace` lancer la vague · `F` vitesse ×1/×2/×3 · `P` pause ; on construit et on améliore aussi pendant les vagues |
 | Puissance 4 | solo contre l’ordinateur, ou en ligne à 2 (classé) | `←` `→` colonne · `Entrée` / `Espace` / `↓` jouer · `R` revanche |
 | Morpion | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches ou `1`–`9` case · `Entrée` jouer · `R` revanche |
+| Échecs | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches case · `Entrée` choisir la pièce puis la case · promotion `D` `T` `F` `C` · `R` revanche |
+| Dames (internationales, 10×10) | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches case · `Entrée` sur la pièce puis sur chaque arrêt de la rafle · `R` revanche |
+| Quoridor (« corridor ») | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches case · `Entrée` avancer · `M` mode mur · `Espace` tourner le mur · `R` revanche ; à la souris, clic entre deux cases pour un mur |
+| Quarto | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches · `Entrée` poser puis donner une pièce · `Tab` plateau ↔ réserve · `R` revanche |
+
+Dans chaque jeu de plateau, `I` (ou le bouton *Règles*) affiche les règles complètes. En solo, les camps s’échangent à chaque revanche.
 
 Partout : `↑` `↓` + `Entrée` pour naviguer, `Retour arrière` pour revenir.
 
 ## Touche panique
 
-`Échap` (modifiable dans les Réglages) ou `Ctrl+Maj+Espace` masque immédiatement le jeu et affiche un faux document de cours (« Notes – Cours »). La même touche ramène au jeu, qui est en pause pendant ce temps.
+`Échap` (modifiable dans les Réglages) ou `Ctrl+Maj+Espace` masque immédiatement le jeu et affiche **un PDF de cours** dans une visionneuse (titre de l’onglet = nom du fichier), ou à défaut un faux carnet de notes. La même touche ramène au jeu, qui est en pause pendant ce temps. Dans le PDF : molette, flèches, `Page↑` `Page↓`, `Espace`.
+
+Le PDF se choisit dans *Réglages → PDF*. Il est gardé **dans ce navigateur uniquement** (IndexedDB) et n’est jamais envoyé nulle part ; il n’est pas non plus publié avec le site (les fichiers `*.pdf` sont ignorés par git), car un support de cours est en général protégé. Les pages sont dessinées par pdf.js dans la page elle-même : la touche panique fonctionne même après un clic dans le document.
 
 ## Lancer en local
 
@@ -50,6 +58,7 @@ Rien de ce qu’envoie un client n’est cru sur parole :
 - **Flappy Bird** : graine serveur (position des tuyaux) et rejeu des battements d’ailes, avec contrôle de la durée.
 - **Wordle** : le mot du jour est choisi par le serveur à partir d’un secret et n’est jamais envoyé avant la fin de la partie ; chaque proposition est vérifiée et colorée par le serveur, 6 au maximum. Les propositions des autres joueurs ne sont pas lisibles (elles trahiraient le mot).
 - **Puissance 4 et Morpion en ligne** : chaque coup est validé et appliqué par le serveur (bon joueur, bon tour, case ou colonne valide). Victoire, nul, abandon et victoire au temps (adversaire inactif 45 s) sont décidés par le serveur.
+- **Échecs, Dames, Quoridor, Quarto en ligne** : le serveur connaît toutes les règles (roque, prise en passant, promotion, mat, pat, répétition ; prise majoritaire et dames volantes ; murs qui ne doivent jamais enfermer un pion ; lignes du Quarto). Il calcule les coups légaux, refuse les autres et décide de la fin de partie. Victoire au temps après 3 minutes d’inactivité (90 s au Quarto). Les règles existent en double, en TypeScript (`src/games/<jeu>/logic.ts`) et en SQL (`0006_plateaux.sql`) : les deux doivent rester identiques.
 - Pseudos : 2 à 16 caractères (lettres, chiffres, `_`, `-`), uniques sans tenir compte de la casse. Tous les textes sont insérés dans la page comme texte, jamais comme HTML.
 - Le site publié porte une Content-Security-Policy stricte (scripts du site uniquement, connexions vers Supabase uniquement).
 
@@ -58,7 +67,7 @@ Limites connues : le serveur garantit qu’un score correspond à une vraie part
 ## Configurer Supabase
 
 1. Créer un compte sur https://supabase.com, puis **New project** (le plan gratuit suffit).
-2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql`, `0004_td_wordle_flappy.sql` et `0005_chat.sql` (discussion des salons). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
+2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql`, `0004_td_wordle_flappy.sql`, `0005_chat.sql` (discussion des salons) et `0006_plateaux.sql` (Échecs, Dames, Quoridor, Quarto en ligne). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
 3. **Authentication → Sign In / Providers** :
    - activer **Allow anonymous sign-ins** ;
    - dans **Email**, laisser **Confirm email** activé.
@@ -122,7 +131,7 @@ Facultatif : **Authentication → Emails → Templates** permet de traduire les 
 
 - **Créer un salon** dans l’accueil : un code de 4 lettres est généré. `C` copie le lien à partager.
 - Les autres choisissent **Rejoindre un salon** et saisissent le code, ou ouvrent directement le lien (`…/#/room/ABCD`).
-- Dans le salon, `←` `→` (ou un clic) pour choisir le jeu (Puissance 4 ou Morpion), `↑` `↓` pour choisir un joueur, `Entrée` pour le **défier**. Le joueur défié accepte avec `O` ou refuse avec `N`. Un défi expire au bout de 2 minutes.
+- Dans le salon, `←` `→` (ou un clic) pour choisir le jeu (Puissance 4, Morpion, Échecs, Dames, Quoridor ou Quarto), `↑` `↓` pour choisir un joueur, `Entrée` pour le **défier**. Le joueur défié accepte avec `O` ou refuse avec `N`. Un défi expire au bout de 2 minutes.
 - Le salon a une **discussion**, visible aussi pendant les parties : `T` pour écrire, `Entrée` pour envoyer, `Échap` pour revenir au jeu. Les messages sont gardés une journée.
 - En partie : `Retour arrière` deux fois pour abandonner ; si l’adversaire ne joue plus pendant 45 s, `V` réclame la victoire.
 

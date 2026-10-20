@@ -1,9 +1,10 @@
-// Contrat commun des jeux à deux au tour par tour (Puissance 4, Morpion) :
+// Contrat commun des jeux à deux au tour par tour (Puissance 4, Morpion, et les jeux de board.ts) :
 // une vue qui affiche un état et remonte les intentions du joueur, quel que soit le mode.
 
 /** Ce que le plateau affiche ; le mode solo et le mode en ligne le remplissent chacun à leur façon. */
 export interface ViewState {
-  board: number[]; // 0 = vide, 1 = joueur 1, 2 = joueur 2
+  /** Puissance 4, Morpion : 0 = vide, 1 = joueur 1, 2 = joueur 2. Autres jeux : leur état encodé. */
+  board: number[];
   names: [string, string];
   /** Mon camp (0 = joueur 1), ou null si je ne joue pas. */
   me: 0 | 1 | null;
@@ -14,11 +15,13 @@ export interface ViewState {
   scores: [number, number];
   /** Remplace le texte de statut calculé par défaut. */
   message?: string;
+  /** Coups joués (jeux dont les coups sont du texte). */
+  history?: string[];
 }
 
 export interface ViewHandlers {
-  /** Puissance 4 : une colonne. Morpion : une case. */
-  play(cell: number): void;
+  /** Puissance 4 : une colonne. Morpion : une case. Autres jeux : le coup en texte. */
+  play(move: number | string): void;
   rematch(): void;
   exit(): void;
   /** Touches propres à un mode (ex. réclamer la victoire en ligne). Retourne true si gérée. */

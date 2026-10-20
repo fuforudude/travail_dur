@@ -1,4 +1,5 @@
 import { captureNextKey, isTyping, pushKeys } from '../core/input';
+import { clearCustomPdf, getCustomPdf, preparePdfScreen, resetPdfScreen, setCustomPdf } from '../core/panicPdf';
 import { getSettings, keyLabel, updateSettings } from '../core/settings';
 import { setUsername } from '../net/auth';
 import { navigate } from '../router';
@@ -53,6 +54,55 @@ export function settingsView(root: HTMLElement): () => void {
       refreshHint();
     });
   });
+  const cover = toggle(
+    () => (getSettings().panicScreen === 'pdf' ? '‹ Un PDF ›' : '‹ Faux carnet de notes ›'),
+    () => {
+      updateSettings({ panicScreen: getSettings().panicScreen === 'pdf' ? 'notes' : 'pdf' });
+      refreshHint();
+      refreshPdf();
+    },
+  );
+
+  // PDF montré par la touche panique : choisi ici, gardé dans ce navigateur.
+  const pdfButton = h('button', { class: 'field pdf-choice', type: 'button' }, '…');
+  const pdfInput = h('input', { type: 'file', accept: 'application/pdf,.pdf', hidden: true });
+  const pdfReset = h('button', { class: 'field', type: 'button', hidden: true }, 'Retirer ce PDF');
+  const pdfStatus = h('p', { class: 'muted small' });
+  const refreshPdf = async () => {
+    const custom = await getCustomPdf();
+    pdfButton.textContent = custom?.name ?? 'Choisir un PDF…';
+    pdfButton.title = custom ? 'Choisir un autre PDF' : 'Par exemple le support du cours';
+    pdfReset.hidden = !custom;
+    pdfButton.disabled = getSettings().panicScreen !== 'pdf';
+  };
+  pdfButton.addEventListener('click', () => pdfInput.click());
+  pdfInput.addEventListener('change', async () => {
+    const file = pdfInput.files?.[0];
+    pdfInput.value = '';
+    if (!file) return;
+    if (file.size > 30 * 1024 * 1024) {
+      pdfStatus.textContent = 'Fichier trop lourd (30 Mo maximum).';
+      return;
+    }
+    pdfStatus.textContent = 'Chargement…';
+    try {
+      await setCustomPdf(file);
+      await preparePdfScreen();
+      pdfStatus.textContent = `${file.name} sera affiché par la touche panique. Il reste dans ce navigateur, rien n’est envoyé.`;
+    } catch {
+      resetPdfScreen();
+      await clearCustomPdf().catch(() => {});
+      pdfStatus.textContent = 'Ce fichier ne peut pas être lu comme un PDF.';
+    }
+    void refreshPdf();
+  });
+  pdfReset.addEventListener('click', async () => {
+    await clearCustomPdf();
+    pdfStatus.textContent = 'PDF retiré : la touche panique affiche le faux carnet.';
+    void refreshPdf();
+  });
+  void refreshPdf();
+
   const account = h('button', { class: 'field', type: 'button' }, 'Email, classements…');
   account.addEventListener('click', () => navigate('/account'));
   const back = h('button', { class: 'field', type: 'button' }, 'Retour à l’accueil');
@@ -61,11 +111,12 @@ export function settingsView(root: HTMLElement): () => void {
   const row = (label: string, control: HTMLElement) => h('div', { class: 'row' }, h('span', {}, label), control);
   const panicHint = h('p', { class: 'muted small' });
   const refreshHint = () => {
-    panicHint.textContent = `${keyLabel(getSettings().panicKey)} ou Ctrl+Maj+Espace affiche un faux écran de notes ; même touche pour revenir.`;
+    const what = getSettings().panicScreen === 'pdf' ? 'le PDF ci-dessous (sinon un faux carnet de notes)' : 'un faux carnet de notes';
+    panicHint.textContent = `${keyLabel(getSettings().panicKey)} ou Ctrl+Maj+Espace affiche ${what} ; même touche pour revenir.`;
   };
   refreshHint();
 
-  const controls: HTMLElement[] = [name, theme.b, palette.b, sound.b, panic, account, back];
+  const controls: HTMLElement[] = [name, theme.b, palette.b, sound.b, panic, cover.b, pdfButton, pdfReset, account, back];
   content.append(
     h(
       'div',
@@ -77,6 +128,11 @@ export function settingsView(root: HTMLElement): () => void {
       row('Couleurs', palette.b),
       row('Son', sound.b),
       row('Touche panique', panic),
+      row('Elle affiche', cover.b),
+      row('PDF', pdfButton),
+      pdfReset,
+      pdfInput,
+      pdfStatus,
       panicHint,
       row('Compte', account),
       back,
@@ -90,12 +146,16 @@ export function settingsView(root: HTMLElement): () => void {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (document.activeElement === name) name.dispatchEvent(new Event('change'));
-      controls[(i + (e.key === 'ArrowDown' ? 1 : controls.length - 1)) % controls.length].focus();
+      // On saute les boutons masqués ou désactivés.
+      const usable = controls.filter((c) => !c.hidden && !(c as HTMLButtonElement).disabled);
+      const j = usable.indexOf(controls[i]);
+      usable[(j + (e.key === 'ArrowDown' ? 1 : usable.length - 1)) % usable.length].focus();
     } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !isTyping(e)) {
       e.preventDefault();
       if (document.activeElement === theme.b) theme.run();
       if (document.activeElement === palette.b) palette.run();
       if (document.activeElement === sound.b) sound.run();
+      if (document.activeElement === cover.b) cover.run();
     } else if (e.key === 'Enter' && document.activeElement === name) {
       name.dispatchEvent(new Event('change'));
       theme.b.focus();
