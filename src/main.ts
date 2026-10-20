@@ -31,6 +31,7 @@ route(/^\/shop$/, lazy(() => import('./ui/shop').then((m) => m.shopView)));
 route(/^\/admin$/, lazy(() => import('./ui/admin').then((m) => m.adminView)));
 route(/^\/appart(?:\/([0-9a-f-]{36}))?$/, lazy(() => import('./ui/apartment').then((m) => m.apartmentView)));
 route(/^\/caisses$/, lazy(() => import('./ui/crates').then((m) => m.cratesView)));
+route(/^\/td\/caisses$/, lazy(() => import('./games/towerdefense/crates').then((m) => m.tdCratesView)));
 
 // Retour d'un lien reçu par email : Supabase lit les jetons avant que le routeur ne touche au hash.
 consumeAuthRedirect().finally(() => {

@@ -120,10 +120,25 @@ export function shopView(root: HTMLElement): () => void {
     return cards.length ? h('section', { class: 'home-section' }, h('h2', { class: 'home-h' }, title), h('div', { class: 'shop-grid' }, ...cards)) : null;
   };
 
+  /** Lien vers les caisses du tower defense (tours, améliorations, skins). */
+  const tdCrates = () => {
+    const b = h(
+      'button',
+      { class: 'shop-item', type: 'button', 'data-id': 'td-crates' },
+      h('span', { class: 'shop-preview' }, '♜'),
+      h('span', { class: 'shop-name' }, 'Caisses tower defense'),
+      h('span', { class: 'muted small' }, 'Tours, améliorations, skins de tours et d’ennemis'),
+      h('span', { class: 'shop-price' }, 'Voir les caisses'),
+    );
+    b.addEventListener('click', () => navigate('/td/caisses'));
+    return h('section', { class: 'home-section' }, h('h2', { class: 'home-h' }, 'Caisses'), h('div', { class: 'shop-grid' }, b));
+  };
+
   const render = () => {
     showBalance();
     body.replaceChildren(
       ...[
+        tdCrates(),
         section('Couleur du pseudo', ITEMS.filter((i) => i.slot === 'name_color')),
         section('Effet du pseudo', ITEMS.filter((i) => i.slot === 'name_effect')),
         // Titres : rien ne s'affiche tant que la liste TITLES (src/net/shop.ts) est vide

@@ -12,7 +12,7 @@ En ligne : https://fuforudude.github.io/travail_dur/
 | Tetris | solo, classé | `←` `→` déplacer · `↑` ou `X` tourner · `C` sens inverse · `↓` descendre · `Espace` lâcher · `P` pause · `R` rejouer |
 | Wordle | mot du jour classé (le même pour tous), ou entraînement | lettres au clavier · `Entrée` valider · `Retour arrière` effacer · `Tab` changer de mode |
 | Flappy Bird | solo, classé | `Espace` ou `↑` battre des ailes · `R` rejouer |
-| Tower defense | solo, classé (vagues infinies) | flèches case · `1` `2` `3` construire · `U` améliorer · `S` vendre · `Espace` lancer la vague · `F` vitesse ×1/×2/×3 · `P` pause ; on construit et on améliore aussi pendant les vagues |
+| Tower defense | solo, classé (roguelike : 50 vagues puis mode infini) | deck : flèches + `Entrée` choisir ses tours · `Espace` lancer la run · en jeu : flèches case · `1`–`6` construire · `U` améliorer · `S` vendre · `Espace` lancer la vague · `F` vitesse ×1/×2/×3 · `P` pause · `R` abandonner ; on construit et on améliore aussi pendant les vagues |
 | Puissance 4 | solo contre l’ordinateur, ou en ligne à 2 (classé) | `←` `→` colonne · `Entrée` / `Espace` / `↓` jouer · `R` revanche |
 | Morpion | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches ou `1`–`9` case · `Entrée` jouer · `R` revanche |
 | Échecs | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches case · `Entrée` choisir la pièce puis la case · promotion `D` `T` `F` `C` · `R` revanche |
@@ -49,6 +49,13 @@ Les points s’échangent dans la *Boutique* (✦) contre des objets **très che
 - **couleurs de pseudo** (5 000 à 150 000) et **effets de pseudo** animés (15 000 à 250 000), visibles par tout le monde : salon, discussion, parties, classements, barre du haut ;
 - **skins** pour les jeux à deux (jetons, symboles, pièces, pions), visibles par l’adversaire pendant la partie ;
 - **titres** : prévus mais pas encore en vente. Pour en ajouter un : une ligne dans `TITLES` (`src/net/shop.ts`) et une ligne dans `public.shop_items` (exemples en commentaire dans `0008_boutique.sql`) ; un objet avec `active = false` n’est ni visible ni achetable.
+
+La boutique mène aussi aux **caisses du tower defense** (`#/td/caisses`), payées en points, jamais de doublon :
+
+- **Bronze** (500) : l’Alchimiste et les améliorations des tours de départ ; **Argent** (1 500, record ≥ vague 15) : Tesla, Sniper, Lance-flammes, Comptoir et leurs améliorations ; **Or** (4 000, record ≥ vague 30) : Railgun, Singularité et leurs améliorations. Une amélioration ne sort que si sa tour (ou son U1) est déjà obtenue. Arbalète, Canon, Givre et leur U1 sont offerts.
+- **Skins de tours** et **skins d’ennemis** (1 000 chacune) : 10 finitions par tour ou ennemi, de Commun à Mythique (chances affichées). Un skin obtenu est porté tout de suite si rien ne l’était ; on change de skin sur la même page.
+
+Le deck d’une run compte 3 tours, +1 aux records de vague 15, 30 et 45. Valeurs d’équilibrage : `src/games/towerdefense/engine/data.ts` ; prix et contenu des caisses : `0030_td_roguelike.sql` (et `catalog.ts` côté site).
 
 Le prix et la possession sont vérifiés par le serveur (`shop_buy`, `shop_equip`) ; un objet acheté est porté tout de suite, et peut être retiré ou remis à tout moment.
 
@@ -92,7 +99,7 @@ Rien de ce qu’envoie un client n’est cru sur parole :
 - Les clients n’ont **que la lecture** sur les tables (RLS). Toute écriture passe par des fonctions SQL `security definer` qui identifient le joueur avec `auth.uid()`.
 - **2048** : le serveur fournit la graine aléatoire, le client renvoie la liste de ses coups, le serveur **rejoue la partie** et calcule lui-même le score. Coup impossible, partie déjà envoyée, partie d’un autre ou jouée à plus de 25 coups/s : refusé.
 - **Tetris** : même principe que 2048 (graine serveur, rejeu complet des actions). Le serveur vérifie aussi que la partie n’a pas duré moins longtemps que ses chutes automatiques.
-- **Tower defense** : le serveur garde l’état de chaque partie. À la fin de chaque vague, il reçoit les constructions (avant et pendant la vague, chacune datée au dixième de seconde près), les valide (or, emplacement) et rejoue lui-même la vague ; le classement retient la meilleure vague atteinte.
+- **Tower defense** : le serveur garde l’état de chaque partie. Au lancement, il vérifie le deck (tours possédées, nombre d’emplacements) et tire la graine. À la fin de chaque vague, il reçoit les constructions (avant et pendant la vague, chacune datée au dixième de seconde près) et rejoue lui-même la vague avec **le même moteur que le jeu** (fonction serveur `supabase/functions/td`, qui embarque une copie de `src/games/towerdefense/engine`) ; le classement retient la meilleure vague atteinte. Les tirages des caisses sont faits en SQL (`td_crate_open`).
 - **Flappy Bird** : graine serveur (position des tuyaux) et rejeu des battements d’ailes, avec contrôle de la durée.
 - **Wordle** : le mot du jour est choisi par le serveur à partir d’un secret et n’est jamais envoyé avant la fin de la partie ; chaque proposition est vérifiée et colorée par le serveur, 6 au maximum. Les propositions des autres joueurs ne sont pas lisibles (elles trahiraient le mot).
 - **Puissance 4 et Morpion en ligne** : chaque coup est validé et appliqué par le serveur (bon joueur, bon tour, case ou colonne valide). Victoire, nul, abandon et victoire au temps (adversaire inactif 45 s) sont décidés par le serveur.
@@ -105,7 +112,9 @@ Limites connues : le serveur garantit qu’un score correspond à une vraie part
 ## Configurer Supabase
 
 1. Créer un compte sur https://supabase.com, puis **New project** (le plan gratuit suffit).
-2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql`, `0004_td_wordle_flappy.sql`, `0005_chat.sql` (discussion des salons) `0006_plateaux.sql` (Échecs, Dames, Quoridor, Quarto en ligne) `0007_points_casino.sql` (points, roulette, machine à sous), `0008_boutique.sql` (boutique) et `0009_appart_admin.sql` (admins, appartement, meubles, caisses) et `0010_appart_3d.sql` (appart en 3D, nettoyage, revenus, suppression de joueur) `0011_prix_appart.sql` (appart moins cher au début) et `0012_rotation.sql` (rotation des meubles). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
+2. **SQL Editor → New query** : coller le contenu de `supabase/migrations/0001_init.sql` et l’exécuter, puis faire de même avec `0002_jeux.sql` (Tetris, Morpion), `0003_tower_defense.sql`, `0004_td_wordle_flappy.sql`, `0005_chat.sql` (discussion des salons) `0006_plateaux.sql` (Échecs, Dames, Quoridor, Quarto en ligne) `0007_points_casino.sql` (points, roulette, machine à sous), `0008_boutique.sql` (boutique) et `0009_appart_admin.sql` (admins, appartement, meubles, caisses) et `0010_appart_3d.sql` (appart en 3D, nettoyage, revenus, suppression de joueur) `0011_prix_appart.sql` (appart moins cher au début) et `0012_rotation.sql` (rotation des meubles), puis `0030_td_roguelike.sql` (tower defense roguelike, caisses de tours et de skins ; 0013 à 0029 sont réservés à l’appart). Chaque fichier ne s’exécute qu’une fois, dans l’ordre ; une nouvelle version du site peut en ajouter un (`0003_…`) à exécuter à son tour.
+   **Fonction serveur du tower defense** (une fois, puis à chaque changement de `src/games/towerdefense/engine`) : `npx supabase login`, puis `npm run td:sync` et `npx supabase functions deploy td --project-ref <id du projet>` (l’id est dans l’URL du projet). Sans elle, le tower defense reste jouable mais non classé.
+   ⚠️ Si une migration de l’appart refait `revoke execute on all functions …`, il faut y garder `public.td_crate_open(text), public.td_equip(text, text)` dans la liste des `grant … to authenticated`.
 3. **Authentication → Sign In / Providers** :
    - activer **Allow anonymous sign-ins** ;
    - dans **Email**, laisser **Confirm email** activé.

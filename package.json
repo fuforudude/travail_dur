@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "build": "node scripts/td-sync.mjs && tsc && vite build",
+    "preview": "vite preview",
+    "td:sync": "node scripts/td-sync.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

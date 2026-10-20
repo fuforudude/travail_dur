@@ -1,0 +1,46 @@
+/* Tower defense : écran du deck, panneau de jeu, caisses et collection. */
+
+.td-canvas { max-width: 100%; }
+.td-bar, .td-info { max-width: 720px; }
+.td-info .td-shop { margin-bottom: 0.2rem; }
+
+.td-deck { width: 100%; max-width: 860px; align-items: stretch; }
+.td-deck-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
+.td-deck-head h2 { margin: 0; }
+.td-deck-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+.td-deck-actions .field { width: auto; margin: 0; }
+.td-deck-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.td-card.locked { opacity: 0.55; }
+.td-card.locked .shop-price { color: var(--muted); }
+.td-preview { display: block; }
+
+.td-intro {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--tone2);
+  border-radius: 0 8px 8px 0;
+  background: var(--surface);
+}
+
+.overlay .td-deck-actions { margin-top: 0.4rem; }
+
+/* Caisses de tours : bronze, argent, or */
+.rar-bronze { --rar: #cd7f32; }
+.rar-silver { --rar: #a9b4c2; }
+.rar-gold { --rar: #e4ae39; }
+.td-crate { border-top: 4px solid var(--rar, var(--border)); }
+.td-crates .cr-cell canvas { margin: 0 auto; }
+.td-crates .cr-reveal canvas { margin: 0.3rem auto; }
+
+.td-skin-row { display: flex; align-items: center; gap: 0.8rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.td-skin-name { min-width: 9rem; font-weight: 600; font-size: 0.92rem; }
+.td-skin-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.td-skin { padding: 0.3rem 0.5rem; min-width: 4.5rem; border-bottom: 3px solid var(--rar, var(--border)); }
+.td-skin .shop-preview { min-height: 0; }
+
+@media (max-width: 600px) {
+  .td-skin-row { flex-direction: column; align-items: flex-start; gap: 0.3rem; }
+}
