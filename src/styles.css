@@ -1539,6 +1539,20 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 /* Meuble vu « de dos » (orientations 180° et 270°) : un peu plus sombre. */
 .iso-item.back { filter: brightness(0.8); } /* se cumule avec le filtre de la finition, posé sur le glyphe */
 .iso-glyph { text-anchor: middle; dominant-baseline: auto; }
+/* Meubles dessinés (furnitureArt.ts) : contour discret ; la finition colore le meuble elle-même,
+   les classes fin-* n'ajoutent ici qu'un halo (et gardent les effets des finitions mythiques). */
+.iso-model .m { stroke: rgb(0 0 0 / 22%); stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.iso-model.fin-ruby, .iso-model.fin-ocean, .iso-model.fin-jade, .iso-model.fin-pastel { filter: none; }
+.iso-model.fin-night { filter: drop-shadow(0 0 3px #4b69ff); }
+.iso-model.fin-gold { filter: drop-shadow(0 0 4px #f2c94c); }
+.iso-model.fin-neon { filter: drop-shadow(0 0 3px #ff2bd6) drop-shadow(0 0 6px #2bf3ff); }
+.iso-model.fin-obsidian { filter: drop-shadow(0 0 4px #8847ff); }
+.iso-model.fin-ghost { animation: ghost-model 3s ease-in-out infinite; }
+@keyframes ghost-model { 50% { transform: translateY(-6px); opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .iso-model.fin-ghost { animation: none; } }
+.iso-item.ghost.bad .iso-model { filter: grayscale(1) sepia(1) hue-rotate(-50deg) saturate(5); }
+.ap-model { width: 1.2em; height: 1.2em; vertical-align: middle; }
+.ap-model svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .iso-frame-border { fill: #6b4a2b; stroke: #3d2a18; stroke-width: 1.5; }
 .iso-frame-empty { fill: #efe6d6; }
 .iso-frame.fin-gold .iso-frame-border { fill: #d4a017; stroke: #8a6100; }

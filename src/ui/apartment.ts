@@ -36,10 +36,10 @@ import { formatPoints, refreshWallet } from '../net/points';
 import { getSupabase } from '../net/supabase';
 import { navigate } from '../router';
 import { h, hints } from './dom';
+import { floorModel, iso, modelIcon, TH, TW, wallModel } from './furnitureArt';
 import { page } from './layout';
 
-
-/** Un meuble en HTML (inventaire, caisses) : glyphe et finition (classe fin-*), ou photo pour un cadre. */
+/** Un meuble en HTML (inventaire, caisses) : son modèle et sa finition, ou la photo pour un cadre. */
 export function furnitureEl(item: string, art?: Artwork): HTMLElement {
   const base = baseOf(item);
   const fin = finishOf(item);
@@ -50,7 +50,7 @@ export function furnitureEl(item: string, art?: Artwork): HTMLElement {
       art ? h('img', { src: art.url, alt: art.title, loading: 'lazy', draggable: 'false' }) : h('span', { class: 'ap-frame-empty' }, '🖼️'),
     );
   }
-  return h('span', { class: `ap-glyph fin-${fin.id}`, title: itemName(item) }, base?.glyph ?? '?');
+  return h('span', { class: 'ap-glyph ap-model', title: itemName(item) }, modelIcon(item));
 }
 
 // ---------------------------------------------------------------------------
@@ -58,8 +58,6 @@ export function furnitureEl(item: string, art?: Artwork): HTMLElement {
 // ---------------------------------------------------------------------------
 
 const NS = 'http://www.w3.org/2000/svg';
-const TW = 96; // largeur d'une case du sol à l'écran
-const TH = 48; // hauteur d'une case (rapport 2:1)
 const WH = 190; // hauteur des murs
 const PAD = 24;
 const OX = N * (TW / 2) + PAD; // coin du fond de la pièce
@@ -69,7 +67,10 @@ const VIEW_H = OY + N * TH + PAD + 20;
 const SKEW = (Math.atan(0.5) * 180) / Math.PI; // 26,57° : pente des murs
 
 /** Point du sol aux coordonnées de grille (x, y), éventuellement surélevé de `z`. */
-const P = (x: number, y: number, z = 0) => [OX + ((x - y) * TW) / 2, OY + ((x + y) * TH) / 2 - z] as const;
+const P = (x: number, y: number, z = 0) => {
+  const [a, b] = iso(x, y, z);
+  return [OX + a, OY + b] as const;
+};
 const pts = (...p: (readonly [number, number])[]) => p.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(' ');
 
 function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}, ...children: (Node | string)[]): SVGElementTagNameMap[K] {
@@ -170,7 +171,7 @@ function drawScene(svg: SVGSVGElement, s: Scene): Overlay {
       parts.push(slot);
     }
   // Un emplacement de mur mesure TW/2 = 48 de large et 0,42 × WH ≈ 80 de haut (dans le plan du mur) :
-  // les objets y tiennent dans les 4 orientations (cadre 44 × 34, glyphe de 28).
+  // les objets y tiennent dans les 4 orientations (cadre 44 × 34, objets dessinés dans ±22).
   const wallItem = (p: { i: string; x: number; y: number; r?: number; art?: number }, ghost = false) => {
     const w = wallSlot(p.x, p.y);
     const r = p.r ?? 0;
@@ -188,7 +189,7 @@ function drawScene(svg: SVGSVGElement, s: Scene): Overlay {
       else frame.append(el('rect', { x: -18, y: -13, width: 36, height: 26, class: 'iso-frame-empty' }));
       g.append(frame);
     } else {
-      g.append(el('text', { class: `iso-glyph wall-glyph fin-${fin}`, 'font-size': 28, y: 0 }, p.i === 'web' ? '🕸️' : (baseOf(p.i)?.glyph ?? '?')));
+      g.append(wallModel(p.i));
     }
     return g;
   };
@@ -197,38 +198,31 @@ function drawScene(svg: SVGSVGElement, s: Scene): Overlay {
 
   // Objets du sol, du fond vers l'avant (le plus proche est dessiné en dernier)
   const sprites: { depth: number; node: SVGElement }[] = [];
-  const floorItem = (item: string, x: number, y: number, r = 0, ghost = false, glyph?: string) => {
+  const floorItem = (item: string, x: number, y: number, r = 0, ghost = false) => {
     const f = footprint(item, r);
     const [cx, cy] = P(x + f.w / 2, y + f.h / 2);
-    // Le dessin ne sort jamais de ses cases, dans les 4 orientations (vérifié par les tests) :
-    // - largeur : au plus celle de l'emprise ;
-    // - pied : au-dessus du bord avant de l'emprise, qui n'est qu'à TH/2 × min(w, h) sous le centre ;
-    //   la police descend d'environ 0,26 × la taille sous la ligne de base.
-    const size = TW * 0.72 * Math.sqrt(f.w * f.h) ** 0.85;
-    const baseline = cy + (TH / 2) * Math.min(f.w, f.h) - 0.26 * size - 3;
-    const g = el('g', { class: `iso-item${ghost ? ' ghost' : ''}${r >= 2 ? ' back' : ''}`, 'data-key': `floor:${x},${y},${r}` });
+    // Le modèle est construit dans son emprise : il ne déborde jamais de ses cases, seulement vers le haut.
+    const g = el('g', { class: `iso-item${ghost ? ' ghost' : ''}`, 'data-key': `floor:${x},${y},${r}` });
     // Ombre : l'emprise elle-même, resserrée vers son centre.
     const shrink = (gx: number, gy: number) => {
       const [px, py] = P(gx, gy);
       return [cx + (px - cx) * 0.72, cy + (py - cy) * 0.72] as const;
     };
     g.append(el('polygon', { points: pts(shrink(x, y), shrink(x + f.w, y), shrink(x + f.w, y + f.h), shrink(x, y + f.h)), class: 'iso-shadow' }));
-    const text = el('text', { x: cx, y: baseline, class: `iso-glyph fin-${finishOf(item).id}`, 'font-size': size.toFixed(1) }, glyph ?? baseOf(item)?.glyph ?? '?');
-    // Un quart de tour sur deux : le meuble regarde de l'autre côté (dessin retourné).
-    if (r % 2 === 1) text.setAttribute('transform', `translate(${(2 * cx).toFixed(1)} 0) scale(-1 1)`);
-    g.append(text);
+    const model = floorModel(item, x, y, r);
+    model.setAttribute('transform', `translate(${OX} ${OY}) ${model.getAttribute('transform')}`);
+    g.append(model);
     sprites.push({ depth: x + f.w + y + f.h + (ghost ? 0.01 : 0), node: g });
     return g;
   };
   for (const p of s.layout.floor) floorItem(p.i, p.x, p.y, p.r ?? 0);
-  if (clean < 1) for (const [x, y] of BOXES) floorItem('mess', x, y, 0, false, '📦');
-  if (clean < 2) for (const [x, y] of TRASH) floorItem('mess', x, y, 0, false, '🗑️');
+  if (clean < 1) for (const [x, y] of BOXES) floorItem('box', x, y);
+  if (clean < 2) for (const [x, y] of TRASH) floorItem('trash', x, y);
   sprites.sort((a, b) => a.depth - b.depth).forEach((sp) => parts.push(sp.node));
   sprites.length = 0;
   const overlay = el('g', { class: 'iso-overlay' });
   parts.push(overlay);
   svg.replaceChildren(...parts);
-  centerWallGlyphs(svg);
 
   return {
     draw(cursor, ghost) {
@@ -248,25 +242,8 @@ function drawScene(svg: SVGSVGElement, s: Scene): Overlay {
         }
       }
       overlay.replaceChildren(...out);
-      centerWallGlyphs(overlay);
     },
   };
-}
-
-/**
- * Les emoji ne sont pas centrés dans leur boîte (bien plus de place au-dessus de la ligne de base) :
- * une fois tournés d'un quart de tour, ils déborderaient de leur emplacement. On les recentre sur
- * leur boîte réelle, mesurée une fois dessinés.
- */
-function centerWallGlyphs(root: Element): void {
-  for (const t of root.querySelectorAll<SVGTextElement>('text.wall-glyph')) {
-    if (t.dataset.centered) continue;
-    const b = t.getBBox();
-    if (!b.width) continue; // pas encore affiché
-    t.setAttribute('x', (-(b.x + b.width / 2)).toFixed(1));
-    t.setAttribute('y', (-(b.y + b.height / 2)).toFixed(1));
-    t.dataset.centered = '1';
-  }
 }
 
 // ---------------------------------------------------------------------------
