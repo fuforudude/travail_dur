@@ -67,7 +67,7 @@ function mount(ctx: GameContext): () => void {
       if (v) c.dataset.v = String(Math.min(v, 4096));
       else delete c.dataset.v;
       c.className =
-        'cell' + (v ? ' tile' : '') + (v >= 128 ? ' big' : '') + (v >= 1024 ? ' huge' : '') + (merged.includes(i) ? ' merged' : '');
+        'cell' + (v >= 128 ? ' big' : '') + (v >= 1024 ? ' huge' : '') + (merged.includes(i) ? ' merged' : '');
     });
     scoreEl.textContent = String(score);
     bestEl.textContent = String(best);
