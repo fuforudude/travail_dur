@@ -829,19 +829,14 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   };
 
   const renderHeader = () => {
-    const link = `${location.origin}${location.pathname}#/appart/${owner}`;
-    const copy = h('button', { class: 'field', type: 'button' }, 'Copier le lien');
-    copy.addEventListener('click', () =>
-      navigator.clipboard?.writeText(link).then(
-        () => ((status = 'Lien copié.'), render()),
-        () => ((status = link), render()),
-      ),
-    );
+    // Plus de lien à partager : on visite l'appart de ses amis depuis la page Amis.
+    const friendsBtn = h('button', { class: 'field', type: 'button' }, 'Mes amis');
+    friendsBtn.addEventListener('click', () => navigate('/amis'));
     const crates = h('button', { class: 'field', type: 'button' }, 'Meubles et caisses');
     crates.addEventListener('click', () => navigate('/caisses'));
     header.replaceChildren(
       h('h1', {}, mine() ? 'Mon appart' : h('span', {}, 'Appart de ', nameEl(owner, ownerName))),
-      h('div', { class: 'ap-actions' }, copy, mine() ? crates : ''),
+      h('div', { class: 'ap-actions' }, friendsBtn, mine() ? crates : ''),
     );
   };
 
@@ -852,6 +847,17 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     // Le routeur transmet « undefined » quand l'identifiant est absent (#/appart).
     owner = /^[0-9a-f-]{36}$/.test(ownerParam ?? '') ? ownerParam : me;
     const supabase = await getSupabase();
+    // L'appart d'un autre n'est visible que par ses amis (et les admins) : le serveur ne renverrait rien.
+    if (owner !== me) {
+      const [friend, isAdm] = await Promise.all([supabase!.rpc('are_friends', { x: me, y: owner }), isAdmin()]);
+      if (disposed) return;
+      if (!friend.data && !isAdm) {
+        const go = h('button', { class: 'field', type: 'button' }, 'Mes amis');
+        go.addEventListener('click', () => navigate('/amis'));
+        wrap.replaceChildren(h('div', { class: 'card narrow' }, h('h1', {}, 'Appart privé'), h('p', { class: 'muted' }, 'Seuls ses amis peuvent visiter cet appart.'), go));
+        return;
+      }
+    }
     const [a, p, prof] = await Promise.all([loadApartment(owner), artworks(), supabase!.from('profiles').select('username').eq('id', owner).maybeSingle()]);
     if (disposed) return;
     state = a;

@@ -2,6 +2,7 @@ import { pushKeys } from '../core/input';
 import { getSettings } from '../core/settings';
 import { getAccount, signOut } from '../net/auth';
 import { adminKnown } from '../net/admin';
+import { unreadCount } from '../net/friends';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { h } from './dom';
@@ -28,6 +29,7 @@ export function toggleDrawer(): void {
     { icon: '★', label: 'Classements', action: () => navigate('/scores'), hidden: !multiConfigured },
     { icon: '◆', label: 'Points et casino', action: () => navigate('/points'), hidden: !multiConfigured },
     { icon: '✦', label: 'Boutique', action: () => navigate('/shop'), hidden: !multiConfigured },
+    { icon: '♥', label: unreadCount() ? `Amis (${unreadCount()})` : 'Amis', action: () => navigate('/amis'), hidden: !multiConfigured },
     { icon: '⌂', label: 'Mon appart', action: () => navigate('/appart'), hidden: !multiConfigured },
     // Réservé aux admins (le serveur refuse de toute façon aux autres).
     { icon: '⚑', label: 'Admin', action: () => navigate('/admin'), hidden: !adminKnown() },
@@ -138,6 +140,7 @@ export function toggleDrawer(): void {
 /** Bouton ☰ de la barre du haut. */
 export function drawerButton(): HTMLElement {
   const b = h('button', { class: 'menu-btn', type: 'button', title: 'Menu', 'aria-label': 'Menu' }, h('span'), h('span'), h('span'));
+  b.dataset.count = unreadCount() ? String(unreadCount()) : '';
   b.addEventListener('mousedown', (e) => e.preventDefault()); // ne pas garder le focus (Entrée en jeu)
   b.addEventListener('click', () => toggleDrawer());
   return b;

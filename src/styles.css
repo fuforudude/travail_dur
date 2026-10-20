@@ -1631,3 +1631,32 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .ap-tasks li.done { color: var(--muted); text-decoration: line-through; }
 .ap-tasks li.next { font-weight: 600; }
 .ap-side .rl-spin { width: 100%; margin-top: 0.4rem; }
+
+/* ---------------------------------------------------------------------------
+   Amis et notifications
+   --------------------------------------------------------------------------- */
+.friend-list { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.6rem 0; }
+.friend-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 8px; }
+.friend-actions { margin-left: auto; display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; }
+.tab .badge, .badge { display: inline-block; min-width: 1.2em; margin-left: 0.35rem; padding: 0 0.3em; border-radius: 999px; background: #c8343c; color: #fff; font-size: 0.72rem; font-weight: 700; text-align: center; }
+.lobby-friends { margin-top: 0.9rem; }
+.lobby-friends .players li { cursor: default; }
+.toast.social { border-left-color: var(--accent); display: flex; align-items: center; gap: 0.7rem; pointer-events: auto; }
+.toast-action { font: inherit; font-size: 0.85rem; font-weight: 600; color: var(--accent-text); background: var(--accent); border: 0; border-radius: 6px; padding: 0.2rem 0.7rem; cursor: pointer; white-space: nowrap; }
+.menu-btn { position: relative; }
+.menu-btn[data-count]:not([data-count=''])::after {
+  content: attr(data-count);
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #c8343c;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}

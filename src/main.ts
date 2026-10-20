@@ -3,17 +3,19 @@ import { initPanic } from './core/panic';
 import { initPrank } from './core/prank';
 import { applyTheme } from './core/settings';
 import { consumeAuthRedirect, ensureAccount, onAccount } from './net/auth';
+import { startNotifications } from './net/friends';
 import { startPoints } from './net/points';
 import { multiConfigured } from './net/supabase';
 import { lazy, prefetchViews, route, startRouter } from './router';
 import { homeView } from './ui/home';
 import { playView } from './ui/play';
-import { initPointsUi } from './ui/toast';
+import { initPointsUi, initSocialUi } from './ui/toast';
 
 applyTheme();
 initPanic();
 initPrank();
 initPointsUi();
+initSocialUi();
 
 // L'accueil et les parties solo sont dans le fichier principal ; les autres pages sont
 // téléchargées à leur première visite (le site s'ouvre plus vite).
@@ -31,6 +33,7 @@ route(/^\/shop$/, lazy(() => import('./ui/shop').then((m) => m.shopView)));
 route(/^\/admin$/, lazy(() => import('./ui/admin').then((m) => m.adminView)));
 route(/^\/appart(?:\/([0-9a-f-]{36}))?$/, lazy(() => import('./ui/apartment').then((m) => m.apartmentView)));
 route(/^\/caisses$/, lazy(() => import('./ui/crates').then((m) => m.cratesView)));
+route(/^\/amis(?:\/(ajouter|demandes))?$/, lazy(() => import('./ui/friends').then((m) => m.friendsView)));
 route(/^\/td\/caisses$/, lazy(() => import('./games/towerdefense/crates').then((m) => m.tdCratesView)));
 
 // Retour d'un lien reçu par email : Supabase lit les jetons avant que le routeur ne touche au hash.
@@ -41,6 +44,10 @@ consumeAuthRedirect().finally(() => {
   idle(() => prefetchViews(), { timeout: 8000 });
   if (multiConfigured) {
     void ensureAccount();
-    onAccount((a) => a && void startPoints(a.id));
+    onAccount((a) => {
+      if (!a) return;
+      void startPoints(a.id);
+      void startNotifications(a.id);
+    });
   }
 });

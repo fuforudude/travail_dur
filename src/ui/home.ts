@@ -96,6 +96,7 @@ export function homeView(root: HTMLElement): () => void {
       'Appart',
       card('appart', 'Mon appart', off ? 'Serveur non configuré' : 'Meubles, cadres, revenus, et ton lien à partager', '⌂', 3, () => navigate('/appart'), { disabled: off }),
       card('caisses', 'Meubles et caisses', 'Finitions rares et photos à gagner', '▣', 5, () => navigate('/caisses'), { tags: ['Caisses'], disabled: off }),
+      card('amis', 'Amis', off ? 'Serveur non configuré' : 'Ajouter des amis, voir leur appart, les inviter', '♥', 2, () => navigate('/amis'), { disabled: off }),
     ),
   );
   void isAdmin().then((admin) => {

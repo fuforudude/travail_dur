@@ -8,6 +8,7 @@ import { isValidCode, normalizeCode, Room, type Player } from '../net/room';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { nameEl } from '../net/cosmetics';
+import { friendList, inviteToRoom, type Friend } from '../net/friends';
 import { chatPanel } from './chat';
 import { h, hints } from './dom';
 import { page } from './layout';
@@ -178,6 +179,28 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
     });
   };
 
+  // Amis : on peut les inviter dans le salon (ils reçoivent une notification, un clic les y amène).
+  let friends: Friend[] = [];
+  const invited = new Set<string>();
+  const loadFriends = () =>
+    friendList().then(
+      (list) => {
+        friends = list.filter((f) => f.status === 'friend');
+        render();
+      },
+      () => {}, // amis pas encore installés côté serveur : pas de liste
+    );
+  const invite = async (f: Friend) => {
+    try {
+      await inviteToRoom(f.id, code, DUEL_GAMES[gameIndex]);
+      invited.add(f.id);
+      notice = `Invitation envoyée à ${f.username}.`;
+    } catch (e) {
+      notice = (e as Error).message;
+    }
+    render();
+  };
+
   const pickGame = (i: number) => {
     gameIndex = lastGame = (i + DUEL_GAMES.length) % DUEL_GAMES.length;
     render();
@@ -234,7 +257,25 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
         ),
         h('h2', {}, `Joueurs (${room.players.length})`),
         h('ul', { class: 'players' }, ...items),
-        list.length ? null : h('p', { class: 'muted small' }, 'Personne d’autre pour l’instant : partage le code.'),
+        list.length ? null : h('p', { class: 'muted small' }, 'Personne d’autre pour l’instant : invite un ami ou partage le code.'),
+        friends.length
+          ? h(
+              'div',
+              { class: 'lobby-friends' },
+              h('h2', {}, 'Inviter un ami'),
+              h(
+                'ul',
+                { class: 'players' },
+                ...friends.map((f) => {
+                  const here = room!.player(f.id);
+                  const b = h('button', { class: 'field small-btn', type: 'button', disabled: Boolean(here) }, here ? 'dans le salon' : invited.has(f.id) ? 'Réinviter' : 'Inviter');
+                  b.addEventListener('mousedown', (e) => e.preventDefault());
+                  b.addEventListener('click', () => void invite(f));
+                  return h('li', {}, nameEl(f.id, f.username), h('span', { class: 'push' }, b));
+                }),
+              ),
+            )
+          : null,
         banner,
         notice ? h('p', { class: 'notice' }, notice) : null,
       ),
@@ -300,6 +341,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
     if (disposed) return void r.leave();
     room = r;
     offs.push(r.onPlayers(render));
+    void loadFriends();
     chat = chatPanel(r);
     content.append(chat.el);
     const unwatch = await watchMyMatches(me, onMatch);
