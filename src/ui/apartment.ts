@@ -124,13 +124,15 @@ const TRASH: [number, number][] = [[4, 3], [1, 3], [3, 2]];
 const WEBS: [number, number][] = [[0, 0], [4, 0], [5, 0], [10, 0], [8, 1]];
 const DUST: [number, number][] = [[1, 0], [3, 1], [5, 2], [0, 2], [2, 3], [4, 4], [1, 4], [5, 0]];
 const BROKEN: [number, number][] = [[2, 0], [4, 2], [1, 2], [3, 4], [5, 4], [0, 1]];
-const STAINS: [number, number][] = [[1, 1], [3, 0], [7, 1], [9, 0], [6, 0]];
+const STAINS: [number, number][] = [[1, 1], [3, 0], [7, 1], [10, 0], [8, 0]]; // pas sur les portes (2, 6, 9)
 
 interface Scene {
   layout: RoomLayout;
   clean: number; // tâches de nettoyage faites (toutes pour les pièces achetées)
   photos: Artwork[];
   editing: boolean;
+  isOpen(room: string): boolean; // pièce débloquée : sa porte s'ouvre
+  onDoor(room: string): void;
   onCell(zone: Zone, x: number, y: number): void;
   onHover(zone: Zone, x: number, y: number): void;
 }
@@ -228,6 +230,29 @@ function drawScene(svg: SVGSVGElement, g: Geom, s: Scene): Overlay {
     return node;
   };
   for (const p of s.layout.wall) parts.push(wallItem(p));
+
+  // Portes vers les autres pièces : toute la hauteur d'une colonne de mur, posées sur le sol.
+  for (const dr of g.room.doors) {
+    const open = s.isOpen(dr.to);
+    const target = roomOf(dr.to);
+    const left = dr.x < D;
+    const i = left ? dr.x : dr.x - D;
+    const a = left ? P(0, i) : P(i, 0);
+    const b = left ? P(0, i + 1) : P(i + 1, 0);
+    const door = el(
+      'g',
+      { transform: `translate(${((a[0] + b[0]) / 2).toFixed(1)} ${((a[1] + b[1]) / 2).toFixed(1)}) skewY(${left ? -SKEW : SKEW})`, class: `iso-door${open ? '' : ' locked'}` },
+      el('title', {}, open ? `Aller : ${target.name}` : `${target.name} : porte fermée`),
+      el('rect', { x: -21, y: -152, width: 42, height: 152, class: 'iso-door-frame' }),
+      el('rect', { x: -17, y: -148, width: 34, height: 148, class: 'iso-door-leaf' }),
+      el('rect', { x: -12, y: -140, width: 24, height: 52, class: 'iso-door-panel' }),
+      el('rect', { x: -12, y: -78, width: 24, height: 66, class: 'iso-door-panel' }),
+      el('circle', { cx: 11, cy: -80, r: 2.6, class: 'iso-door-knob' }),
+      el('text', { x: 0, y: -160, class: 'iso-door-sign' }, open ? target.glyph : '🔒'),
+    );
+    door.addEventListener('click', () => s.onDoor(dr.to));
+    parts.push(door);
+  }
   if (clean < 3) for (const [x, row] of WEBS) parts.push(wallItem({ i: 'web', x, y: row }));
 
   // Objets du sol, du fond vers l'avant (le plus proche est dessiné en dernier)
@@ -766,7 +791,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
 
   const render = () => {
     // La pièce (des centaines de formes) n'est redessinée que si son contenu a changé.
-    const key = JSON.stringify([room, unlocked(), layout(), state.cleanStep, editing, photos.length]);
+    const key = JSON.stringify([room, state.rooms, layout(), state.cleanStep, editing, photos.length]);
     if (key !== sceneKey || !overlay) {
       sceneKey = key;
       svg.setAttribute('class', `iso-room room-${room}${unlocked() ? '' : ' locked'}${view.z > 1 ? ' zoomed' : ''}`);
@@ -775,6 +800,13 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
         clean: room === 'entree' ? state.cleanStep : CLEAN_TASKS.length,
         photos,
         editing,
+        isOpen: (id) => unlocked(id),
+        onDoor: (id) => {
+          if (unlocked(id)) return selectRoom(id);
+          const cost = nextRoomCost();
+          status = `${roomOf(id).name} : porte fermée.${mine() && cost !== undefined ? ` Débloque la pièce (◆ ${formatPoints(cost)}) avec son onglet 🔒.` : ''}`;
+          statusEl.textContent = status;
+        },
         onCell: activate,
         onHover: (zone, x, y) => {
           if (!editing || (cursor.zone === zone && cursor.x === x && cursor.y === y)) return;

@@ -8,6 +8,8 @@ export const WALL_ROWS = 2;
  * Pièces (comme public.apartment_room) : sol w × d (w le long de x, d le long de y) ;
  * murs : x de 0 à d − 1 = mur de gauche, de d à d + w − 1 = mur de droite, sur WALL_ROWS hauteurs.
  * On commence avec l'entrée ; les autres s'achètent dans n'importe quel ordre.
+ * Portes : chacune occupe toute la hauteur de la colonne de mur x (comme public.apartment_room_doors) ;
+ * le plan est un arbre autour de l'entrée, chaque porte a sa réciproque dans l'autre pièce.
  */
 export interface Room {
   id: string;
@@ -15,15 +17,16 @@ export interface Room {
   glyph: string;
   w: number;
   d: number;
+  doors: { to: string; x: number }[];
 }
 export const ROOMS: Room[] = [
-  { id: 'entree', name: 'Entrée', glyph: '🚪', w: 6, d: 5 },
-  { id: 'salon', name: 'Salon', glyph: '🛋️', w: 8, d: 7 },
-  { id: 'cuisine', name: 'Cuisine', glyph: '🍳', w: 7, d: 6 },
-  { id: 'chambre', name: 'Chambre', glyph: '🛏️', w: 7, d: 7 },
-  { id: 'sdb', name: 'Salle de bain', glyph: '🛁', w: 6, d: 5 },
-  { id: 'bureau', name: 'Bureau', glyph: '🖥️', w: 6, d: 6 },
-  { id: 'jeux', name: 'Salle de jeux', glyph: '🕹️', w: 8, d: 8 },
+  { id: 'entree', name: 'Entrée', glyph: '🚪', w: 6, d: 5, doors: [{ to: 'salon', x: 2 }, { to: 'chambre', x: 6 }, { to: 'sdb', x: 9 }] },
+  { id: 'salon', name: 'Salon', glyph: '🛋️', w: 8, d: 7, doors: [{ to: 'entree', x: 3 }, { to: 'cuisine', x: 9 }, { to: 'jeux', x: 13 }] },
+  { id: 'cuisine', name: 'Cuisine', glyph: '🍳', w: 7, d: 6, doors: [{ to: 'salon', x: 2 }] },
+  { id: 'chambre', name: 'Chambre', glyph: '🛏️', w: 7, d: 7, doors: [{ to: 'entree', x: 3 }, { to: 'bureau', x: 11 }] },
+  { id: 'sdb', name: 'Salle de bain', glyph: '🛁', w: 6, d: 5, doors: [{ to: 'entree', x: 2 }] },
+  { id: 'bureau', name: 'Bureau', glyph: '🖥️', w: 6, d: 6, doors: [{ to: 'chambre', x: 2 }] },
+  { id: 'jeux', name: 'Salle de jeux', glyph: '🕹️', w: 8, d: 8, doors: [{ to: 'salon', x: 3 }] },
 ];
 export const roomOf = (id: string) => ROOMS.find((r) => r.id === id) ?? ROOMS[0];
 /** Prix de la pièce suivante selon le nombre déjà achetées (comme public.apartment_room_cost). */
@@ -159,7 +162,7 @@ export function covers(p: Placed, x: number, y: number): boolean {
 
 /**
  * Peut-on poser `item` (orientation r) en (x, y) dans la pièce `room`, sans déborder, sans être
- * à cheval sur les deux murs, ni chevaucher un meuble de `others` ?
+ * à cheval sur les deux murs, ni devant une porte, ni chevaucher un meuble de `others` ?
  */
 export function fitsIn(others: Placed[], room: string, zone: Zone, item: string, r: number, x: number, y: number): boolean {
   const f = footprint(item, r);
@@ -167,6 +170,7 @@ export function fitsIn(others: Placed[], room: string, zone: Zone, item: string,
   if (f.place !== zone || x < 0 || y < 0 || x + f.w > d.cols || y + f.h > d.rows) return false;
   const corner = roomOf(room).d;
   if (zone === 'wall' && x < corner && x + f.w > corner) return false;
+  if (zone === 'wall' && roomOf(room).doors.some((dr) => dr.x >= x && dr.x < x + f.w)) return false;
   for (let dy = 0; dy < f.h; dy++) for (let dx = 0; dx < f.w; dx++) if (others.some((p) => covers(p, x + dx, y + dy))) return false;
   return true;
 }
