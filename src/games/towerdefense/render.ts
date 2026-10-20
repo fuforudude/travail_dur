@@ -1,6 +1,6 @@
 // Tower defense : dessin des tours et des ennemis (avec ou sans skin), partagé par le jeu et les caisses.
 
-import { ENEMY_FINISHES, skinOf, TOWER_FINISHES, unlockOf, type Finish } from './catalog';
+import { ENEMY_FINISHES, heroOf, skinOf, TOWER_FINISHES, type Finish } from './catalog';
 import { ENEMIES, TOWERS } from './engine/data';
 
 export interface Palette {
@@ -348,9 +348,36 @@ export function drawEnemy(g: CanvasRenderingContext2D, id: string, cx: number, c
   g.restore();
 }
 
+// --- Héros -------------------------------------------------------------------------------------
+
+/** Couleur et emblème de chaque héros. */
+const HERO_LOOK: Record<string, [string, string]> = {
+  bricolette: ['#d08a2e', '🔧'], frigo: ['#5fb4ff', '❄'], turbo: ['#e04a3a', '☕'], cogneur: ['#8a4fd6', '✊'],
+  grippesou: ['#e6b422', '¤'], pansement: ['#3fae7a', '✚'], longuevue: ['#2a8fa8', '◎'], laprime: ['#b8325a', '✦'],
+};
+
+/** Médaillon d'un héros : un cercle à sa couleur, son emblème au centre. */
+export function drawHero(g: CanvasRenderingContext2D, id: string, cx: number, cy: number, r: number, p: Palette) {
+  const [color, sign] = HERO_LOOK[id] ?? [p.accent, '?'];
+  g.save();
+  g.fillStyle = color;
+  g.strokeStyle = p.text;
+  g.lineWidth = Math.max(1.5, r * 0.08);
+  g.beginPath();
+  g.arc(cx, cy, r, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
+  g.fillStyle = '#ffffff';
+  g.font = `${Math.round(r * 1.05)}px system-ui, "Segoe UI Emoji", sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(sign, cx, cy + r * 0.06);
+  g.restore();
+}
+
 // --- Aperçus (caisses, collection) -----------------------------------------------------------
 
-/** Petit canevas montrant un objet du catalogue (tour, amélioration ou skin). */
+/** Petit canevas montrant un objet du catalogue (tour, héros ou skin). */
 export function previewItem(item: string, px = 64, finishOverride?: Finish | null): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   const ratio = window.devicePixelRatio || 1;
@@ -368,8 +395,13 @@ export function previewItem(item: string, px = 64, finishOverride?: Finish | nul
     drawEnemy(g, id, px / 2, px / 2, Math.min(px * 0.36, enemyRadius(id, px) * 1.4), enemyLook(id, finishOverride ?? skin?.finish, p, 0), 0);
     return canvas;
   }
-  const u = skin ? { tower: TOWERS.find((t) => t.id === skin.subject)!, level: 0 } : unlockOf(item);
-  if (u) drawTower(g, u.tower.id, u.level, px / 2, px / 2, px * 0.9, -Math.PI / 4, towerLook(u.tower.id, finishOverride ?? skin?.finish, p, 0), 0);
+  const hero = heroOf(item);
+  if (hero) {
+    drawHero(g, hero.id, px / 2, px / 2, px * 0.42, p);
+    return canvas;
+  }
+  const tower = TOWERS.find((t) => t.id === (skin?.subject ?? item));
+  if (tower) drawTower(g, tower.id, 0, px / 2, px / 2, px * 0.9, -Math.PI / 4, towerLook(tower.id, finishOverride ?? skin?.finish, p, 0), 0);
   return canvas;
 }
 

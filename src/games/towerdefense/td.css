@@ -1,4 +1,4 @@
-/* Tower defense : écran du deck, panneau de jeu, caisses et collection. */
+/* Tower defense : carte de la campagne, dialogues, panneau de jeu, caisses et collection. */
 
 .td-canvas { max-width: 100%; }
 .td-bar, .td-info { max-width: 720px; }
@@ -27,7 +27,46 @@
 
 .overlay .td-deck-actions { margin-top: 0.4rem; }
 
-/* Caisses de tours : bronze, argent, or */
+/* Carte de la campagne */
+.td-act { display: flex; flex-direction: column; gap: 0.4rem; }
+.td-act h3 { margin: 0.6rem 0 0; font-size: 0.95rem; color: var(--muted); }
+.td-levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.4rem; }
+.td-level {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem;
+  padding: 0.45rem 0.6rem; text-align: left; font: inherit; color: var(--text); cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.td-level b { font-size: 1.05rem; }
+.td-level-name { font-size: 0.85rem; font-weight: 600; line-height: 1.2; }
+.td-level.done { border-color: color-mix(in srgb, var(--tone3) 60%, var(--border)); }
+.td-level.next { border-color: var(--accent); }
+.td-level:disabled { opacity: 0.45; cursor: default; }
+.td-level:focus, .td-level:hover:not(:disabled) { outline: none; border-color: var(--accent); background: var(--accent-soft); }
+.td-infinite { grid-column: span 2; }
+.td-heroes { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.td-hero { min-width: 9rem; max-width: 13rem; }
+.td-hero.on { border-color: var(--accent); background: var(--accent-soft); }
+.td-hero-none { font-size: 1.6rem; line-height: 36px; color: var(--muted); }
+
+/* Dialogues de l'histoire */
+.td-story { width: 100%; max-width: 640px; align-items: stretch; cursor: pointer; }
+.td-story h2 { margin: 0; }
+.td-story-box {
+  display: flex; flex-direction: column; gap: 0.5rem; max-height: 60vh; overflow-y: auto;
+  padding: 0.8rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+}
+.td-line { margin: 0; opacity: 0.6; }
+.td-line.now { opacity: 1; }
+
+/* Choix de la voie d'amélioration */
+.td-paths { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+.td-path {
+  text-align: left; font: inherit; color: var(--text); cursor: pointer; padding: 0.4rem 0.55rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.td-path.on, .td-path:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+/* Caisse de héros */
 .rar-bronze { --rar: #cd7f32; }
 .rar-silver { --rar: #a9b4c2; }
 .rar-gold { --rar: #e4ae39; }
@@ -42,5 +81,7 @@
 .td-skin .shop-preview { min-height: 0; }
 
 @media (max-width: 600px) {
+  .td-paths { grid-template-columns: 1fr; }
+  .td-infinite { grid-column: auto; }
   .td-skin-row { flex-direction: column; align-items: flex-start; gap: 0.3rem; }
 }
