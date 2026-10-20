@@ -9,7 +9,10 @@ import {
   CLEAN_TASKS,
   cleanApartment,
   collectIncome,
+  covers,
   finishOf,
+  fitsIn,
+  footprint,
   itemIncome,
   itemName,
   loadApartment,
@@ -20,10 +23,12 @@ import {
   WALL_COLS,
   WALL_ROWS,
   type ApartmentState,
+  type Zone,
   type Artwork,
   type Layout,
   type Owned,
   type Placed,
+  ZONE_DIMS,
 } from '../net/apartment';
 import { ensureAccount } from '../net/auth';
 import { nameEl } from '../net/cosmetics';
@@ -33,8 +38,6 @@ import { navigate } from '../router';
 import { h, hints } from './dom';
 import { page } from './layout';
 
-type Zone = 'wall' | 'floor';
-const DIMS: Record<Zone, { cols: number; rows: number }> = { floor: { cols: N, rows: N }, wall: { cols: WALL_COLS, rows: WALL_ROWS } };
 
 /** Un meuble en HTML (inventaire, caisses) : glyphe et finition (classe fin-*), ou photo pour un cadre. */
 export function furnitureEl(item: string, art?: Artwork): HTMLElement {
@@ -108,7 +111,7 @@ interface Scene {
 
 /** Curseur et meuble en main : redessinés seuls au survol, sans toucher au reste de la pièce. */
 interface Overlay {
-  draw(cursor: { zone: Zone; x: number; y: number } | null, ghost: { item: string; ok: boolean } | null): void;
+  draw(cursor: { zone: Zone; x: number; y: number } | null, ghost: { item: string; r: number; ok: boolean } | null): void;
 }
 
 function drawScene(svg: SVGSVGElement, s: Scene): Overlay {
@@ -139,6 +142,8 @@ function drawScene(svg: SVGSVGElement, s: Scene): Overlay {
       const tile = el('polygon', {
         points: pts(P(x, y), P(x + 1, y), P(x + 1, y + 1), P(x, y + 1)),
         class: `iso-tile ${(x + y) % 2 ? 'b' : 'a'}${broken ? ' broken' : ''}${s.editing ? ' edit' : ''}`,
+        'data-x': x,
+        'data-y': y,
       });
       tile.addEventListener('click', () => s.onCell('floor', x, y));
       tile.addEventListener('mouseenter', () => s.onHover('floor', x, y));
@@ -159,24 +164,31 @@ function drawScene(svg: SVGSVGElement, s: Scene): Overlay {
   for (let row = 0; row < WALL_ROWS; row++)
     for (let x = 0; x < WALL_COLS; x++) {
       const w = wallSlot(x, row);
-      const slot = el('polygon', { points: w.poly, class: `iso-slot${s.editing ? ' edit' : ''}` });
+      const slot = el('polygon', { points: w.poly, class: `iso-slot${s.editing ? ' edit' : ''}`, 'data-x': x, 'data-y': row });
       slot.addEventListener('click', () => s.onCell('wall', x, row));
       slot.addEventListener('mouseenter', () => s.onHover('wall', x, row));
       parts.push(slot);
     }
-  const wallItem = (p: { i: string; x: number; y: number; art?: number }, ghost = false) => {
+  // Un emplacement de mur mesure TW/2 = 48 de large et 0,42 × WH ≈ 80 de haut (dans le plan du mur) :
+  // les objets y tiennent dans les 4 orientations (cadre 44 × 34, glyphe de 28).
+  const wallItem = (p: { i: string; x: number; y: number; r?: number; art?: number }, ghost = false) => {
     const w = wallSlot(p.x, p.y);
-    const g = el('g', { transform: `translate(${w.cx.toFixed(1)} ${w.cy.toFixed(1)}) skewY(${w.skew})`, class: `iso-item${ghost ? ' ghost' : ''}` });
+    const r = p.r ?? 0;
+    const g = el('g', {
+      transform: `translate(${w.cx.toFixed(1)} ${w.cy.toFixed(1)}) skewY(${w.skew}) rotate(${r * 90})`,
+      class: `iso-item${ghost ? ' ghost' : ''}`,
+      'data-key': `wall:${p.x},${p.y},${r}`,
+    });
     const fin = finishOf(p.i).id;
     if (baseOf(p.i)?.id === 'frame') {
       const art = s.photos.find((a) => a.id === p.art);
       const frame = el('g', { class: `iso-frame fin-${fin}` });
-      frame.append(el('rect', { x: -30, y: -24, width: 60, height: 48, class: 'iso-frame-border' }));
-      if (art) frame.append(el('image', { href: art.url, x: -25, y: -19, width: 50, height: 38, preserveAspectRatio: 'xMidYMid slice' }));
-      else frame.append(el('rect', { x: -25, y: -19, width: 50, height: 38, class: 'iso-frame-empty' }));
+      frame.append(el('rect', { x: -22, y: -17, width: 44, height: 34, class: 'iso-frame-border' }));
+      if (art) frame.append(el('image', { href: art.url, x: -18, y: -13, width: 36, height: 26, preserveAspectRatio: 'xMidYMid slice' }));
+      else frame.append(el('rect', { x: -18, y: -13, width: 36, height: 26, class: 'iso-frame-empty' }));
       g.append(frame);
     } else {
-      g.append(el('text', { class: `iso-glyph fin-${fin}`, 'font-size': 52, y: 18 }, p.i === 'web' ? '🕸️' : (baseOf(p.i)?.glyph ?? '?')));
+      g.append(el('text', { class: `iso-glyph wall-glyph fin-${fin}`, 'font-size': 28, y: 0 }, p.i === 'web' ? '🕸️' : (baseOf(p.i)?.glyph ?? '?')));
     }
     return g;
   };
@@ -185,26 +197,38 @@ function drawScene(svg: SVGSVGElement, s: Scene): Overlay {
 
   // Objets du sol, du fond vers l'avant (le plus proche est dessiné en dernier)
   const sprites: { depth: number; node: SVGElement }[] = [];
-  const floorItem = (item: string, x: number, y: number, ghost = false, glyph?: string) => {
-    const b = baseOf(item);
-    const w = b?.w ?? 1;
-    const hgt = b?.h ?? 1;
-    const [cx, cy] = P(x + w / 2, y + hgt / 2);
-    const size = TW * 0.78 * Math.sqrt(w * hgt) ** 0.85;
-    const g = el('g', { class: `iso-item${ghost ? ' ghost' : ''}` });
-    g.append(el('ellipse', { cx, cy, rx: (TW / 2.6) * ((w + hgt) / 2), ry: (TH / 2.6) * ((w + hgt) / 2), class: 'iso-shadow' }));
-    g.append(el('text', { x: cx, y: cy + size * 0.18, class: `iso-glyph fin-${finishOf(item).id}`, 'font-size': size.toFixed(1) }, glyph ?? b?.glyph ?? '?'));
-    sprites.push({ depth: x + w + y + hgt + (ghost ? 0.01 : 0), node: g });
+  const floorItem = (item: string, x: number, y: number, r = 0, ghost = false, glyph?: string) => {
+    const f = footprint(item, r);
+    const [cx, cy] = P(x + f.w / 2, y + f.h / 2);
+    // Le dessin ne sort jamais de ses cases, dans les 4 orientations (vérifié par les tests) :
+    // - largeur : au plus celle de l'emprise ;
+    // - pied : au-dessus du bord avant de l'emprise, qui n'est qu'à TH/2 × min(w, h) sous le centre ;
+    //   la police descend d'environ 0,26 × la taille sous la ligne de base.
+    const size = TW * 0.72 * Math.sqrt(f.w * f.h) ** 0.85;
+    const baseline = cy + (TH / 2) * Math.min(f.w, f.h) - 0.26 * size - 3;
+    const g = el('g', { class: `iso-item${ghost ? ' ghost' : ''}${r >= 2 ? ' back' : ''}`, 'data-key': `floor:${x},${y},${r}` });
+    // Ombre : l'emprise elle-même, resserrée vers son centre.
+    const shrink = (gx: number, gy: number) => {
+      const [px, py] = P(gx, gy);
+      return [cx + (px - cx) * 0.72, cy + (py - cy) * 0.72] as const;
+    };
+    g.append(el('polygon', { points: pts(shrink(x, y), shrink(x + f.w, y), shrink(x + f.w, y + f.h), shrink(x, y + f.h)), class: 'iso-shadow' }));
+    const text = el('text', { x: cx, y: baseline, class: `iso-glyph fin-${finishOf(item).id}`, 'font-size': size.toFixed(1) }, glyph ?? baseOf(item)?.glyph ?? '?');
+    // Un quart de tour sur deux : le meuble regarde de l'autre côté (dessin retourné).
+    if (r % 2 === 1) text.setAttribute('transform', `translate(${(2 * cx).toFixed(1)} 0) scale(-1 1)`);
+    g.append(text);
+    sprites.push({ depth: x + f.w + y + f.h + (ghost ? 0.01 : 0), node: g });
     return g;
   };
-  for (const p of s.layout.floor) floorItem(p.i, p.x, p.y);
-  if (clean < 1) for (const [x, y] of BOXES) floorItem('mess', x, y, false, '📦');
-  if (clean < 2) for (const [x, y] of TRASH) floorItem('mess', x, y, false, '🗑️');
+  for (const p of s.layout.floor) floorItem(p.i, p.x, p.y, p.r ?? 0);
+  if (clean < 1) for (const [x, y] of BOXES) floorItem('mess', x, y, 0, false, '📦');
+  if (clean < 2) for (const [x, y] of TRASH) floorItem('mess', x, y, 0, false, '🗑️');
   sprites.sort((a, b) => a.depth - b.depth).forEach((sp) => parts.push(sp.node));
   sprites.length = 0;
   const overlay = el('g', { class: 'iso-overlay' });
   parts.push(overlay);
   svg.replaceChildren(...parts);
+  centerWallGlyphs(svg);
 
   return {
     draw(cursor, ghost) {
@@ -212,20 +236,37 @@ function drawScene(svg: SVGSVGElement, s: Scene): Overlay {
       if (cursor?.zone === 'floor') {
         const { x, y } = cursor;
         out.push(el('polygon', { points: pts(P(x, y), P(x + 1, y), P(x + 1, y + 1), P(x, y + 1)), class: 'iso-cursor' }));
-        if (ghost) floorItem(ghost.item, x, y, true).classList.toggle('bad', !ghost.ok);
+        if (ghost) floorItem(ghost.item, x, y, ghost.r, true).classList.toggle('bad', !ghost.ok);
         out.push(...sprites.map((sp) => sp.node));
         sprites.length = 0;
       } else if (cursor?.zone === 'wall') {
         out.push(el('polygon', { points: wallSlot(cursor.x, cursor.y).poly, class: 'iso-cursor' }));
         if (ghost) {
-          const g = wallItem({ i: ghost.item, x: cursor.x, y: cursor.y }, true);
+          const g = wallItem({ i: ghost.item, x: cursor.x, y: cursor.y, r: ghost.r }, true);
           g.classList.toggle('bad', !ghost.ok);
           out.push(g);
         }
       }
       overlay.replaceChildren(...out);
+      centerWallGlyphs(overlay);
     },
   };
+}
+
+/**
+ * Les emoji ne sont pas centrés dans leur boîte (bien plus de place au-dessus de la ligne de base) :
+ * une fois tournés d'un quart de tour, ils déborderaient de leur emplacement. On les recentre sur
+ * leur boîte réelle, mesurée une fois dessinés.
+ */
+function centerWallGlyphs(root: Element): void {
+  for (const t of root.querySelectorAll<SVGTextElement>('text.wall-glyph')) {
+    if (t.dataset.centered) continue;
+    const b = t.getBBox();
+    if (!b.width) continue; // pas encore affiché
+    t.setAttribute('x', (-(b.x + b.width / 2)).toFixed(1));
+    t.setAttribute('y', (-(b.y + b.height / 2)).toFixed(1));
+    t.dataset.centered = '1';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +290,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   let photos: Artwork[] = [];
   let editing = false;
   let hand: Owned | null = null;
+  let handRot = 0; // orientation du meuble en main
   let cursor: { zone: Zone; x: number; y: number } = { zone: 'floor', x: 3, y: 3 };
   let status = '';
   let saveTimer: number | undefined;
@@ -266,21 +308,9 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
 
   const mine = () => owner === me;
   const layout = () => state.layout;
-  const sizeOf = (item: string) => {
-    const b = baseOf(item);
-    return { w: b?.w ?? 1, h: b?.h ?? 1, place: (b?.place ?? 'floor') as Zone };
-  };
-  const occupant = (zone: Zone, x: number, y: number) =>
-    layout()[zone].find((p) => {
-      const s = sizeOf(p.i);
-      return x >= p.x && x < p.x + s.w && y >= p.y && y < p.y + s.h;
-    });
-  const fits = (item: string, zone: Zone, x: number, y: number) => {
-    const s = sizeOf(item);
-    if (s.place !== zone || x + s.w > DIMS[zone].cols || y + s.h > DIMS[zone].rows) return false;
-    for (let dy = 0; dy < s.h; dy++) for (let dx = 0; dx < s.w; dx++) if (occupant(zone, x + dx, y + dy)) return false;
-    return true;
-  };
+  const sizeOf = (item: string) => footprint(item);
+  const occupant = (zone: Zone, x: number, y: number) => layout()[zone].find((p) => covers(p, x, y));
+  const fits = (item: string, zone: Zone, x: number, y: number, r = handRot) => fitsIn(layout()[zone], zone, item, r, x, y);
 
   const reloadState = async () => {
     const fresh = await loadApartment(owner);
@@ -316,7 +346,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     cursor = { zone, x, y };
     if (hand) {
       if (!fits(hand.item_id, zone, x, y)) return;
-      const entry: Placed = { o: hand.id, i: hand.item_id, x, y };
+      const entry: Placed = { o: hand.id, i: hand.item_id, x, y, ...(handRot ? { r: handRot } : {}) };
       const isFrame = baseOf(hand.item_id)?.id === 'frame';
       hand = null;
       if (isFrame && photos.length) pickingPhoto = entry;
@@ -326,7 +356,26 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     const p = occupant(zone, x, y);
     if (!p) return;
     hand = owned.find((o) => o.id === p.o) ?? null;
+    handRot = p.r ?? 0;
     setLayout({ ...layout(), [zone]: layout()[zone].filter((q) => q !== p) });
+  };
+
+  /** Quart de tour : le meuble en main, sinon celui sous le curseur (s'il a la place une fois tourné). */
+  const rotate = () => {
+    if (!editing) return;
+    if (hand) {
+      handRot = (handRot + 1) % 4;
+      return render();
+    }
+    const p = occupant(cursor.zone, cursor.x, cursor.y);
+    if (!p) return;
+    const r = ((p.r ?? 0) + 1) % 4;
+    const others = layout()[cursor.zone].filter((q) => q !== p);
+    if (!fitsIn(others, cursor.zone, p.i, r, p.x, p.y)) {
+      status = 'Pas la place de le tourner ici.';
+      return render();
+    }
+    setLayout({ ...layout(), [cursor.zone]: [...others, { ...p, r }] });
   };
 
   const setPhoto = (p: Placed, art: number | undefined) => {
@@ -437,6 +486,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
           b.addEventListener('mousedown', (e) => e.preventDefault());
           b.addEventListener('click', () => {
             hand = o;
+            handRot = 0;
             const zone = sizeOf(o.item_id).place;
             if (zone !== cursor.zone) cursor = { zone, x: 0, y: 0 };
             render();
@@ -446,6 +496,9 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       : [h('p', { class: 'muted small' }, 'Tous tes meubles sont placés. Il y en a d’autres dans les caisses.')];
     const done = h('button', { class: 'field', type: 'button' }, 'Terminer (E)');
     done.addEventListener('click', toggleEdit);
+    const turn = h('button', { class: 'field', type: 'button' }, hand ? `Pivoter (R) · ${handRot * 90}°` : 'Pivoter le meuble visé (R)');
+    turn.addEventListener('mousedown', (e) => e.preventDefault());
+    turn.addEventListener('click', rotate);
     side.replaceChildren(
       h('h2', {}, hand ? `En main : ${itemName(hand.item_id)}` : 'Mes meubles'),
       h('p', { class: 'muted small' }, hand ? 'Clique une case libre (ou Entrée) pour le poser ; Suppr pour le ranger.' : 'Choisis un meuble, ou clique un meuble posé pour le déplacer.'),
@@ -461,6 +514,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
             }),
           )
         : '',
+      turn,
       h('div', { class: 'ap-inventory' }, ...list),
       done,
     );
@@ -469,7 +523,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   let overlay: Overlay | null = null;
   let sceneKey = '';
   const drawOverlay = () =>
-    overlay?.draw(editing ? cursor : null, editing && hand ? { item: hand.item_id, ok: fits(hand.item_id, cursor.zone, cursor.x, cursor.y) } : null);
+    overlay?.draw(editing ? cursor : null, editing && hand ? { item: hand.item_id, r: handRot, ok: fits(hand.item_id, cursor.zone, cursor.x, cursor.y) } : null);
 
   const render = () => {
     // La pièce (des centaines de formes) n'est redessinée que si son contenu a changé.
@@ -560,7 +614,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       if (x >= N) ((zone = 'floor'), (x = x - N), (y = 0));
       else ((zone = 'floor'), (y = x), (x = 0));
     }
-    const d = DIMS[zone];
+    const d = ZONE_DIMS[zone];
     cursor = { zone, x: Math.max(0, Math.min(d.cols - 1, x)), y: Math.max(0, Math.min(d.rows - 1, y)) };
     render();
   };
@@ -593,7 +647,8 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
           const p = occupant(cursor.zone, cursor.x, cursor.y);
           if (p) setLayout({ ...layout(), [cursor.zone]: layout()[cursor.zone].filter((q) => q !== p) });
         }
-      } else if (key === 'p') {
+      } else if (key === 'r') rotate();
+      else if (key === 'p') {
         const p = occupant(cursor.zone, cursor.x, cursor.y);
         if (p && baseOf(p.i)?.id === 'frame') {
           pickingPhoto = p;
@@ -605,6 +660,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
         if (!free.length) return;
         const i = hand ? free.findIndex((o) => o.id === hand!.id) : -1;
         hand = free[(i + 1) % free.length];
+        handRot = 0;
         const zone = sizeOf(hand.item_id).place;
         if (zone !== cursor.zone) cursor = { zone, x: 0, y: 0 };
         render();
@@ -612,7 +668,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       e.preventDefault();
     }),
   );
-  content.append(hints(['E', 'aménager'], ['C', 'récolter'], ['← ↑ → ↓', 'case'], ['Tab', 'meuble suivant'], ['Entrée', 'poser / reprendre'], ['Suppr', 'ranger'], ['P', 'photo du cadre'], ['Retour arrière', 'quitter']));
+  content.append(hints(['E', 'aménager'], ['C', 'récolter'], ['← ↑ → ↓', 'case'], ['Tab', 'meuble suivant'], ['Entrée', 'poser / reprendre'], ['R', 'pivoter'], ['Suppr', 'ranger'], ['P', 'photo du cadre'], ['Retour arrière', 'quitter']));
 
   return () => {
     disposed = true;
