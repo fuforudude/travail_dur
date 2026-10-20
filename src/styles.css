@@ -1535,6 +1535,17 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .ap-room.on { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 .ap-room.locked { color: var(--muted); border-style: dashed; }
 .iso-slot.photo { cursor: zoom-in; }
+.iso-door { cursor: pointer; }
+.iso-door-frame { fill: #5a3d24; }
+.iso-door-leaf { fill: #a8744a; }
+.iso-door:hover .iso-door-leaf { fill: #c08a5c; }
+.iso-door-panel { fill: none; stroke: rgb(0 0 0 / 22%); stroke-width: 1.5; }
+.iso-door-knob { fill: #e0ae2e; }
+.iso-door-sign { text-anchor: middle; font-size: 16px; }
+.iso-door.locked { cursor: not-allowed; }
+.iso-door.locked .iso-door-frame { fill: #6a6a6a; }
+.iso-door.locked .iso-door-leaf { fill: #9b9b9b; }
+.iso-door.locked .iso-door-knob { fill: #5b5b5b; }
 .ap-lightbox { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 1rem; background: rgb(0 0 0 / 80%); cursor: zoom-out; }
 .ap-lightbox figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; max-width: 100%; }
 .ap-lightbox img { max-width: min(92vw, 1200px); max-height: 82vh; object-fit: contain; border: 8px solid #6b4a2b; border-radius: 3px; box-shadow: 0 10px 40px rgb(0 0 0 / 50%); }
