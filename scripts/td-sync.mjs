@@ -9,5 +9,6 @@ mkdirSync(to, { recursive: true });
 for (const f of readdirSync(from)) {
   if (!f.endsWith('.ts')) continue;
   const header = `// Copie de src/games/towerdefense/engine/${f} (scripts/td-sync.mjs) : ne pas modifier ici.\n`;
-  writeFileSync(new URL(f, to), header + readFileSync(new URL(f, from), 'utf8'));
+  // Fins de ligne Unix : sinon, sous Windows, chaque build marque la copie comme modifiée.
+  writeFileSync(new URL(f, to), (header + readFileSync(new URL(f, from), 'utf8')).replace(/\r\n/g, '\n'));
 }
