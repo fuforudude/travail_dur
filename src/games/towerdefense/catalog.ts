@@ -1,7 +1,8 @@
-// Tower defense : catalogue de la méta-progression (caisses, finitions des skins).
-// À garder identique à supabase/migrations/0030_td_roguelike.sql (td_crates, td_catalog).
+// Tower defense : catalogue des caisses (héros, finitions des skins).
+// À garder identique à supabase/migrations/0030_td_roguelike.sql et 0032_td_campagne.sql
+// (td_crates, td_catalog).
 
-import { ENEMIES, FREE_ITEMS, TOWERS } from './engine/data';
+import { ENEMIES, HEROES, TOWERS } from './engine/data';
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 export const RARITY_NAMES: Record<Rarity, string> = { common: 'Commun', rare: 'Rare', epic: 'Épique', legendary: 'Légendaire', mythic: 'Mythique' };
@@ -47,22 +48,16 @@ export const ENEMY_FINISHES: Finish[] = [
 export interface CrateDef {
   id: string;
   name: string;
-  kind: 'unlock' | 'skin';
+  kind: 'hero' | 'skin';
   text: string;
   contents: string[]; // objets possibles
 }
 
-const unlocksOf = (ids: string[], extra: string[] = []) => [...ids.flatMap((id) => [id, ...TOWERS.find((t) => t.id === id)!.upgrades.map((u) => u.id)]), ...extra];
-
 export const CRATES: CrateDef[] = [
-  { id: 'bronze', name: 'Caisse Bronze', kind: 'unlock', text: 'L’Alchimiste et les améliorations des tours de départ.', contents: unlocksOf(['alchemist'], ['crossbow_u2', 'cannon_u2', 'frost_u2']) },
-  { id: 'silver', name: 'Caisse Argent', kind: 'unlock', text: 'Tesla, Sniper, Lance-flammes, Comptoir et leurs améliorations.', contents: unlocksOf(['tesla', 'sniper', 'flamer', 'bank']) },
-  { id: 'gold', name: 'Caisse Or', kind: 'unlock', text: 'Railgun, Singularité et leurs améliorations.', contents: unlocksOf(['railgun', 'singularity']) },
+  { id: 'heroes', name: 'Caisse de héros', kind: 'hero', text: '8 héros qui renforcent toute la partie. Un héros déjà obtenu monte d’un niveau (5 au maximum).', contents: HEROES.map((h) => `hero:${h.id}`) },
   { id: 'tower_skins', name: 'Skins de tours', kind: 'skin', text: '10 finitions pour chacune des 10 tours.', contents: TOWERS.flatMap((t) => TOWER_FINISHES.map((f) => `ts:${t.id}:${f.id}`)) },
   { id: 'enemy_skins', name: 'Skins d’ennemis', kind: 'skin', text: '10 finitions pour chacun des 20 ennemis.', contents: ENEMIES.flatMap((e) => ENEMY_FINISHES.map((f) => `es:${e.id}:${f.id}`)) },
 ];
-
-export const isFree = (id: string) => FREE_ITEMS.includes(id);
 
 export interface SkinRef {
   target: 'tower' | 'enemy';
@@ -79,15 +74,8 @@ export function skinOf(id: string): SkinRef | null {
   return { target: m[1] === 'ts' ? 'tower' : 'enemy', subject: m[2], slot: `${m[1]}:${m[2]}`, finish };
 }
 
-/** Tour ou amélioration désignée par un identifiant du catalogue. */
-export function unlockOf(id: string) {
-  for (const t of TOWERS) {
-    if (t.id === id) return { tower: t, upgrade: null, level: 0 };
-    const i = t.upgrades.findIndex((u) => u.id === id);
-    if (i >= 0) return { tower: t, upgrade: t.upgrades[i], level: i + 1 };
-  }
-  return null;
-}
+/** Héros désigné par un identifiant du catalogue (`hero:<id>`). */
+export const heroOf = (id: string) => (id.startsWith('hero:') ? HEROES.find((h) => h.id === id.slice(5)) ?? null : null);
 
 export function itemName(id: string): string {
   const skin = skinOf(id);
@@ -95,10 +83,7 @@ export function itemName(id: string): string {
     const subject = skin.target === 'tower' ? TOWERS.find((t) => t.id === skin.subject)?.name : ENEMIES.find((e) => e.id === skin.subject)?.name;
     return `${subject ?? skin.subject} ${skin.finish.name}`;
   }
-  const u = unlockOf(id);
-  if (!u) return id;
-  return u.upgrade ? `${u.tower.name} U${u.level} · ${u.upgrade.name}` : u.tower.name;
+  const hero = heroOf(id);
+  if (hero) return hero.name;
+  return TOWERS.find((t) => t.id === id)?.name ?? id;
 }
-
-/** Caisse qui contient un objet (pour indiquer où trouver une tour ou une amélioration). */
-export const crateOf = (id: string) => CRATES.find((c) => c.contents.includes(id));

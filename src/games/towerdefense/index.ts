@@ -8,30 +8,37 @@ import { navigate } from '../../router';
 import { h, hints } from '../../ui/dom';
 import { spatialNav } from '../../ui/menu';
 import type { Game, GameContext } from '../types';
-import { crateOf, isFree } from './catalog';
-import { COLS, deckSlots, ENEMIES, FINAL_WAVE, PATH, ROWS, TOWERS, towerStats, type TowerStats } from './engine/data';
 import {
-  applyAction, isBuildable, newRun, planWave, sellValue, startWave, TICK, upgradeOf,
-  type Enemy, type Fx, type Running, type RunState,
+  COLS, ENEMIES, FINAL_WAVE, HEROES, LEVEL_COUNT, levelBoss, levelWaves, MAPS, MAX_LEVEL, maxTier, ROWS, TIER_UNLOCK, TOWER_UNLOCK,
+  TOWERS, towersFor, towerStats, type TowerStats,
+} from './engine/data';
+import {
+  applyAction, isBuildable, newRun, planLevelWave, planWave, priceOf, sellValue, startWave, TICK, upgradeOf,
+  type Enemy, type Fx, type Mode, type Running, type RunState,
 } from './engine/sim';
-import { equippedFinish, loadMeta, sendWave, startRun, type Meta } from './net';
+import { equippedFinish, loadMeta, saveLocalProgress, sendWave, startRun, type Meta } from './net';
 import { drawEnemy, drawTower, enemyLook, enemyRadius, previewItem, readPalette, towerLook, type Palette } from './render';
+import { ACTS, actOf, PROLOGUE, STORY, type Line } from './story';
 import './td.css';
 
 interface Saved {
   s: RunState;
   actions: string[]; // constructions depuis la dernière vague (envoyées à la fin de la suivante)
   session: string | null;
-  victory?: boolean; // message de la vague 50 déjà montré
+  victory?: boolean; // message de la vague 50 déjà montré (mode infini)
 }
 
-const SAVE_KEY = 'state:td2';
+const SAVE_KEY = 'state:td3';
+const HERO_KEY = 'hero:td';
 const TICK_MS = TICK * 1000;
-const LEVELS = ['Base', 'U1', 'U2'];
 const DAMAGE = { physical: 'physique', magic: 'magique', pure: 'pur' } as const;
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 
 const plural = (n: number, word: string) => `${n} ${word}${n > 1 && !/[sx]$/.test(word) ? 's' : ''}`;
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ','));
+const towerName = (id: string) => TOWERS.find((t) => t.id === id)?.name ?? id;
+/** Points d'un niveau réussi (voir 0032_td_campagne.sql). */
+const levelPoints = (L: number, first: boolean) => (first ? 100 + 40 * L : 5 * L);
 
 function statsLine(st: TowerStats): string {
   if (st.income) return `+${st.income} or par vague${st.interest ? `, + ${Math.round(st.interest * 100)} % de l’or (${st.interestCap} max)` : ''}${st.aura ? ', aura de cadence et de portée' : ''}`;
@@ -47,8 +54,27 @@ function statsLine(st: TowerStats): string {
   return parts.join(' · ');
 }
 
+/** Ce que débloque le passage de `from` à `to` niveaux terminés. */
+function unlocksBetween(from: number, to: number): string[] {
+  const out: string[] = [];
+  for (const id of towersFor(to)) if (!towersFor(from).includes(id)) out.push(`la tour ${towerName(id)}`);
+  const names = ['', 'la 1re amélioration', 'la 2e amélioration', 'le choix d’une voie (3e amélioration)', 'la dernière amélioration de chaque voie'];
+  for (let t = maxTier(from) + 1; t <= maxTier(to); t++) out.push(names[t]);
+  return out;
+}
+
+/** Prochain déblocage de la campagne, pour donner envie. */
+function nextUnlock(cleared: number): string | null {
+  let best: { at: number; what: string } | null = null;
+  for (const [id, at] of Object.entries(TOWER_UNLOCK)) if (at > cleared && (!best || at < best.at)) best = { at, what: `la tour ${towerName(id)}` };
+  TIER_UNLOCK.forEach((at, t) => {
+    if (at > cleared && (!best || at < best.at)) best = { at, what: t === 3 ? 'le choix des voies' : `l’amélioration ${t}` };
+  });
+  return best ? `${best.what} après le niveau ${best.at}` : null;
+}
+
 function mount(ctx: GameContext): () => void {
-  let meta: Meta = { owned: new Set(), equipped: new Map(), best: 0, online: false };
+  let meta: Meta = { owned: new Set(), equipped: new Map(), heroes: new Map(), cleared: 0, best: 0, online: false };
   let leave: () => void = () => {};
   let disposed = false;
   const metaReady = loadMeta().then((m) => (meta = m));
@@ -59,87 +85,110 @@ function mount(ctx: GameContext): () => void {
     leave = screen();
   };
 
+  const chosenHero = () => {
+    const id = load<string | null>(HERO_KEY, null);
+    const level = id ? meta.heroes.get(id) ?? 0 : 0;
+    return id && level ? { id, level } : null;
+  };
+
   // =============================================================================================
-  // Écran du deck : choisir ses tours avant la run
+  // Carte de la campagne
   // =============================================================================================
-  const deckScreen = () => {
-    const wrap = h('div', { class: 'game td-deck' }, h('p', { class: 'muted' }, 'Chargement…'));
+  let focusLevel = 0;
+
+  const menuScreen = () => {
+    const wrap = h('div', { class: 'game td-deck td-menu' }, h('p', { class: 'muted' }, 'Chargement…'));
     ctx.root.append(wrap);
-    let deck: string[] = load<string[]>('deck:td', ['crossbow', 'cannon', 'frost']);
     let note = '';
     let starting = false;
-    let focusId = '';
-    const has = (id: string) => isFree(id) || meta.owned.has(id);
 
     const render = () => {
-      const slots = deckSlots(meta.best);
-      deck = deck.filter(has).slice(0, slots);
-      const cards = TOWERS.map((t) => {
-        const owned = has(t.id);
-        const inDeck = deck.includes(t.id);
-        const ups = t.upgrades.map((u, i) => (isFree(u.id) || meta.owned.has(u.id) ? `U${i + 1}` : null)).filter(Boolean).join(' ');
+      const cleared = meta.cleared;
+      const hero = chosenHero();
+      const heroBtn = (id: string | null) => {
+        const def = id ? HEROES.find((x) => x.id === id)! : null;
+        const lvl = id ? meta.heroes.get(id) ?? 0 : 0;
         const b = h(
           'button',
-          { class: `shop-item td-card${inDeck ? ' on' : ''}${owned ? '' : ' locked'}`, type: 'button', 'data-id': t.id },
-          h('span', { class: 'shop-preview' }, previewItem(t.id, 48, equippedFinish(meta, 'ts', t.id))),
-          h('span', { class: 'shop-name' }, t.name),
-          h('span', { class: 'muted small' }, `${t.role} · ${t.cost} or`),
-          h('span', { class: 'shop-price' }, owned ? (inDeck ? `Dans le deck${ups ? ' · ' + ups : ''}` : `Ajouter${ups ? ' · ' + ups : ''}`) : `🔒 ${crateOf(t.id)?.name ?? ''}`),
+          { class: `shop-item td-hero${(hero?.id ?? null) === id ? ' on' : ''}`, type: 'button', 'data-id': `hero:${id ?? 'none'}` },
+          id ? h('span', { class: 'shop-preview' }, previewItem(`hero:${id}`, 36)) : h('span', { class: 'td-hero-none' }, '∅'),
+          h('span', { class: 'shop-name' }, def ? `${def.name} · niv. ${lvl}` : 'Sans héros'),
+          h('span', { class: 'small muted' }, def ? def.text(lvl) : 'Aucun bonus'),
         );
-        b.addEventListener('click', () => toggle(t.id));
+        b.addEventListener('click', () => {
+          save(HERO_KEY, id);
+          render();
+        });
         return b;
+      };
+      const owned = HEROES.filter((x) => meta.heroes.has(x.id)).map((x) => x.id);
+
+      const acts = ACTS.map((act, k) => {
+        const to = (ACTS[k + 1]?.from ?? LEVEL_COUNT + 1) - 1;
+        const buttons: HTMLElement[] = [];
+        for (let L = act.from; L <= to; L++) {
+          const done = L <= cleared;
+          const open = L <= cleared + 1;
+          const boss = levelBoss(L);
+          const b = h(
+            'button',
+            { class: `td-level${done ? ' done' : ''}${open && !done ? ' next' : ''}`, type: 'button', disabled: !open, 'data-id': `level:${L}` },
+            h('b', {}, String(L)),
+            h('span', { class: 'td-level-name' }, open ? STORY[L - 1].name : '???'),
+            h('span', { class: 'small muted' }, `${done ? '✓ ' : open ? '' : '🔒 '}${levelWaves(L)} vagues${boss ? ' · boss' : ''}`),
+          );
+          b.addEventListener('click', () => play('campaign', L));
+          buttons.push(b);
+        }
+        return h('section', { class: 'td-act' }, h('h3', {}, act.name), h('div', { class: 'td-levels' }, ...buttons));
       });
-      const launch = h('button', { class: 'field rl-spin', type: 'button' }, starting ? 'Lancement…' : 'Lancer la run');
-      launch.addEventListener('click', () => void begin());
-      const crates = h('button', { class: 'field', type: 'button' }, 'Caisses et skins');
+
+      const infinite = h(
+        'button',
+        { class: 'td-level td-infinite', type: 'button', 'data-id': 'infinite' },
+        h('b', {}, '∞'),
+        h('span', { class: 'td-level-name' }, 'Mode infini'),
+        h('span', { class: 'small muted' }, `Classé · record : vague ${meta.best} · avec tes ${towersFor(cleared).length} tours`),
+      );
+      infinite.addEventListener('click', () => play('infinite', 0));
+      const crates = h('button', { class: 'field', type: 'button' }, 'Caisses (héros, skins)');
       crates.addEventListener('click', () => navigate('/td/caisses'));
+      const up = nextUnlock(cleared);
+
       wrap.replaceChildren(
         h(
           'div',
           { class: 'td-deck-head' },
-          h('div', {}, h('h2', {}, 'Ton deck'), h('p', { class: 'muted small' }, `${deck.length} / ${slots} tours · record : vague ${meta.best}${slots < 6 ? ` · un emplacement de plus à la vague ${[15, 30, 45][slots - 3]}` : ''}`)),
-          h('div', { class: 'td-deck-actions' }, crates, launch),
+          h(
+            'div',
+            {},
+            h('h2', {}, 'L’expédition'),
+            h('p', { class: 'muted small' }, `${cleared} / ${LEVEL_COUNT} niveaux · ${towersFor(cleared).length} tours débloquées${up ? ` · prochain déblocage : ${up}` : ' · tout est débloqué'}`),
+          ),
+          h('div', { class: 'td-deck-actions' }, crates),
         ),
-        h('div', { class: 'shop-grid td-deck-grid' }, ...cards),
-        h('p', { class: 'status' }, note),
-        h('p', { class: 'muted small' }, `50 vagues, un boss toutes les 10, puis le mode infini. Chaque vague n terminée rapporte 2 × n points ◆, qui ouvrent les caisses de tours et de skins.`),
-        hints(['← ↑ → ↓', 'tour'], ['Entrée', 'ajouter / retirer'], ['Espace', 'lancer'], ['C', 'caisses'], ['Retour arrière', 'quitter']),
+        ...acts,
+        h('section', { class: 'td-act' }, h('h3', {}, 'Après l’expédition'), h('div', { class: 'td-levels' }, infinite)),
+        h(
+          'section',
+          { class: 'td-act' },
+          h('h3', {}, 'Héros'),
+          h('div', { class: 'td-heroes' }, heroBtn(null), ...owned.map(heroBtn)),
+          owned.length ? '' : h('p', { class: 'muted small' }, 'Pas encore de héros : ils sortent de la caisse de héros (C), et un doublon les fait monter de niveau.'),
+        ),
+        h('p', { class: 'status' }, starting ? 'Lancement…' : note),
+        hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'jouer'], ['I', 'mode infini'], ['C', 'caisses'], ['Retour arrière', 'quitter']),
       );
-      (wrap.querySelector<HTMLElement>(`[data-id="${focusId}"]`) ?? wrap.querySelector<HTMLElement>('.td-card'))?.focus();
+      const target = focusLevel ? `level:${focusLevel}` : `level:${Math.min(LEVEL_COUNT, cleared + 1)}`;
+      (wrap.querySelector<HTMLElement>(`[data-id="${target}"]`) ?? wrap.querySelector<HTMLElement>('.td-level'))?.focus();
     };
 
-    const toggle = (id: string) => {
-      focusId = id;
-      note = '';
-      if (!has(id)) note = `À débloquer dans la ${crateOf(id)?.name ?? 'boutique'}.`;
-      else if (deck.includes(id)) deck = deck.filter((d) => d !== id);
-      else if (deck.length >= deckSlots(meta.best)) note = 'Deck plein : retire d’abord une tour.';
-      else deck = [...deck, id];
-      save('deck:td', deck);
-      render();
-    };
-
-    const begin = async () => {
+    const play = (mode: Mode, L: number) => {
       if (starting) return;
-      if (!deck.length) {
-        note = 'Choisis au moins une tour.';
-        return render();
-      }
-      starting = true;
-      render();
-      let saved: Saved;
-      try {
-        if (!multiConfigured) throw new Error('');
-        const r = await startRun(deck);
-        saved = { s: r.state, actions: [], session: r.id };
-      } catch (e) {
-        const msg = (e as Error).message;
-        saved = { s: newRun((Math.random() * 2 ** 32) >>> 0, deck, [...meta.owned]), actions: [], session: null };
-        runNote = msg ? `Partie non classée : ${msg}.` : '';
-      }
-      if (disposed) return;
-      save(SAVE_KEY, saved);
-      show(() => runScreen(saved));
+      focusLevel = L;
+      if (mode === 'infinite') return void begin(mode, 0);
+      const lines = [...(L === 1 ? PROLOGUE : []), ...STORY[L - 1].intro];
+      show(() => storyScreen(`Niveau ${L} · ${STORY[L - 1].name}`, actOf(L).name, lines, () => void begin(mode, L), () => show(menuScreen)));
     };
 
     void metaReady.then(() => !disposed && render());
@@ -150,18 +199,82 @@ function mount(ctx: GameContext): () => void {
         e.preventDefault();
         return ctx.onExit();
       }
-      if (e.key === ' ') {
-        e.preventDefault();
-        return void begin();
-      }
-      if (e.key.toLowerCase() === 'c') return navigate('/td/caisses');
-      if (nav(e)) focusId = (document.activeElement as HTMLElement | null)?.dataset.id ?? focusId;
+      const key = e.key.toLowerCase();
+      if (key === 'i') return play('infinite', 0);
+      if (key === 'c') return navigate('/td/caisses');
+      nav(e);
     });
     return offKeys;
   };
 
+  /** Lance une partie : classée si le serveur répond, sinon jouée sur place. */
+  const begin = async (mode: Mode, L: number) => {
+    const hero = chosenHero();
+    let saved: Saved;
+    let msg = '';
+    try {
+      if (!multiConfigured) throw new Error('');
+      const r = await startRun(mode, L, hero?.id ?? null);
+      saved = { s: r.state, actions: [], session: r.id };
+    } catch (e) {
+      msg = (e as Error).message;
+      saved = { s: newRun((Math.random() * 2 ** 32) >>> 0, { mode, level: L, cleared: meta.cleared, hero }), actions: [], session: null };
+    }
+    if (disposed) return;
+    runNote = msg ? `Partie non classée : ${msg}.` : '';
+    save(SAVE_KEY, saved);
+    show(() => runScreen(saved));
+  };
+
   // =============================================================================================
-  // La run
+  // Dialogues de l'histoire
+  // =============================================================================================
+  const storyScreen = (title: string, act: string, lines: Line[], done: () => void, back: () => void) => {
+    let i = 0;
+    const box = h('div', { class: 'td-story-box' });
+    const wrap = h(
+      'div',
+      { class: 'game td-story' },
+      h('p', { class: 'muted small' }, act),
+      h('h2', {}, title),
+      box,
+      hints(['Entrée', 'suite'], ['Tab', 'passer'], ['Retour arrière', 'carte']),
+    );
+    ctx.root.append(wrap);
+    const render = () => {
+      const shown = lines.slice(0, i + 1);
+      box.replaceChildren(
+        ...shown.map((l, k) => h('p', { class: `td-line${k === i ? ' now' : ''}` }, h('b', {}, `${l.who} : `), l.text)),
+        h('p', { class: 'muted small' }, i < lines.length - 1 ? `${i + 1} / ${lines.length}` : 'Entrée pour continuer'),
+      );
+      box.lastElementChild?.scrollIntoView({ block: 'nearest' });
+    };
+    const next = () => {
+      if (i < lines.length - 1) {
+        i++;
+        blip(440, 0.02);
+        render();
+      } else done();
+    };
+    wrap.addEventListener('click', next);
+    render();
+    return pushKeys((e) => {
+      if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        next();
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        done();
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        back();
+      }
+    });
+  };
+
+  // =============================================================================================
+  // La partie
   // =============================================================================================
   let runNote = '';
 
@@ -170,6 +283,9 @@ function mount(ctx: GameContext): () => void {
     let actions = saved.actions;
     let session = saved.session;
     let victorySeen = Boolean(saved.victory);
+    const campaign = s.mode === 'campaign';
+    const path = MAPS[s.map] ?? MAPS[0];
+    const clearedBefore = meta.cleared;
     let cx = 6;
     let cy = 4;
     let speed = 1;
@@ -184,6 +300,7 @@ function mount(ctx: GameContext): () => void {
     let note = runNote;
     let confirmAbandon = false;
     let showVictory = false;
+    let choosing = false; // choix de la voie d'amélioration de la tour sous le curseur
     let gone = false;
     let pal: Palette = readPalette();
     runNote = '';
@@ -203,7 +320,7 @@ function mount(ctx: GameContext): () => void {
         info,
         noteEl,
         hints(
-          ['← ↑ → ↓', 'case'], ['1 – 6', 'construire'], ['U', 'améliorer'], ['S', 'vendre'], ['Espace', 'lancer la vague'],
+          ['← ↑ → ↓', 'case'], ['1 – 0', 'construire'], ['U', 'améliorer'], ['S', 'vendre'], ['Espace', 'lancer la vague'],
           ['F', 'vitesse'], ['P', 'pause'], ['R', 'abandonner'], ['Retour arrière', 'quitter'],
         ),
       ),
@@ -212,7 +329,7 @@ function mount(ctx: GameContext): () => void {
     const persist = () => {
       if (s.over) remove(SAVE_KEY);
       else save(SAVE_KEY, { s, actions, session, victory: victorySeen } satisfies Saved);
-      setBest('td2', s.wave);
+      if (!campaign) setBest('td2', s.wave);
     };
 
     let cell = 32;
@@ -241,7 +358,7 @@ function mount(ctx: GameContext): () => void {
       g.fillStyle = pal.bg;
       g.fillRect(0, 0, W, H);
       g.fillStyle = pal.path;
-      for (const [x, y] of PATH) g.fillRect(x * cell, y * cell, cell, cell);
+      for (const [x, y] of path) g.fillRect(x * cell, y * cell, cell, cell);
       g.strokeStyle = pal.grid;
       g.lineWidth = 1;
       g.beginPath();
@@ -259,8 +376,8 @@ function mount(ctx: GameContext): () => void {
       g.font = `${Math.round(cell * 0.5)}px system-ui, sans-serif`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillText('›', PATH[0][0] * cell + cell / 2, PATH[0][1] * cell + cell / 2);
-      g.fillText('⚑', PATH[PATH.length - 1][0] * cell + cell / 2, PATH[PATH.length - 1][1] * cell + cell / 2);
+      g.fillText('›', path[0][0] * cell + cell / 2, path[0][1] * cell + cell / 2);
+      g.fillText('⚑', path[path.length - 1][0] * cell + cell / 2, path[path.length - 1][1] * cell + cell / 2);
 
       if (running) {
         for (const p of running.patches()) {
@@ -284,7 +401,7 @@ function mount(ctx: GameContext): () => void {
       // portée de la tour sous le curseur
       const hover = towerAt(cx, cy);
       if (hover) {
-        const st = towerStats(TOWERS[hover.kind], hover.level);
+        const st = towerStats(TOWERS[hover.kind], hover.level, hover.path);
         const r = (st.aura ?? (st.range >= 50 ? 0 : st.range)) * cell;
         if (r > 0) {
           g.beginPath();
@@ -411,45 +528,84 @@ function mount(ctx: GameContext): () => void {
     };
 
     // --- Panneaux
+    const levelName = (t: RunState['towers'][number]) => {
+      if (t.level === 0) return 'Base';
+      const def = TOWERS[t.kind];
+      return t.path >= 0 ? `${def.paths[t.path].name} ${t.level - 2}` : `Niv. ${t.level}`;
+    };
+
+    const upgradePanel = (t: RunState['towers'][number]): HTMLElement[] => {
+      const def = TOWERS[t.kind];
+      const sell = `S vendre (+${sellValue(t)}${t.fresh ? ', prix plein' : ''})`;
+      if (t.level >= MAX_LEVEL) return [h('p', { class: 'small muted' }, `Niveau maximum · ${sell}`)];
+      if (t.level + 1 > s.tier) {
+        return [h('p', { class: 'small muted' }, `🔒 Amélioration ${t.level + 1} : débloquée après le niveau ${TIER_UNLOCK[t.level + 1]} de la campagne · ${sell}`)];
+      }
+      if (t.level === 2) {
+        const choices = def.paths.map((p, k) => {
+          const up = p.ups[0];
+          const b = h(
+            'button',
+            { class: `td-path${choosing ? ' on' : ''}`, type: 'button' },
+            h('b', {}, `${choosing ? `${k + 1} · ` : ''}${p.name}`),
+            h('span', { class: 'small' }, ` ${up.name} (${priceOf(s, up.cost)} or) : ${up.text}`),
+            h('span', { class: 'small muted' }, ` puis ${p.ups[1].name} : ${p.ups[1].text}`),
+          );
+          b.addEventListener('click', () => {
+            choosing = false;
+            act(`U${t.x}.${t.y}.${k}`);
+          });
+          return b;
+        });
+        return [
+          h('p', { class: 'small' }, choosing ? 'Choisis la voie : 1 ou 2 (une autre touche pour annuler).' : `U pour choisir sa voie (définitif) · ${sell}`),
+          h('div', { class: 'td-paths' }, ...choices),
+        ];
+      }
+      const up = upgradeOf(t)!;
+      return [h('p', { class: 'small' }, `U ${up.name} (${priceOf(s, up.cost)} or) : ${up.text} · ${sell}`)];
+    };
+
     const render = () => {
       if (gone) return;
       const w = running ? running.number : s.wave + 1;
+      const total = campaign ? levelWaves(s.level) : FINAL_WAVE;
       stats.replaceChildren(
-        h('span', { class: 'stat' }, 'Vague ', h('b', {}, w <= FINAL_WAVE ? `${w}/${FINAL_WAVE}` : `${w} ∞`)),
-        h('span', { class: 'stat' }, 'Vies ', h('b', {}, String(s.lives))),
-        h('span', { class: 'stat' }, 'Or ', h('b', {}, String(s.gold))),
+        campaign ? h('span', { class: 'stat' }, 'Niveau ', h('b', {}, String(s.level))) : '',
+        h('span', { class: 'stat' }, 'Vague ', h('b', {}, w <= total ? `${Math.min(w, total)}/${total}` : `${w} ∞`)),
+        h('span', { class: 'stat' }, 'Vies ', h('b', { 'data-k': 'lives' }, String(s.lives))),
+        h('span', { class: 'stat' }, 'Or ', h('b', { 'data-k': 'gold' }, String(s.gold))),
         h('span', { class: 'stat' }, '×', h('b', {}, String(speed))),
-        h('span', { class: 'muted small td-rank' }, session ? 'partie classée' : 'non classée'),
+        s.hero ? h('span', { class: 'small muted' }, `${HEROES.find((x) => x.id === s.hero!.id)?.name ?? ''} niv. ${s.hero.level}`) : '',
+        h('span', { class: 'muted small td-rank' }, session ? (campaign ? 'partie enregistrée' : 'partie classée') : 'non classée'),
       );
-      const shop = s.deck.map((id, i) => {
+      const shop = s.allowed.map((id, i) => {
         const def = TOWERS.find((t) => t.id === id)!;
         const count = s.towers.filter((t) => TOWERS[t.kind].id === id).length;
         const full = def.maxPerMap !== undefined && count >= def.maxPerMap;
-        return h('span', { class: 'chip' + (s.gold >= def.cost && !full ? '' : ' off') }, h('kbd', {}, String(i + 1)), ` ${def.name} ${def.cost}`, full ? ' (max)' : '');
+        const cost = priceOf(s, def.cost);
+        return h('span', { class: 'chip' + (s.gold >= cost && !full ? '' : ' off') }, h('kbd', {}, KEYS[i]), ` ${def.name} ${cost}`, full ? ' (max)' : '');
       });
       const t = towerAt(cx, cy);
+      if (!t || t.level !== 2) choosing = false;
       const detail: (HTMLElement | string)[] = [];
       if (t) {
         const def = TOWERS[t.kind];
-        const st = towerStats(def, t.level);
-        detail.push(h('p', { class: 'small' }, h('b', {}, `${def.name} · ${LEVELS[t.level]}`), ` — ${statsLine(st)}`));
-        const up = upgradeOf(t);
-        const sell = `S vendre (+${sellValue(t)}${t.fresh ? ', prix plein' : ''})`;
-        if (!up) detail.push(h('p', { class: 'small muted' }, `Niveau maximum · ${sell}`));
-        else if (!s.unlocked.includes(up.id)) detail.push(h('p', { class: 'small muted' }, `🔒 ${up.name} : à débloquer (${crateOf(up.id)?.name ?? 'caisse'}) · ${sell}`));
-        else detail.push(h('p', { class: 'small' }, `U ${up.name} (${up.cost} or) : ${up.text} · ${sell}`));
-      } else if (isBuildable(cx, cy)) detail.push(h('p', { class: 'small muted' }, `Case libre : ${s.deck.map((_, i) => i + 1).join(', ')} pour construire.`));
+        const st = towerStats(def, t.level, t.path);
+        detail.push(h('p', { class: 'small' }, h('b', {}, `${def.name} · ${levelName(t)}`), ` — ${statsLine(st)}`));
+        detail.push(...upgradePanel(t));
+      } else if (isBuildable(s.map, cx, cy)) detail.push(h('p', { class: 'small muted' }, `Case libre : ${KEYS.slice(0, s.allowed.length).join(', ')} pour construire.`));
       else detail.push(h('p', { class: 'small muted' }, 'Chemin des ennemis.'));
 
       const blocks: HTMLElement[] = [];
       if (!running && !s.over) {
-        const plan = planWave(s.seed, s.wave + 1);
+        const plan = campaign ? planLevelWave(s.seed, s.level, s.wave + 1) : planWave(s.seed, s.wave + 1);
         const counts = new Map<number, number>();
         for (const sp of plan.spawns) counts.set(sp.enemy, (counts.get(sp.enemy) ?? 0) + 1);
         const list = [...counts].map(([e, n]) => (ENEMIES[e].tier === 'boss' ? ENEMIES[e].name : `${n} ${ENEMIES[e].name}`)).join(', ');
         const tag = plan.boss !== null ? ' · BOSS' : plan.theme ? ` · vague thématique « ${plan.theme} »` : '';
         blocks.push(h('p', { class: 'small' }, h('b', {}, `Vague ${plan.wave}${tag}`), ` : ${list}. Espace pour lancer.`));
-        const intro = plan.intro ?? (plan.boss !== null && ENEMIES[plan.boss].firstWave === plan.wave ? plan.boss : null);
+        const intro = plan.intro ?? (plan.boss !== null ? plan.boss : null);
         if (intro !== null) {
           const d = ENEMIES[intro];
           blocks.push(
@@ -457,35 +613,24 @@ function mount(ctx: GameContext): () => void {
               'div',
               { class: 'td-intro' },
               previewItem(d.id, 40, equippedFinish(meta, 'es', d.id)),
-              h('div', {}, h('b', {}, `Nouvel ennemi : ${d.name}`), h('span', { class: 'small' }, ` — ${d.text}${d.flying ? ' · volant' : ''}${d.camo ? ' · camouflé' : ''}${d.armor ? ` · armure ${d.armor}` : ''}`), h('br'), h('span', { class: 'small muted' }, `Contres : ${d.counters}`)),
+              h('div', {}, h('b', {}, `${d.tier === 'boss' ? 'Boss' : 'Nouvel ennemi'} : ${d.name}`), h('span', { class: 'small' }, ` — ${d.text}${d.flying ? ' · volant' : ''}${d.camo ? ' · camouflé' : ''}${d.armor ? ` · armure ${d.armor}` : ''}`), h('br'), h('span', { class: 'small muted' }, `Contres : ${d.counters}`)),
             ),
           );
         }
       }
       info.replaceChildren(h('div', { class: 'td-shop' }, ...shop), ...detail, ...blocks);
+      info.querySelectorAll<HTMLButtonElement>('button').forEach((b) => (b.tabIndex = -1));
       noteEl.textContent = note;
 
       overlay.hidden = true;
       if (s.over) {
-        const foe = s.lostTo ? ENEMIES.find((e) => e.id === s.lostTo) : null;
-        const relaunch = h('button', { class: 'field rl-spin', type: 'button' }, 'Relancer');
-        relaunch.addEventListener('click', () => newRunScreen());
-        const crates = h('button', { class: 'field', type: 'button' }, 'Boutique de caisses');
-        crates.addEventListener('click', () => navigate('/td/caisses'));
-        overlay.replaceChildren(
-          h('strong', {}, `Perdu à la vague ${s.wave + 1}`),
-          h('span', {}, `${plural(s.wave, 'vague')} tenue${s.wave > 1 ? 's' : ''} · ${plural(s.kills, 'ennemi')} vaincu${s.kills > 1 ? 's' : ''}${s.bossKills ? ` · ${plural(s.bossKills, 'boss')}` : ''}`),
-          session ? h('span', { class: 'small' }, `+${s.wave * (s.wave + 1)} points ◆ gagnés`) : '',
-          foe ? h('span', { class: 'small muted' }, `Vaincu par : ${foe.name}. Contre conseillé : ${foe.counters}.`) : '',
-          h('div', { class: 'td-deck-actions' }, crates, relaunch),
-          h('span', { class: 'muted small' }, 'Entrée relancer · C caisses'),
-        );
+        overlay.replaceChildren(...(s.won ? wonOverlay() : lostOverlay()));
         overlay.hidden = false;
       } else if (showVictory) {
         overlay.replaceChildren(
           h('strong', {}, 'Victoire !'),
           h('span', {}, `Le Dévoreur est tombé : ${FINAL_WAVE} vagues tenues.`),
-          h('span', { class: 'muted small' }, 'Entrée pour continuer en mode infini (les PV montent de 8 % par vague).'),
+          h('span', { class: 'muted small' }, 'Entrée pour continuer (les PV montent de 8 % par vague).'),
         );
         overlay.hidden = false;
       } else if (paused) {
@@ -495,12 +640,59 @@ function mount(ctx: GameContext): () => void {
       if (!running) draw(1);
     };
 
+    const button = (label: string, onClick: () => void, main = false) => {
+      const b = h('button', { class: `field${main ? ' rl-spin' : ''}`, type: 'button' }, label);
+      b.addEventListener('click', onClick);
+      return b;
+    };
+
+    const wonOverlay = () => {
+      const first = s.level > clearedBefore;
+      const unlocks = first ? unlocksBetween(clearedBefore, s.level) : [];
+      return [
+        h('strong', {}, `Niveau ${s.level} réussi !`),
+        h('span', {}, `${plural(s.lives, 'vie')} restante${s.lives > 1 ? 's' : ''} · ${plural(s.kills, 'ennemi')} vaincu${s.kills > 1 ? 's' : ''}`),
+        session ? h('span', { class: 'small' }, `+${levelPoints(s.level, first)} points ◆${first ? '' : ' (niveau rejoué)'}`) : '',
+        unlocks.length ? h('span', { class: 'small' }, `Débloqué : ${unlocks.join(', ')}.`) : '',
+        h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('La suite de l’histoire', outro, true)),
+        h('span', { class: 'muted small' }, 'Entrée la suite · M carte'),
+      ];
+    };
+
+    const lostOverlay = () => {
+      const foe = s.lostTo ? ENEMIES.find((e) => e.id === s.lostTo) : null;
+      return [
+        h('strong', {}, campaign ? `Perdu au niveau ${s.level}, vague ${s.wave + 1}` : `Perdu à la vague ${s.wave + 1}`),
+        h('span', {}, `${plural(s.wave, 'vague')} tenue${s.wave > 1 ? 's' : ''} · ${plural(s.kills, 'ennemi')} vaincu${s.kills > 1 ? 's' : ''}${s.bossKills ? ` · ${plural(s.bossKills, 'boss')}` : ''}`),
+        session && !campaign ? h('span', { class: 'small' }, `+${s.wave * (s.wave + 1)} points ◆ gagnés`) : '',
+        foe ? h('span', { class: 'small muted' }, `Vaincu par : ${foe.name}. Contre conseillé : ${foe.counters}.`) : '',
+        h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('Recommencer', retry, true)),
+        h('span', { class: 'muted small' }, 'Entrée recommencer · M carte · C caisses'),
+      ];
+    };
+
+    const toMenu = () => {
+      remove(SAVE_KEY);
+      show(menuScreen);
+    };
+    const retry = () => {
+      remove(SAVE_KEY);
+      void begin(s.mode, s.level);
+    };
+    const outro = () => {
+      remove(SAVE_KEY);
+      focusLevel = Math.min(LEVEL_COUNT, s.level + 1);
+      const L = s.level;
+      show(() => storyScreen(`Niveau ${L} · ${STORY[L - 1].name}`, actOf(L).name, STORY[L - 1].outro, () => show(menuScreen), () => show(menuScreen)));
+    };
+
     // --- Vagues
     let onEnd: () => void = () => {};
     const launch = async () => {
       if (running || s.over || showVictory) return;
       note = '';
       confirmAbandon = false;
+      choosing = false;
       snapshot = { s: structuredClone(s), actions: actions.slice() };
       running = startWave(s);
       prev = new Map();
@@ -513,6 +705,10 @@ function mount(ctx: GameContext): () => void {
       const sent = actions.join(';');
       actions = [];
       snapshot = null;
+      if (s.won && s.level > meta.cleared) {
+        meta.cleared = s.level;
+        saveLocalProgress(meta);
+      }
       if (session) {
         const r = await sendWave(session, sent).catch((e: Error) => {
           note = `Partie non classée désormais : ${e.message}.`;
@@ -523,14 +719,15 @@ function mount(ctx: GameContext): () => void {
         if (r && (r.wave !== s.wave || r.lives !== s.lives || r.gold !== s.gold || r.kills !== s.kills)) {
           note = 'Résultat différent du serveur : partie non classée désormais.';
           session = null;
-        } else if (r && s.over) {
+        } else if (r && s.over && !campaign) {
           note = getAccount()?.verified ? `${plural(s.wave, 'vague')} au classement.` : `${plural(s.wave, 'vague')} enregistrées. Ajoute un email (Réglages → Compte) pour apparaître au classement.`;
         }
       }
-      if (s.wave >= FINAL_WAVE && !victorySeen && !s.over) {
+      if (!campaign && s.wave >= FINAL_WAVE && !victorySeen && !s.over) {
         victorySeen = true;
         showVictory = true;
       }
+      if (s.won) blip(880);
       persist();
       render();
     };
@@ -561,9 +758,10 @@ function mount(ctx: GameContext): () => void {
         }
       }
       draw(Math.min(1, acc / TICK_MS));
-      const vals = stats.querySelectorAll('b');
-      vals[1].textContent = String(s.lives);
-      vals[2].textContent = String(s.gold);
+      const lv = stats.querySelector('[data-k="lives"]');
+      const gd = stats.querySelector('[data-k="gold"]');
+      if (lv) lv.textContent = String(s.lives);
+      if (gd) gd.textContent = String(s.gold);
     };
 
     // --- Actions
@@ -580,18 +778,13 @@ function mount(ctx: GameContext): () => void {
       if (running) draw(Math.min(1, acc / TICK_MS));
     };
 
-    const newRunScreen = () => {
-      remove(SAVE_KEY);
-      show(deckScreen);
-    };
-
     const abandon = () => {
       if (!confirmAbandon && !s.over) {
         confirmAbandon = true;
-        note = 'R encore une fois pour abandonner cette run.';
+        note = 'R encore une fois pour abandonner cette partie.';
         return render();
       }
-      newRunScreen();
+      toMenu();
     };
 
     canvas.addEventListener('click', (e) => {
@@ -607,9 +800,15 @@ function mount(ctx: GameContext): () => void {
       if (s.over) {
         if (key === 'enter' || key === ' ') {
           e.preventDefault();
-          return newRunScreen();
+          return s.won ? outro() : retry();
         }
+        if (key === 'm') return toMenu();
         if (key === 'c') return navigate('/td/caisses');
+        if (key === 'backspace') {
+          e.preventDefault();
+          return ctx.onExit();
+        }
+        return;
       }
       if (showVictory && (key === 'enter' || key === ' ')) {
         e.preventDefault();
@@ -617,14 +816,26 @@ function mount(ctx: GameContext): () => void {
         persist();
         return render();
       }
-      const digit = Number(key);
+      if (choosing) {
+        choosing = false;
+        if (key === '1' || key === '2') return act(`U${cx}.${cy}.${Number(key) - 1}`);
+        if (key !== 'u') render();
+        if (key === 'u') return render();
+      }
+      const slot = KEYS.indexOf(key);
       if (key === 'arrowleft') cx = Math.max(0, cx - 1);
       else if (key === 'arrowright') cx = Math.min(COLS - 1, cx + 1);
       else if (key === 'arrowup') cy = Math.max(0, cy - 1);
       else if (key === 'arrowdown') cy = Math.min(ROWS - 1, cy + 1);
-      else if (digit >= 1 && digit <= s.deck.length) return act(`B${cx}.${cy}.${TOWERS.findIndex((t) => t.id === s.deck[digit - 1])}`);
-      else if (key === 'u') return act(`U${cx}.${cy}`);
-      else if (key === 's') return act(`S${cx}.${cy}`);
+      else if (slot >= 0 && slot < s.allowed.length) return act(`B${cx}.${cy}.${TOWERS.findIndex((t) => t.id === s.allowed[slot])}`);
+      else if (key === 'u') {
+        const t = towerAt(cx, cy);
+        if (t && t.level === 2 && t.level + 1 <= s.tier) {
+          choosing = true;
+          return render();
+        }
+        return act(`U${cx}.${cy}`);
+      } else if (key === 's') return act(`S${cx}.${cy}`);
       else if (key === ' ' || key === 'enter') {
         e.preventDefault();
         return void launch();
@@ -664,7 +875,7 @@ function mount(ctx: GameContext): () => void {
   };
 
   const resumed = load<Saved | null>(SAVE_KEY, null);
-  show(resumed && !resumed.s.over ? () => runScreen(resumed) : deckScreen);
+  show(resumed && !resumed.s.over ? () => runScreen(resumed) : menuScreen);
 
   return () => {
     disposed = true;
@@ -675,8 +886,7 @@ function mount(ctx: GameContext): () => void {
 export const towerDefense: Game = {
   id: 'td',
   name: 'Tower defense',
-  description: 'Solo · roguelike, 50 vagues, classé',
+  description: 'Solo · campagne de 20 niveaux, mode infini classé',
   modes: ['solo'],
   mount,
 };
-

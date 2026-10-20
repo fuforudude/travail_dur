@@ -4,8 +4,9 @@
 // sont utilisés, pour un résultat identique au bit près des deux côtés.
 
 import {
-  COLS, deckSlots, ENEMIES, FINAL_WAVE, FREE_ITEMS, hpMult, LENGTH, MINI, PATH, ROWS, SELL_RATIO, START_GOLD, START_LIVES,
-  themeOf, tierOfWave, TOWERS, towerStats, waveBonus, waveBudget, type DamageType, type TowerStats,
+  COLS, ENEMIES, FINAL_WAVE, heroBonus, hpMult, LEVEL_COUNT, levelBoss, levelGold, levelWave, levelWaves, MAPS, MAX_LEVEL, maxTier, MINI,
+  ROWS, SELL_RATIO, START_GOLD, START_LIVES, themeOf, tierOfWave, TOWERS, towersFor, towerStats, upgradeAt, waveBonus, waveBudget,
+  type DamageType, type TowerStats,
 } from './data.ts';
 
 export const TICK = 0.1; // s
@@ -27,16 +28,22 @@ const subSeed = (seed: number, wave: number, k: number) => (Math.imul(seed ^ Mat
 
 // --- Carte --------------------------------------------------------------------------------------
 
-const onPath = new Set(PATH.map(([x, y]) => y * COLS + x));
-export const isBuildable = (x: number, y: number) => x >= 0 && x < COLS && y >= 0 && y < ROWS && !onPath.has(y * COLS + x);
+const onPath = MAPS.map((path) => new Set(path.map(([x, y]) => y * COLS + x)));
+export const isBuildable = (map: number, x: number, y: number) =>
+  x >= 0 && x < COLS && y >= 0 && y < ROWS && !(onPath[map] ?? onPath[0]).has(y * COLS + x);
+
+/** Longueur du chemin d'une carte, en cases. */
+export const pathLength = (map: number) => (MAPS[map] ?? MAPS[0]).length - 1;
 
 /** Position (centre de case = .5) d'un point du chemin. */
-export function pathPos(p: number): [number, number] {
-  const c = Math.max(0, Math.min(p, LENGTH));
-  const i = Math.min(Math.floor(c), LENGTH - 1);
+export function pathPos(map: number, p: number): [number, number] {
+  const path = MAPS[map] ?? MAPS[0];
+  const len = path.length - 1;
+  const c = Math.max(0, Math.min(p, len));
+  const i = Math.min(Math.floor(c), len - 1);
   const f = c - i;
-  const [x0, y0] = PATH[i];
-  const [x1, y1] = PATH[i + 1];
+  const [x0, y0] = path[i];
+  const [x1, y1] = path[i + 1];
   return [x0 + 0.5 + (x1 - x0) * f, y0 + 0.5 + (y1 - y0) * f];
 }
 
@@ -47,15 +54,23 @@ export interface TowerState {
   x: number;
   y: number;
   kind: number; // index dans TOWERS
-  level: number; // 0 base, 1 U1, 2 U2
+  level: number; // 0 base, 1 et 2 améliorations communes, 3 et 4 dans la voie
+  path: number; // voie choisie au 3e niveau (0 ou 1), −1 avant
   invested: number;
   fresh: boolean; // posée pendant la préparation en cours : revendue au prix plein
 }
 
+export type Mode = 'campaign' | 'infinite';
+
 export interface RunState {
   seed: number;
-  deck: string[];
-  unlocked: string[]; // améliorations utilisables
+  mode: Mode;
+  level: number; // niveau de la campagne (1 à 20), 0 en mode infini
+  map: number; // index dans MAPS
+  allowed: string[]; // tours constructibles (débloquées par la campagne)
+  tier: number; // niveau d'amélioration maximal (débloqué par la campagne)
+  hero: { id: string; level: number } | null;
+  won: boolean; // campagne : le niveau est réussi
   wave: number; // vagues terminées
   lives: number;
   gold: number;
@@ -67,28 +82,39 @@ export interface RunState {
   nextId: number;
 }
 
-/** Vérifie un deck ; retourne un message d'erreur ou null. */
-export function deckError(deck: string[], owned: string[], bestWave: number): string | null {
-  if (!Array.isArray(deck) || deck.length < 1) return 'deck vide';
-  if (deck.length > deckSlots(bestWave)) return 'trop de tours dans le deck';
-  if (new Set(deck).size !== deck.length) return 'tour en double';
-  for (const id of deck) {
-    if (!TOWERS.some((t) => t.id === id)) return 'tour inconnue';
-    if (!FREE_ITEMS.includes(id) && !owned.includes(id)) return 'tour non débloquée';
+export interface RunOptions {
+  mode: Mode;
+  level: number; // campagne : 1 à 20
+  cleared: number; // niveaux de la campagne déjà terminés (débloque tours et améliorations)
+  hero: { id: string; level: number } | null;
+}
+
+/** Vérifie qu'une partie peut être lancée ; retourne un message d'erreur ou null. */
+export function runError(o: RunOptions): string | null {
+  if (o.mode !== 'campaign' && o.mode !== 'infinite') return 'mode inconnu';
+  if (o.mode === 'campaign') {
+    if (!Number.isInteger(o.level) || o.level < 1 || o.level > LEVEL_COUNT) return 'niveau inconnu';
+    if (o.level > o.cleared + 1) return 'niveau pas encore débloqué';
   }
   return null;
 }
 
-export function newRun(seed: number, deck: string[], owned: string[]): RunState {
-  const unlocked = TOWERS.flatMap((t) => t.upgrades.map((u) => u.id)).filter((id) => FREE_ITEMS.includes(id) || owned.includes(id));
+export function newRun(seed: number, o: RunOptions): RunState {
+  const bonus = heroBonus(o.hero);
+  const campaign = o.mode === 'campaign';
   return {
-    seed: seed >>> 0, deck: deck.slice(), unlocked, wave: 0, lives: START_LIVES, gold: START_GOLD, kills: 0, bossKills: 0,
-    over: false, lostTo: null, towers: [], nextId: 1,
+    seed: seed >>> 0, mode: o.mode, level: campaign ? o.level : 0, map: campaign ? o.level : 0,
+    allowed: towersFor(o.cleared), tier: maxTier(o.cleared), hero: o.hero, won: false,
+    wave: 0, lives: START_LIVES + bonus.lives, gold: (campaign ? levelGold(o.level) : START_GOLD) + bonus.startGold,
+    kills: 0, bossKills: 0, over: false, lostTo: null, towers: [], nextId: 1,
   };
 }
 
+/** Prix réel (bonus du héros compris). */
+export const priceOf = (s: RunState, cost: number) => Math.round(cost * heroBonus(s.hero).costMult);
 export const sellValue = (t: TowerState) => (t.fresh ? t.invested : Math.floor(t.invested * SELL_RATIO));
-export const upgradeOf = (t: TowerState) => (t.level < 2 ? TOWERS[t.kind].upgrades[t.level] : null);
+/** Prochaine amélioration de la tour (au 3e niveau, celle de la voie `path`). */
+export const upgradeOf = (t: TowerState, path: number = t.path) => upgradeAt(TOWERS[t.kind], t.level, t.level === 2 ? path : t.path);
 
 // --- Actions ------------------------------------------------------------------------------------
 // Codage envoyé au serveur, séparé par « ; » : B<x>.<y>.<tour 0-9>  U<x>.<y>  S<x>.<y>
@@ -108,25 +134,32 @@ export function applyAction(s: RunState, a: string, running = false): string | n
     if (m[4] === undefined) return 'action invalide';
     const kind = Number(m[4]);
     const def = TOWERS[kind];
-    if (!def || !s.deck.includes(def.id)) return 'tour absente du deck';
-    if (!isBuildable(x, y)) return 'emplacement impossible';
+    if (!def || !s.allowed.includes(def.id)) return 'tour pas encore débloquée';
+    if (!isBuildable(s.map, x, y)) return 'emplacement impossible';
     if (i >= 0) return 'case occupée';
     if (def.maxPerMap && s.towers.filter((t) => t.kind === kind).length >= def.maxPerMap) return `${def.maxPerMap} ${def.name} au maximum`;
-    if (s.gold < def.cost) return 'pas assez d’or';
-    s.gold -= def.cost;
-    s.towers.push({ id: s.nextId++, x, y, kind, level: 0, invested: def.cost, fresh: !running });
-  } else if (m[4] !== undefined) return 'action invalide';
-  else if (m[1] === 'U') {
+    const cost = priceOf(s, def.cost);
+    if (s.gold < cost) return 'pas assez d’or';
+    s.gold -= cost;
+    s.towers.push({ id: s.nextId++, x, y, kind, level: 0, path: -1, invested: cost, fresh: !running });
+  } else if (m[1] === 'U') {
     if (i < 0) return 'pas de tour ici';
     const t = s.towers[i];
-    const up = upgradeOf(t);
+    // Au 3e niveau, on choisit sa voie : U<x>.<y>.<voie 0 ou 1> ; sinon pas de voie à donner.
+    if (t.level === 2 ? m[4] === undefined || Number(m[4]) > 1 : m[4] !== undefined) return 'action invalide';
+    if (t.level >= MAX_LEVEL) return 'niveau maximum';
+    if (t.level + 1 > s.tier) return 'amélioration pas encore débloquée';
+    const path = t.level === 2 ? Number(m[4]) : t.path;
+    const up = upgradeOf(t, path);
     if (!up) return 'niveau maximum';
-    if (!s.unlocked.includes(up.id)) return `${up.name} pas encore débloquée`;
-    if (s.gold < up.cost) return 'pas assez d’or';
-    s.gold -= up.cost;
+    const cost = priceOf(s, up.cost);
+    if (s.gold < cost) return 'pas assez d’or';
+    s.gold -= cost;
     t.level++;
-    t.invested += up.cost;
-  } else {
+    t.path = path;
+    t.invested += cost;
+  } else if (m[4] !== undefined) return 'action invalide';
+  else {
     if (i < 0) return 'pas de tour ici';
     s.gold += sellValue(s.towers[i]);
     s.towers.splice(i, 1);
@@ -158,16 +191,23 @@ const SPLITTER = idx('splitter');
 const BANK = TOWERS.find((t) => t.id === 'bank')!;
 const threatOf = (e: number) => (ENEMIES[e].abilities.includes('swarm') ? ENEMIES[e].threat * 15 : ENEMIES[e].threat);
 
+/** Mode infini : vague w. */
 export function planWave(seed: number, w: number): WavePlan {
-  const rng = makeRng(subSeed(seed, w, 1));
+  return composeWave(seed, w, w, w % 10 === 0 ? (w >= FINAL_WAVE ? DEVOURER : TITAN) : null, true);
+}
+
+/** Campagne : vague w du niveau L (difficulté de la vague levelWave(L, w) du mode infini). */
+export function planLevelWave(seed: number, L: number, w: number): WavePlan {
+  const boss = w === levelWaves(L) ? levelBoss(L) : null;
+  return composeWave(seed, w, levelWave(L, w), boss === 'devourer' ? DEVOURER : boss === 'titan' ? TITAN : null, false);
+}
+
+function composeWave(seed: number, n: number, w: number, boss: number | null, themes: boolean): WavePlan {
+  const rng = makeRng(subSeed(seed, n, 1));
   let budget = waveBudget(w);
   const regular = ENEMIES.map((_, i) => i).filter((i) => ENEMIES[i].tier !== 'boss' && ENEMIES[i].firstWave <= w);
-  let boss: number | null = null;
-  if (w % 10 === 0) {
-    boss = w >= FINAL_WAVE ? DEVOURER : TITAN;
-    budget *= 0.5; // escorte
-  }
-  const theme = boss === null ? themeOf(w) : null;
+  if (boss !== null) budget *= 0.5; // escorte
+  const theme = boss === null && themes ? themeOf(w) : null;
   const introIdx = regular.find((i) => ENEMIES[i].firstWave === w);
   const intro = introIdx === undefined ? null : introIdx;
   const picks: number[] = [];
@@ -229,7 +269,7 @@ export function planWave(seed: number, w: number): WavePlan {
     }
     at += 10; // 1 s entre deux paquets
   }
-  return { wave: w, spawns, intro, theme: theme?.name ?? null, boss, mult: hpMult(w) };
+  return { wave: n, spawns, intro, theme: theme?.name ?? null, boss, mult: hpMult(w) };
 }
 
 // --- Simulation d'une vague ---------------------------------------------------------------------
@@ -332,10 +372,14 @@ const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) * (a
 
 export function startWave(s: RunState) {
   const n = s.wave + 1;
-  const plan = planWave(s.seed, n);
+  const campaign = s.mode === 'campaign';
+  const plan = campaign ? planLevelWave(s.seed, s.level, n) : planWave(s.seed, n);
   const rng = makeRng(subSeed(s.seed, n, 2));
   const mult = plan.mult;
-  const titanLevel = Math.min(4, Math.max(1, Math.floor(n / 10)));
+  // Le Titan se renforce à chaque apparition : niveaux 5, 10, 15 de la campagne ; vagues 10, 20, 30, 40 en infini.
+  const titanLevel = Math.min(4, Math.max(1, campaign ? Math.floor(s.level / 5) : Math.floor(n / 10)));
+  const bonus = heroBonus(s.hero);
+  const len = pathLength(s.map);
   const enemies: Enemy[] = [];
   const dead: Enemy[] = []; // pour le Nécromancien
   const patches: Patch[] = [];
@@ -351,15 +395,26 @@ export function startWave(s: RunState) {
   // --- Tours
   const derive = () => {
     const old = new Map(towers.map((l) => [l.t.id, l]));
-    const banners = s.towers.filter((t) => TOWERS[t.kind].id === BANK.id && t.level >= 2);
-    const banner = towerStats(BANK, 2);
+    // Bannières : Comptoirs de la voie « Bannière » (voie 1), à partir du 3e niveau.
+    const banners = s.towers.filter((t) => TOWERS[t.kind].id === BANK.id && t.path === 1 && t.level >= 3);
+    const dm = bonus.damageMult;
     towers = s.towers.map((t) => {
-      const st = towerStats(TOWERS[t.kind], t.level);
+      const base = towerStats(TOWERS[t.kind], t.level, t.path);
+      // Bonus du héros sur les dégâts (tous les types de dégâts directs).
+      const st: TowerStats = dm === 1 ? base : {
+        ...base, damage: base.damage * dm,
+        ...(base.dot ? { dot: base.dot * dm } : {}), ...(base.burn ? { burn: base.burn * dm } : {}),
+        ...(base.napalm ? { napalm: base.napalm * dm } : {}), ...(base.beam ? { beam: base.beam * dm } : {}),
+        ...(base.frags ? { frags: base.frags * dm } : {}),
+      };
       const x = t.x + 0.5;
       const y = t.y + 0.5;
-      const buffed = banners.some((b) => b !== t && dist2(b.x + 0.5, b.y + 0.5, x, y) <= 9);
-      const rate = buffed ? 1 + (banner.auraRate ?? 0) : 1;
-      const range = st.range * (buffed ? 1 + (banner.auraRange ?? 0) : 1);
+      const aura = banners
+        .filter((b) => b !== t && dist2(b.x + 0.5, b.y + 0.5, x, y) <= 9)
+        .map((b) => towerStats(BANK, b.level, b.path))
+        .sort((a, b) => (b.auraRate ?? 0) - (a.auraRate ?? 0))[0];
+      const rate = (1 + (aura?.auraRate ?? 0)) * bonus.rateMult;
+      const range = st.range * (1 + (aura?.auraRange ?? 0)) * bonus.rangeMult;
       const prev = old.get(t.id);
       return {
         t, st, x, y, rate, range,
@@ -376,7 +431,7 @@ export function startWave(s: RunState) {
     const maxHp = (opts.mini ? MINI.hp : d.hp) * mult;
     let maxShield = (d.shield ?? 0) * mult;
     if (def === TITAN && titanLevel >= 2) maxShield = maxHp * 0.2;
-    const [x, y] = pathPos(pos);
+    const [x, y] = pathPos(s.map, pos);
     const e: Enemy = {
       uid: uid++, def, mini: Boolean(opts.mini), hp: maxHp * (opts.hpRatio ?? 1), maxHp, shield: maxShield, maxShield, pos, x, y, alive: true,
       bounty: opts.bounty ?? (opts.mini ? MINI.bounty : d.bounty), revived: Boolean(opts.revived), slow: 0, slowT: 0, stunT: 0, frozen: false,
@@ -399,7 +454,7 @@ export function startWave(s: RunState) {
   const kill = (e: Enemy) => {
     e.alive = false;
     e.diedAt = ticks;
-    s.gold += e.bounty;
+    s.gold += Math.round(e.bounty * bonus.bountyMult);
     s.kills++;
     if (isBoss(e)) s.bossKills++;
     fx?.push({ k: 'death', x: e.x, y: e.y, boss: isBoss(e) });
@@ -785,18 +840,19 @@ export function startWave(s: RunState) {
         }
       }
       if (e.def === DEVOURER && e.phase >= 3) speed *= 2;
+      speed *= bonus.speedMult;
       if (e.slowT > 0) speed *= 1 - e.slow;
       if (e.stunT > 0) speed = 0;
       else e.frozen = false;
       e.pos += speed * dt;
-      if (e.pos >= LENGTH) {
+      if (e.pos >= len) {
         e.alive = false;
         const cost = ENEMIES[e.def].livesCost;
         s.lives = cost < 0 ? 0 : s.lives - cost;
         s.lostTo = ENEMIES[e.def].id;
         continue;
       }
-      [e.x, e.y] = pathPos(e.pos);
+      [e.x, e.y] = pathPos(s.map, e.pos);
     }
 
     // Détection des camouflés
@@ -847,12 +903,17 @@ export function startWave(s: RunState) {
     } else if (nextSpawn >= plan.spawns.length && !enemies.some((e) => e.alive)) {
       s.wave = n;
       s.lostTo = null;
-      let income = waveBonus(n);
+      let income = waveBonus(campaign ? levelWave(s.level, n) : n);
       for (const t of s.towers) {
-        const st = towerStats(TOWERS[t.kind], t.level);
+        const st = towerStats(TOWERS[t.kind], t.level, t.path);
         if (st.income) income += st.income + Math.min(st.interestCap ?? 0, Math.floor(s.gold * (st.interest ?? 0)));
       }
-      s.gold += income;
+      s.gold += Math.round(income * bonus.waveGoldMult);
+      // Campagne : la dernière vague passée, le niveau est réussi.
+      if (campaign && n >= levelWaves(s.level)) {
+        s.won = true;
+        s.over = true;
+      }
       done = true;
     } else if (ticks >= MAX_TICKS) {
       s.over = true;

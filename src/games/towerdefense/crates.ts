@@ -6,17 +6,17 @@ import { navigate } from '../../router';
 import { h, hints } from '../../ui/dom';
 import { page } from '../../ui/layout';
 import { spatialNav } from '../../ui/menu';
-import { CRATES, ENEMY_FINISHES, isFree, itemName, RARITY_NAMES, skinOf, TOWER_FINISHES, type CrateDef, type Rarity } from './catalog';
-import { ENEMIES, TOWERS } from './engine/data';
+import { CRATES, ENEMY_FINISHES, heroOf, itemName, RARITY_NAMES, skinOf, TOWER_FINISHES, type CrateDef, type Rarity } from './catalog';
+import { ENEMIES, HERO_MAX_LEVEL, HEROES, TOWERS } from './engine/data';
 import { crateInfo, equipSkin, loadMeta, openCrate, type CrateInfo, type Meta } from './net';
 import { previewItem } from './render';
 import './td.css';
 
 const REEL_LENGTH = 48;
 const WIN_INDEX = 42; // case qui s'arrête sous le repère
-const TIER_CLASS: Record<string, string> = { bronze: 'rar-bronze', silver: 'rar-silver', gold: 'rar-gold' };
+const TIER_CLASS: Record<string, string> = { heroes: 'rar-gold' };
 
-/** `#/td/caisses` : caisses du tower defense (tours, améliorations, skins) et collection. */
+/** `#/td/caisses` : caisses du tower defense (héros, skins) et collection. */
 export function tdCratesView(root: HTMLElement): () => void {
   const content = page(root, 'Caisses tower defense');
   content.classList.add('wide');
@@ -29,7 +29,7 @@ export function tdCratesView(root: HTMLElement): () => void {
   const reveal = h('div', { class: 'cr-reveal', hidden: true });
   const cratesEl = h('div', { class: 'cr-crates' });
   const collection = h('div', {});
-  let meta: Meta = { owned: new Set(), equipped: new Map(), best: 0, online: false };
+  let meta: Meta = { owned: new Set(), equipped: new Map(), heroes: new Map(), cleared: 0, best: 0, online: false };
   let info = new Map<string, CrateInfo>();
   let busy = false;
   let disposed = false;
@@ -38,7 +38,8 @@ export function tdCratesView(root: HTMLElement): () => void {
     const w = getWallet();
     balance.textContent = w ? `◆ ${formatPoints(w.balance)}` : '';
   };
-  const has = (id: string) => isFree(id) || meta.owned.has(id);
+  const heroLevel = (id: string) => meta.heroes.get(heroOf(id)?.id ?? '') ?? 0;
+  const has = (id: string) => (heroOf(id) ? heroLevel(id) > 0 : meta.owned.has(id));
   const rarityClass = (crate: CrateDef, item: string) => {
     const skin = skinOf(item);
     return skin ? `rar-${skin.finish.rarity}` : TIER_CLASS[crate.id] ?? '';
@@ -73,7 +74,9 @@ export function tdCratesView(root: HTMLElement): () => void {
     status.textContent = 'Ouverture…';
     try {
       const r = await openCrate(crate.id);
-      meta.owned.add(r.item);
+      const hero = heroOf(r.item);
+      if (hero) meta.heroes.set(hero.id, r.level ?? heroLevel(r.item) + 1);
+      else meta.owned.add(r.item);
       const skin = skinOf(r.item);
       if (skin && !meta.equipped.has(skin.slot)) meta.equipped.set(skin.slot, r.item);
       const items = Array.from({ length: REEL_LENGTH }, (_, i) => (i === WIN_INDEX ? r.item : randomItem(crate)));
@@ -103,10 +106,16 @@ export function tdCratesView(root: HTMLElement): () => void {
       reveal.hidden = false;
       reveal.className = `cr-reveal ${rarityClass(crate, r.item)}`;
       reveal.replaceChildren(
-        h('span', { class: 'cr-rarity' }, skin ? RARITY_NAMES[skin.finish.rarity] : crate.name),
+        h('span', { class: 'cr-rarity' }, skin ? RARITY_NAMES[skin.finish.rarity] : hero && heroLevel(r.item) > 1 ? `Niveau ${heroLevel(r.item)} !` : 'Nouveau héros !'),
         previewItem(r.item, 96),
-        h('strong', {}, itemName(r.item)),
-        h('span', { class: 'muted small' }, skin ? (meta.equipped.get(skin.slot) === r.item ? 'Ajouté à ta collection et porté.' : 'Ajouté à ta collection.') : 'Débloqué : disponible dès ta prochaine run.'),
+        h('strong', {}, hero ? `${hero.name}, ${hero.title}` : itemName(r.item)),
+        h(
+          'span',
+          { class: 'muted small' },
+          skin
+            ? meta.equipped.get(skin.slot) === r.item ? 'Ajouté à ta collection et porté.' : 'Ajouté à ta collection.'
+            : hero ? `${hero.text(heroLevel(r.item))}. À choisir avant une partie.` : '',
+        ),
       );
       blip(skin && (skin.finish.rarity === 'mythic' || skin.finish.rarity === 'legendary') ? 1320 : 660);
       void refreshWallet();
@@ -144,7 +153,7 @@ export function tdCratesView(root: HTMLElement): () => void {
   const crateCard = (c: CrateDef) => {
     const ci = info.get(c.id);
     const got = c.contents.filter(has).length;
-    const complete = got === c.contents.length;
+    const complete = c.kind === 'hero' ? c.contents.every((id) => heroLevel(id) >= HERO_MAX_LEVEL) : got === c.contents.length;
     const locked = (ci?.minWave ?? 0) > meta.best;
     const label = complete ? 'Complète' : locked ? `🔒 Vague ${ci?.minWave} à atteindre` : `Ouvrir · ◆ ${formatPoints(ci?.price ?? 0)}`;
     const b = h('button', { class: 'field rl-spin', type: 'button', disabled: complete || locked || !ci, 'data-id': c.id }, label);
@@ -158,7 +167,7 @@ export function tdCratesView(root: HTMLElement): () => void {
       h('p', { class: 'small' }, `${got} / ${c.contents.length} obtenus`),
       c.kind === 'skin' && total
         ? h('ul', { class: 'cr-odds' }, ...ci!.odds.map(([r, w]) => h('li', { class: `rar-${r}` }, h('span', {}, RARITY_NAMES[r]), h('b', {}, percent(w, total)))))
-        : h('p', { class: 'muted small' }, 'Jamais de doublon. Une amélioration ne sort qu’une fois sa tour (ou son U1) obtenue.'),
+        : h('p', { class: 'muted small' }, 'Chaque héros a les mêmes chances. Un doublon fait monter le héros d’un niveau.'),
       b,
     );
   };
@@ -189,19 +198,21 @@ export function tdCratesView(root: HTMLElement): () => void {
   const render = () => {
     const focused = (document.activeElement as HTMLElement | null)?.dataset.id;
     cratesEl.replaceChildren(...CRATES.map(crateCard));
-    const towers = TOWERS.map((t) =>
-      h(
+    const heroes = HEROES.map((hr) => {
+      const lvl = meta.heroes.get(hr.id) ?? 0;
+      return h(
         'div',
-        { class: `shop-item td-card${has(t.id) ? '' : ' locked'}` },
-        h('span', { class: 'shop-preview' }, previewItem(t.id, 44)),
-        h('span', { class: 'shop-name' }, t.name),
-        h('span', { class: 'small muted' }, has(t.id) ? t.upgrades.map((u, i) => `${has(u.id) ? '✓' : '🔒'} U${i + 1}`).join(' · ') : `🔒 ${CRATES.find((c) => c.contents.includes(t.id))?.name ?? ''}`),
-      ),
-    );
+        { class: `shop-item td-card${lvl ? '' : ' locked'}` },
+        h('span', { class: 'shop-preview' }, previewItem(`hero:${hr.id}`, 44)),
+        h('span', { class: 'shop-name' }, hr.name),
+        h('span', { class: 'small muted' }, hr.title),
+        h('span', { class: 'small' }, lvl ? `Niveau ${lvl}/${HERO_MAX_LEVEL} · ${hr.text(lvl)}` : `🔒 ${hr.text(1)} au niveau 1`),
+      );
+    });
     const enemyRows = ENEMIES.filter((e) => ENEMY_FINISHES.some((f) => meta.owned.has(`es:${e.id}:${f.id}`))).map((e) => skinRow('es', e.id, e.name));
     collection.replaceChildren(
-      h('section', { class: 'home-section' }, h('h2', { class: 'home-h' }, 'Tours et améliorations'), h('div', { class: 'shop-grid td-deck-grid' }, ...towers)),
-      h('section', { class: 'home-section' }, h('h2', { class: 'home-h' }, 'Skins de tours'), ...TOWERS.filter((t) => has(t.id)).map((t) => skinRow('ts', t.id, t.name))),
+      h('section', { class: 'home-section' }, h('h2', { class: 'home-h' }, 'Héros'), h('div', { class: 'shop-grid td-deck-grid' }, ...heroes)),
+      h('section', { class: 'home-section' }, h('h2', { class: 'home-h' }, 'Skins de tours'), ...TOWERS.map((t) => skinRow('ts', t.id, t.name))),
       h(
         'section',
         { class: 'home-section' },
@@ -225,7 +236,7 @@ export function tdCratesView(root: HTMLElement): () => void {
       h(
         'div',
         { class: 'shop-head' },
-        h('div', {}, h('h1', {}, 'Tower defense'), h('p', { class: 'muted small' }, `Record : vague ${meta.best}. Les caisses Argent et Or s’ouvrent aux vagues 15 et 30.`)),
+        h('div', {}, h('h1', {}, 'Tower defense'), h('p', { class: 'muted small' }, `Campagne : ${meta.cleared}/20 niveaux · record du mode infini : vague ${meta.best}. Les tours et leurs améliorations se débloquent dans la campagne.`)),
         h('div', { class: 'ap-actions' }, balance, play),
       ),
       status,

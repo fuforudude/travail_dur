@@ -1,30 +1,45 @@
 // Tower defense : échanges avec le serveur (fonction `td` pour les parties, tables et fonctions SQL
-// de 0030_td_roguelike.sql pour la collection et les caisses). Le serveur fait foi pour tout.
+// de 0030_td_roguelike.sql et 0032_td_campagne.sql pour la progression, les héros, la collection
+// et les caisses). Le serveur fait foi pour tout.
 
 import { load, save } from '../../core/storage';
 import { ensureAccount } from '../../net/auth';
 import { errorMessage, getSupabase, multiConfigured } from '../../net/supabase';
 import { skinOf, type Finish, type Rarity } from './catalog';
-import type { RunState } from './engine/sim';
+import type { Mode, RunState } from './engine/sim';
 
 export interface Meta {
-  owned: Set<string>;
+  owned: Set<string>; // skins
   equipped: Map<string, string>; // emplacement (ts:<tour>, es:<ennemi>) → skin
-  best: number;
+  heroes: Map<string, number>; // héros → niveau
+  cleared: number; // niveaux de la campagne terminés
+  best: number; // record du mode infini
   online: boolean;
 }
 
-const CACHE = 'meta:td';
+const CACHE = 'meta:td3';
 interface Cached {
   owned: string[];
   equipped: [string, string][];
+  heroes: [string, number][];
+  cleared: number;
   best: number;
 }
 
 const fromCache = (): Meta => {
   const c = load<Cached | null>(CACHE, null);
-  return { owned: new Set(c?.owned ?? []), equipped: new Map(c?.equipped ?? []), best: c?.best ?? 0, online: false };
+  return {
+    owned: new Set(c?.owned ?? []), equipped: new Map(c?.equipped ?? []), heroes: new Map(c?.heroes ?? []),
+    cleared: c?.cleared ?? 0, best: c?.best ?? 0, online: false,
+  };
 };
+const toCache = (m: Meta) =>
+  save(CACHE, { owned: [...m.owned], equipped: [...m.equipped], heroes: [...m.heroes], cleared: m.cleared, best: m.best } satisfies Cached);
+
+/** Hors ligne (pas de serveur) : la progression de la campagne reste sur cet appareil. */
+export function saveLocalProgress(meta: Meta) {
+  if (!meta.online) toCache(meta);
+}
 
 async function client() {
   const supabase = await getSupabase();
@@ -33,25 +48,30 @@ async function client() {
   return { supabase, uid: account.id };
 }
 
-/** Collection, skins portés et record. Hors ligne : dernière version connue. */
+/** Progression, héros, collection, skins portés et record. Hors ligne : dernière version connue. */
 export async function loadMeta(): Promise<Meta> {
   if (!multiConfigured) return fromCache();
   try {
     const { supabase, uid } = await client();
-    const [items, equipped, best] = await Promise.all([
+    const sessions = () => supabase.from('td_sessions').select('wave, level').eq('user_id', uid).eq('rules', 3);
+    const [items, equipped, heroes, cleared, best] = await Promise.all([
       supabase.from('td_items').select('item_id').eq('user_id', uid),
       supabase.from('td_equipped').select('slot, item_id').eq('user_id', uid),
-      supabase.from('td_sessions').select('wave').eq('user_id', uid).eq('rules', 2).order('wave', { ascending: false }).limit(1),
+      supabase.from('td_heroes').select('hero_id, level').eq('user_id', uid),
+      sessions().eq('mode', 'campaign').eq('won', true).order('level', { ascending: false }).limit(1),
+      sessions().eq('mode', 'infinite').order('wave', { ascending: false }).limit(1),
     ]);
-    const error = items.error ?? equipped.error ?? best.error;
+    const error = items.error ?? equipped.error ?? heroes.error ?? cleared.error ?? best.error;
     if (error) throw new Error(errorMessage(error));
     const meta: Meta = {
       owned: new Set((items.data ?? []).map((r) => String(r.item_id))),
       equipped: new Map((equipped.data ?? []).map((r) => [String(r.slot), String(r.item_id)])),
+      heroes: new Map((heroes.data ?? []).map((r) => [String(r.hero_id), Number(r.level)])),
+      cleared: Number(cleared.data?.[0]?.level ?? 0),
       best: Number(best.data?.[0]?.wave ?? 0),
       online: true,
     };
-    save(CACHE, { owned: [...meta.owned], equipped: [...meta.equipped], best: meta.best } satisfies Cached);
+    toCache(meta);
     return meta;
   } catch {
     return fromCache();
@@ -79,9 +99,9 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export async function startRun(deck: string[]): Promise<{ id: string; state: RunState }> {
+export async function startRun(mode: Mode, level: number, hero: string | null): Promise<{ id: string; state: RunState }> {
   const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('serveur trop lent')), 8000));
-  return Promise.race([invoke<{ id: string; state: RunState }>({ op: 'start', deck }), timeout]);
+  return Promise.race([invoke<{ id: string; state: RunState }>({ op: 'start', mode, level, hero }), timeout]);
 }
 
 export interface WaveResult {
@@ -90,6 +110,7 @@ export interface WaveResult {
   gold: number;
   kills: number;
   over: boolean;
+  won: boolean;
 }
 export const sendWave = (session: string, actions: string) => invoke<WaveResult>({ op: 'wave', session, actions });
 
@@ -124,5 +145,5 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export const openCrate = (crate: string) => rpc<{ item: string; rarity: Rarity | null; balance: number }>('td_crate_open', { crate });
+export const openCrate = (crate: string) => rpc<{ item: string; rarity: Rarity | null; level?: number; balance: number }>('td_crate_open', { crate });
 export const equipSkin = (slot: string, item: string | null) => rpc<null>('td_equip', { slot_id: slot, item });
