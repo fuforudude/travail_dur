@@ -29,6 +29,7 @@ async function client() {
 
 export interface ApartmentState {
   layout: Layout;
+  rooms: string[]; // pièces débloquées, dans l'ordre d'achat
   cleanStep: number;
   rate: number; // points par heure
   banked: number;
@@ -36,11 +37,17 @@ export interface ApartmentState {
 }
 
 export async function loadApartment(uid: string): Promise<ApartmentState> {
-  const { data, error } = await (await client()).from('apartments').select('layout, clean_step, rate, banked, last_tick').eq('user_id', uid).maybeSingle();
+  const { data, error } = await (await client())
+    .from('apartments')
+    .select('layout, rooms, clean_step, rate, banked, last_tick')
+    .eq('user_id', uid)
+    .maybeSingle();
   if (error) throw serverError(error);
-  const l = (data?.layout as Layout | undefined) ?? { floor: [], wall: [] };
+  const rooms = (data?.rooms as string[] | undefined) ?? ['entree'];
+  const l = (data?.layout as Partial<Layout> | undefined) ?? {};
   return {
-    layout: { floor: l.floor ?? [], wall: l.wall ?? [] },
+    layout: Object.fromEntries(rooms.map((r) => [r, { floor: l[r]?.floor ?? [], wall: l[r]?.wall ?? [] }])),
+    rooms,
     cleanStep: Number(data?.clean_step ?? 0),
     rate: Number(data?.rate ?? 0),
     banked: Number(data?.banked ?? 0),
@@ -55,6 +62,7 @@ export function pending(a: ApartmentState, t = Date.now()): number {
 
 export const cleanApartment = () => rpc<{ balance: number; clean_step: number }>('apartment_clean');
 export const collectIncome = () => rpc<{ gain: number }>('apartment_collect');
+export const buyRoom = (room: string) => rpc<{ balance: number; rooms: string[] }>('apartment_room_buy', { room });
 
 export async function myFurniture(uid: string): Promise<Owned[]> {
   const { data, error } = await (await client()).from('furniture_owned').select('id, item_id').eq('user_id', uid).order('id');
@@ -84,8 +92,13 @@ export const buyFurniture = (base: string) => rpc<{ balance: number; owned: numb
 export const openCrate = (crate: string) => rpc<{ balance: number; owned: number; item: string; rarity: Rarity }>('crate_open', { crate });
 export const saveLayout = (layout: Layout) =>
   rpc<Layout>('apartment_save', {
-    layout: {
-      floor: layout.floor.map(({ o, x, y, r }) => (r ? { o, x, y, r } : { o, x, y })),
-      wall: layout.wall.map(({ o, x, y, r, art }) => ({ o, x, y, ...(r ? { r } : {}), ...(art ? { art } : {}) })),
-    },
+    layout: Object.fromEntries(
+      Object.entries(layout).map(([room, l]) => [
+        room,
+        {
+          floor: l.floor.map(({ o, x, y, r }) => (r ? { o, x, y, r } : { o, x, y })),
+          wall: l.wall.map(({ o, x, y, r, art }) => ({ o, x, y, ...(r ? { r } : {}), ...(art ? { art } : {}) })),
+        },
+      ]),
+    ),
   });
