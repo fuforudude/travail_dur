@@ -1,6 +1,7 @@
 import { isTyping, pushKeys } from '../core/input';
 import { blip } from '../core/sound';
 import { isAdmin } from '../net/admin';
+import { serverNow } from '../net/serverClock';
 import {
   artworks,
   baseOf,
@@ -328,7 +329,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   let me = '';
   let owner = '';
   let ownerName = '';
-  let state: ApartmentState = { layout: {}, rooms: ['entree'], cleanStep: 0, rate: 0, banked: 0, lastTick: Date.now() };
+  let state: ApartmentState = { layout: {}, rooms: ['entree'], cleanStep: 0, rate: 0, banked: 0, lastTick: serverNow() };
   let owned: Owned[] = [];
   let photos: Artwork[] = [];
   let unlockedPhotos = new Set<number>(); // photos débloquées (caisse souvenirs)

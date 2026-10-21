@@ -17,7 +17,7 @@ export const games: GameInfo[] = [
   { id: 'tetris', name: 'Tetris', description: 'Solo · classé', modes: ['solo'], load: () => import('./tetris').then((m) => m.tetris) },
   { id: 'wordle', name: 'Wordle', description: 'Mot du jour classé, ou entraînement', modes: ['solo'], load: () => import('./wordle').then((m) => m.wordle) },
   { id: 'flappy', name: 'Flappy Bird', description: 'Solo · classé', modes: ['solo'], load: () => import('./flappy').then((m) => m.flappy) },
-  { id: 'td', name: 'Tower defense', description: 'Solo · roguelike, 50 vagues, classé', modes: ['solo'], load: () => import('./towerdefense').then((m) => m.towerDefense) },
+  { id: 'td', name: 'Tower defense', description: 'Campagne de 20 niveaux, défis bonus, mode infini classé', modes: ['solo'], load: () => import('./towerdefense').then((m) => m.towerDefense) },
   { id: 'connect4', name: 'Puissance 4', description: 'Solo contre l’ordinateur ou à deux en salon', modes: ['solo', 'multi'], load: () => import('./connect4').then((m) => m.connect4) },
   { id: 'tictactoe', name: 'Morpion', description: 'Solo contre l’ordinateur ou à deux en salon', modes: ['solo', 'multi'], load: () => import('./tictactoe').then((m) => m.tictactoe) },
   { id: 'chess', name: 'Échecs', description: 'Solo contre l’ordinateur ou à deux en salon', modes: ['solo', 'multi'], load: () => import('./chess').then((m) => m.chess) },

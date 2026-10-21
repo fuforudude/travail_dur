@@ -2,6 +2,7 @@
 // Le serveur fait foi pour les prix, les tirages et l'aménagement ; catalogue et géométrie : furniture.ts.
 
 import { serverError, rpc } from './admin';
+import { serverNow } from './serverClock';
 import { CAP_HOURS, type Layout, type Rarity } from './furniture';
 import { getSupabase } from './supabase';
 
@@ -51,12 +52,12 @@ export async function loadApartment(uid: string): Promise<ApartmentState> {
     cleanStep: Number(data?.clean_step ?? 0),
     rate: Number(data?.rate ?? 0),
     banked: Number(data?.banked ?? 0),
-    lastTick: data?.last_tick ? Date.parse(data.last_tick as string) : Date.now(),
+    lastTick: data?.last_tick ? Date.parse(data.last_tick as string) : serverNow(),
   };
 }
 
-/** Revenus accumulés à l'instant t (même calcul que public.apartment_settle). */
-export function pending(a: ApartmentState, t = Date.now()): number {
+/** Revenus accumulés à l'instant t (même calcul que public.apartment_settle), à l'heure du serveur. */
+export function pending(a: ApartmentState, t = serverNow()): number {
   return Math.min(a.banked + (a.rate * (t - a.lastTick)) / 3_600_000, Math.max(a.rate, 1) * CAP_HOURS);
 }
 

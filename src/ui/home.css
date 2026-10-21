@@ -1,0 +1,22 @@
+/* Accueil : résumé (points, appart, tower defense) et records sur les cartes des jeux. */
+
+.home-stats { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.9rem 0 0.2rem; }
+.home-stats[hidden], .home-stat[hidden] { display: none; }
+.home-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.home-stat b { color: var(--text); }
+
+.tile-record {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+}

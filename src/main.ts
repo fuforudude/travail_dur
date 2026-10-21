@@ -6,6 +6,7 @@ import { consumeAuthRedirect, ensureAccount, onAccount } from './net/auth';
 import { startNotifications } from './net/friends';
 import { startPoints } from './net/points';
 import { startIdleIncome } from './net/idle';
+import { syncServerClock } from './net/serverClock';
 import { multiConfigured } from './net/supabase';
 import { lazy, prefetchViews, route, startRouter } from './router';
 import { homeView } from './ui/home';
@@ -48,6 +49,7 @@ consumeAuthRedirect().finally(() => {
     onAccount((a) => {
       if (!a) return;
       void startPoints(a.id);
+      void syncServerClock(); // heure du serveur : changer l'heure de l'appareil ne change rien
       startIdleIncome(a.id); // revenus de l'appart, sur toutes les pages
       void startNotifications(a.id);
     });

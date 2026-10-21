@@ -1,9 +1,10 @@
 import { pushKeys } from '../core/input';
 import { getSettings, keyLabel, randomName } from '../core/settings';
-import { setUsername } from '../net/auth';
+import { getBest } from '../core/storage';
+import { getAccount, setUsername } from '../net/auth';
 import { games, type GameInfo } from '../games/registry';
 import { isAdmin } from '../net/admin';
-import { formatPoints, getWallet } from '../net/points';
+import { formatPoints, getWallet, onWallet } from '../net/points';
 import { generateCode } from '../net/room';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
@@ -11,6 +12,7 @@ import { h, hints } from './dom';
 import { page } from './layout';
 import { toggleDrawer } from './drawer';
 import { spatialNav } from './menu';
+import './home.css';
 
 /** Pastille, teinte et étiquettes de chaque jeu sur l'accueil. */
 const LOOK: Record<string, { icon: string; tone: number; tags: string[] }> = {
@@ -18,7 +20,7 @@ const LOOK: Record<string, { icon: string; tone: number; tags: string[] }> = {
   tetris: { icon: '▚', tone: 5, tags: ['Solo', 'Classé'] },
   wordle: { icon: 'W', tone: 3, tags: ['Mot du jour', 'Classé'] },
   flappy: { icon: '➶', tone: 4, tags: ['Solo', 'Classé'] },
-  td: { icon: '♜', tone: 2, tags: ['Solo', 'Classé'] },
+  td: { icon: '♜', tone: 2, tags: ['Campagne', 'Classé'] },
   connect4: { icon: '●', tone: 2, tags: ['Solo', 'Multi'] },
   tictactoe: { icon: '✕', tone: 3, tags: ['Solo', 'Multi'] },
   chess: { icon: '♞︎', tone: 5, tags: ['Solo', 'Multi'] },
@@ -29,19 +31,61 @@ const LOOK: Record<string, { icon: string; tone: number; tags: string[] }> = {
 
 let lastFocus = ''; // pour revenir sur la même carte en rentrant à l'accueil
 
+/** Record personnel affiché sur la carte d'un jeu (meilleur score enregistré sur cet appareil). */
+const RECORD: Record<string, [string, (n: number) => string]> = {
+  '2048': ['2048', (n) => `Record : ${formatPoints(n)}`],
+  tetris: ['tetris', (n) => `Record : ${formatPoints(n)}`],
+  flappy: ['flappy', (n) => `Record : ${n} tuyau${n > 1 ? 'x' : ''}`],
+  td: ['td2', (n) => `Infini : vague ${n}`],
+};
+
 export function homeView(root: HTMLElement): () => void {
   if (!getSettings().nameChosen) return namePrompt(root);
 
   const content = page(root, 'Accueil');
   const off = !multiConfigured;
 
-  const card = (id: string, title: string, sub: string, icon: string, tone: number, action: () => void, opts: { tags?: string[]; disabled?: boolean } = {}) => {
+  // Résumé : solde (en direct), revenus de l'appart, progression du tower defense.
+  const balanceChip = h('span', { class: 'home-stat' });
+  const appartChip = h('span', { class: 'home-stat', hidden: true });
+  const tdChip = h('span', { class: 'home-stat', hidden: true });
+  const summary = h('div', { class: 'home-stats', hidden: off }, balanceChip, appartChip, tdChip);
+  const showBalance = () => {
+    const w = getWallet();
+    balanceChip.replaceChildren('◆ ', h('b', {}, w ? formatPoints(w.balance) : '…'), ' points');
+  };
+  showBalance();
+  const offWallet = onWallet(showBalance);
+  const account = getAccount();
+  if (!off && account) {
+    void import('../net/apartment')
+      .then(({ loadApartment }) => loadApartment(account.id))
+      .then((a) => {
+        if (a.rate <= 0) return;
+        appartChip.replaceChildren('⌂ Appart ', h('b', {}, `+${formatPoints(Math.round(a.rate))}`), ' par heure');
+        appartChip.hidden = false;
+      })
+      .catch(() => {});
+    void import('../games/towerdefense/net')
+      .then(({ loadMeta }) => loadMeta())
+      .then((m) => {
+        if (!m.cleared && !m.best) return;
+        let stars = 0;
+        for (const n of m.stars.values()) stars += n;
+        tdChip.replaceChildren('♜ Campagne ', h('b', {}, `${m.cleared}/20`), stars ? ` · ★ ${stars}` : '', m.best ? ` · infini vague ${m.best}` : '');
+        tdChip.hidden = false;
+      })
+      .catch(() => {});
+  }
+
+  const card = (id: string, title: string, sub: string, icon: string, tone: number, action: () => void, opts: { tags?: string[]; disabled?: boolean; record?: string } = {}) => {
     const b = h(
       'button',
       { class: 'tile', type: 'button', 'data-id': id, disabled: opts.disabled },
       h('span', { class: `tile-icon tone${tone}`, 'aria-hidden': 'true' }, icon),
       h('span', { class: 'tile-title' }, title),
       h('span', { class: 'tile-sub' }, sub),
+      opts.record ? h('span', { class: 'tile-record' }, opts.record) : null,
       opts.tags?.length ? h('span', { class: 'tile-tags' }, ...opts.tags.map((t) => h('span', { class: 'tile-tag' }, t))) : null,
     );
     b.addEventListener('click', () => {
@@ -53,7 +97,9 @@ export function homeView(root: HTMLElement): () => void {
 
   const gameCard = (g: GameInfo) => {
     const look = LOOK[g.id] ?? { icon: '▸', tone: 3, tags: [] };
-    return card(g.id, g.name, g.description ?? '', look.icon, look.tone, () => navigate(`/game/${g.id}`), { tags: look.tags });
+    const rec = RECORD[g.id];
+    const best = rec ? getBest(rec[0]) : 0;
+    return card(g.id, g.name, g.description ?? '', look.icon, look.tone, () => navigate(`/game/${g.id}`), { tags: look.tags, record: best > 0 ? rec[1](best) : undefined });
   };
 
   const solo = games.filter((g) => g.modes.includes('solo') && !g.modes.includes('multi'));
@@ -71,6 +117,7 @@ export function homeView(root: HTMLElement): () => void {
       h('h1', {}, `Salut ${getSettings().name}`),
       h('p', { class: 'muted' }, 'Choisis un jeu aux flèches puis Entrée, ou clique. Le menu ☰ en haut à gauche donne accès aux réglages et au compte.'),
     ),
+    summary,
     section('Jeux', ...solo.map(gameCard)),
     section(
       'Multijoueur',
@@ -108,13 +155,17 @@ export function homeView(root: HTMLElement): () => void {
   start?.focus();
 
   const nav = spatialNav(wrap);
-  return pushKeys((e) => {
+  const offKeys = pushKeys((e) => {
     if (e.key.toLowerCase() === 'm' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       return toggleDrawer();
     }
     nav(e);
   });
+  return () => {
+    offKeys();
+    offWallet();
+  };
 }
 
 function namePrompt(root: HTMLElement): () => void {
