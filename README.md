@@ -255,7 +255,11 @@ supabase/migrations/      tables, règles d'accès et fonctions serveur
   serveur.
 - **Tower Defense** : `engine/data.ts` est la source des paramètres d’équilibrage et `engine/sim.ts`
   le moteur déterministe. La fonction Edge rejoue les actions envoyées après chaque vague ; son
-  moteur TypeScript est une copie générée. Modifier le moteur côté `src/`, puis lancer
+  moteur TypeScript est une copie générée. Le jeu n'attend jamais le serveur (`uploads.ts`) : chaque
+  partie démarre sur un ticket réservé d'avance (graine tirée par le serveur), et son démarrage puis
+  ses vagues passent par une file gardée dans le navigateur, envoyée par lots (`op: 'sync'`) et
+  rejouable sans doublon ; un rechargement, une page quittée ou une coupure réseau ne perdent rien.
+  Les refus définitifs du serveur sont notés dans la table `td_rejects`. Modifier le moteur côté `src/`, puis lancer
   `npm run td:sync` avant le déploiement de la fonction `td`. Ne pas éditer sa copie générée à la
   main.
 - **Base de données** : les migrations définissent à la fois le schéma et une partie importante des

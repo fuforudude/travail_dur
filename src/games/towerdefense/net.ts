@@ -2,12 +2,12 @@
 // de 0030_td_roguelike.sql, 0032_td_campagne.sql et 0033_td_etoiles.sql pour la progression, les
 // étoiles, la boutique à étoiles, les héros, la collection et les caisses). Le serveur fait foi pour tout.
 
-import { load, remove, save } from '../../core/storage';
-import { ensureAccount } from '../../net/auth';
+import { load, save } from '../../core/storage';
+import { ensureAccount, getAccount } from '../../net/auth';
 import { errorMessage, getSupabase, multiConfigured } from '../../net/supabase';
 import { skinOf, type Finish, type Rarity } from './catalog';
 import { LEVEL_COUNT, PERK_MAX, perkCost, type Perks } from './engine/data';
-import type { Mode, RunOptions, RunState } from './engine/sim';
+import type { RunOptions } from './engine/sim';
 
 export interface Meta {
   owned: Set<string>; // skins
@@ -122,6 +122,8 @@ export function equippedFinish(meta: Meta, kind: 'ts' | 'es', subject: string): 
 }
 
 // --- Parties ------------------------------------------------------------------------------------
+// Le site ne dépend jamais d'une réponse du serveur pour jouer : les parties démarrent sur un ticket
+// réservé d'avance et tout ce qui doit être enregistré passe par la file de uploads.ts.
 
 /**
  * Version du protocole site ↔ fonction td. Le serveur refuse de démarrer une partie avec une version
@@ -129,18 +131,16 @@ export function equippedFinish(meta: Meta, kind: 'ts' | 'es', subject: string): 
  */
 export const TD_PROTOCOL = 2;
 
-/** Erreur du serveur du tower defense ; `status` 400 = refus (définitif), sinon réseau ou panne (on réessaie). */
+/** Erreur du serveur du tower defense ; `status` 400 = refus définitif, sinon réseau, panne ou attente. */
 export class TdError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
   }
 }
-/** Refus définitif : inutile de renvoyer. « Trop vite » se règle en attendant un peu. */
-export const isFinalRefusal = (e: unknown) => e instanceof TdError && e.status === 400 && e.message !== 'vague jouée trop vite';
 
-async function invoke<T>(body: Record<string, unknown>): Promise<T> {
+async function invoke<T>(body: Record<string, unknown>, timeoutMs = 20_000): Promise<T> {
   const { supabase } = await client();
-  const { data, error } = await supabase.functions.invoke('td', { body });
+  const { data, error } = await supabase.functions.invoke('td', { body, timeout: timeoutMs });
   if (error) {
     const ctx = (error as { context?: Response }).context;
     let msg = '';
@@ -151,16 +151,11 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export async function startRun(mode: Mode, level: number, hero: string | null): Promise<{ id: string; state: RunState }> {
-  const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('serveur trop lent')), 8000));
-  return Promise.race([invoke<{ id: string; state: RunState }>({ op: 'start', mode, level, hero, v: TD_PROTOCOL }), timeout]);
-}
-
 /** La fonction serveur `td` répond-elle ? (non déployée : 404, rien n'est enregistré). */
 export async function tdServerUp(): Promise<boolean> {
   if (!multiConfigured) return true; // hors ligne assumé : pas d'alerte
   try {
-    await invoke<unknown>({ op: 'ping' });
+    await invoke<unknown>({ op: 'ping' }, 8000);
     return true;
   } catch (e) {
     const msg = (e as Error).message;
@@ -178,44 +173,21 @@ export interface WaveResult {
   stars?: number;
   already?: boolean; // vague déjà reçue (renvoi après un rechargement)
 }
-/** Envoie une vague ; `step` = vagues déjà envoyées avant elle (le serveur ignore un doublon). */
-export const sendWave = (session: string, actions: string, step: number) => invoke<WaveResult>({ op: 'wave', session, actions, step, v: TD_PROTOCOL });
 
-// --- Parties hors ligne ---------------------------------------------------------------------------
-// Le serveur tire la graine de chaque partie. Pour pouvoir jouer une partie enregistrée sans réseau,
-// le site garde d'avance un ticket : une partie réservée sur le serveur, avec sa graine. Lancée hors
-// ligne, la partie utilise ce ticket ; son démarrage puis ses vagues partent au retour du réseau
-// (file de uploads.ts). Le serveur rend toujours le même ticket tant qu'il n'a pas servi.
+/** Réserve un ticket (partie réservée, graine tirée par le serveur) que le site n'a pas déjà. */
+export const reserveTicket = (have: string[], timeoutMs?: number) => invoke<{ id: string; seed: number }>({ op: 'reserve', have }, timeoutMs);
 
-interface Ticket {
-  id: string;
-  seed: number;
-  uid: string; // compte qui l'a réservé (changement de compte : on en réserve un autre)
-}
-const TICKET_KEY = 'ticket:td';
+export type SyncItem =
+  | { kind: 'start'; session: string; options: RunOptions }
+  | { kind: 'wave'; session: string; step: number; actions: string };
+export type SyncResult = { ok: true; result?: WaveResult } | { ok: false; error: string; final: boolean };
 
-/** Réserve un ticket s'il n'y en a pas déjà un (au chargement du jeu, quand le serveur répond). */
-export async function keepTicket(): Promise<void> {
-  if (!multiConfigured) return;
-  try {
-    const { uid } = await client();
-    if (load<Ticket | null>(TICKET_KEY, null)?.uid === uid) return;
-    const t = await invoke<{ id: string; seed: number }>({ op: 'reserve' });
-    save(TICKET_KEY, { id: t.id, seed: t.seed, uid } satisfies Ticket);
-  } catch {
-    // hors ligne ou fonction pas encore déployée : on réessaiera au prochain chargement
-  }
-}
+/** Envoie un lot (démarrages et vagues, dans l'ordre) ; le serveur répond pour chacun, dans l'ordre. */
+export const syncItems = (items: SyncItem[]) => invoke<{ results: SyncResult[] }>({ op: 'sync', items, v: TD_PROTOCOL });
 
-/** Prend le ticket gardé : il ne sert qu'une fois. */
-export function takeTicket(): Ticket | null {
-  const t = load<Ticket | null>(TICKET_KEY, null);
-  remove(TICKET_KEY);
-  return t;
-}
-
-/** Démarre sur le serveur une partie lancée hors ligne, avec les réglages utilisés par le site. */
-export const sendStart = (ticket: string, options: RunOptions) => invoke<{ id: string }>({ op: 'start', ticket, options, v: TD_PROTOCOL });
+/** Compte connecté, s'il est déjà connu (sans appel réseau). */
+export const knownUid = () => getAccount()?.id ?? null;
+export const currentUid = async () => (await client()).uid;
 
 // --- Caisses ------------------------------------------------------------------------------------
 
