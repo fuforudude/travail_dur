@@ -835,6 +835,7 @@ function mount(ctx: GameContext): () => void {
 
     // --- Vagues
     let onEnd: () => void = () => {};
+    let sendQueue: Promise<void> = Promise.resolve();
     const launch = async () => {
       if (running || s.over || showVictory) return;
       note = '';
@@ -853,22 +854,32 @@ function mount(ctx: GameContext): () => void {
       actions = [];
       snapshot = null;
       if (s.won) recordStars(meta, s.level, starsOf(s));
-      if (session) {
-        const r = await sendWave(session, sent).catch((e: Error) => {
+      // Résultat attendu, pris à la fin de la vague : pendant que le serveur répond, le joueur peut
+      // déjà construire ou lancer la vague suivante (l'or et le reste changent alors).
+      const expected = { wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills, over: s.over };
+      // Les vagues partent au serveur une par une, dans l'ordre, même si l'on enchaîne vite.
+      const check = sendQueue.then(async () => {
+        if (!session || gone) return;
+        const id = session;
+        const r = await sendWave(id, sent).catch((e: Error) => {
           note = `Partie non classée désormais : ${e.message}.`;
           console.warn('Tower defense : vague refusée par le serveur', e.message);
-          session = null;
+          if (session === id) session = null;
           return null;
         });
-        if (gone) return;
-        if (r && (r.wave !== s.wave || r.lives !== s.lives || r.gold !== s.gold || r.kills !== s.kills)) {
+        if (gone || !r) return;
+        if (r.wave !== expected.wave || r.lives !== expected.lives || r.gold !== expected.gold || r.kills !== expected.kills) {
           note = 'Résultat différent du serveur : partie non classée désormais.';
-          console.warn('Tower defense : résultat différent du serveur', { serveur: r, site: { wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills } });
-          session = null;
-        } else if (r && s.over && !campaign) {
-          note = getAccount()?.verified ? `${plural(s.wave, 'vague')} au classement.` : `${plural(s.wave, 'vague')} enregistrées. Ajoute un email (Réglages → Compte) pour apparaître au classement.`;
+          console.warn('Tower defense : résultat différent du serveur', { serveur: r, site: expected });
+          if (session === id) session = null;
+        } else if (expected.over && !campaign) {
+          note = getAccount()?.verified ? `${plural(expected.wave, 'vague')} au classement.` : `${plural(expected.wave, 'vague')} enregistrées. Ajoute un email (Réglages → Compte) pour apparaître au classement.`;
         }
-      }
+      });
+      sendQueue = check;
+      if (s.over) await check; // l'écran de fin dit si la partie est enregistrée
+      else void check.then(() => !gone && render());
+      if (gone) return;
       if (!campaign && s.wave >= FINAL_WAVE && !victorySeen && !s.over) {
         victorySeen = true;
         showVictory = true;
