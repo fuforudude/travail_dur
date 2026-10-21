@@ -105,9 +105,9 @@ export const FINISHES: { id: string; name: string; rarity: Rarity; motif?: boole
   { id: 'fleurs', name: 'à fleurs', rarity: 'common', motif: true },
   { id: 'coeurs', name: 'à cœurs', rarity: 'common', motif: true },
   { id: 'etoiles', name: 'à étoiles', rarity: 'rare', motif: true },
-  { id: 'nounours', name: 'à nounours', rarity: 'rare', motif: true },
   { id: 'pics', name: 'à pics', rarity: 'epic', motif: true },
   { id: 'arcs', name: 'à arcs-en-ciel', rarity: 'epic', motif: true },
+  { id: 'nounours', name: 'à nounours', rarity: 'legendary', motif: true },
   { id: 'flammes', name: 'en flammes', rarity: 'legendary', motif: true },
   { id: 'couronne', name: 'à couronne', rarity: 'mythic', motif: true },
 ];
