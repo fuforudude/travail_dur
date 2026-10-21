@@ -221,11 +221,39 @@ src/
 supabase/migrations/      tables, règles d'accès et fonctions serveur
 ```
 
+### Repères pour reprendre le code
+
+- **Démarrage** : `src/main.ts` applique les réglages globaux, initialise la touche panique et les
+  notifications, puis associe les routes hash aux vues. Les pages secondaires sont chargées à la
+  demande (`src/router.ts`) ; le routeur appelle le nettoyage de la vue quittée avant d’en afficher
+  une autre.
+- **Contrat des jeux** : `src/games/types.ts` définit le contexte et le cycle de vie communs.
+  `registry.ts` contient les métadonnées nécessaires à l’accueil et les imports différés des jeux.
+- **Solo et multijoueur** : les règles et vues des jeux sont dans `src/games/`. Les matchs en ligne
+  au tour par tour utilisent `src/games/online.ts` pour afficher l’état autoritaire de Supabase ;
+  les RPC SQL valident les coups et la fin de partie. Les fonctions de `src/net/` sont la frontière
+  entre l’interface et ces services.
+- **Stockage** : `src/core/storage.ts` gère les données locales au navigateur. La progression et les
+  données de compte en ligne viennent de Supabase ; les caches locaux ne remplacent pas la validation
+  serveur.
+- **Tower Defense** : `engine/data.ts` est la source des paramètres d’équilibrage et `engine/sim.ts`
+  le moteur déterministe. La fonction Edge rejoue les actions envoyées après chaque vague ; son
+  moteur TypeScript est une copie générée. Modifier le moteur côté `src/`, puis lancer
+  `npm run td:sync` avant le déploiement de la fonction `td`. Ne pas éditer sa copie générée à la
+  main.
+- **Base de données** : les migrations définissent à la fois le schéma et une partie importante des
+  règles métier. Une migration déjà exécutée ne doit pas être modifiée : ajouter une migration
+  ultérieure et l’appliquer une seule fois dans l’ordre indiqué dans « Configurer Supabase ».
+
+Validation : `npm run build` lance la synchronisation Tower Defense, `tsc` en mode strict, puis le
+build Vite. Il n’y a actuellement pas de script de tests automatisés dans `package.json`.
+
 ### Ajouter un jeu
 
 Créer un dossier dans `src/games/`, exporter un objet `Game` (voir `src/games/types.ts`) et l’ajouter à `src/games/registry.ts`. L’accueil se construit depuis le registre.
 
-- `mount(ctx)` dessine le jeu dans `ctx.root` et retourne une fonction de nettoyage.
+- `mount(ctx)` dessine le jeu dans `ctx.root`, installe ses abonnements/gestionnaires puis retourne
+  leur fonction de nettoyage : elle est appelée quand le routeur quitte la page.
 - Clavier : `pushKeys()` de `core/input.ts` (retirer le gestionnaire au nettoyage). `Retour arrière` → `ctx.onExit()`.
 - Jeux en temps réel : `onPanicChange()` de `core/panic.ts` pour se mettre en pause.
 - Score classé ou multijoueur : la règle du jeu doit exister **côté serveur**, dans une nouvelle migration SQL. Solo classé : sur le modèle de `g2048_replay` / `tetris_replay` et `src/net/ranked.ts`. Jeu à deux au tour par tour : ajouter le jeu à la colonne `game` de `matches` et sa règle dans `match_play`, puis réutiliser `mountOnline` (`src/games/online.ts`) avec une vue qui respecte `src/games/duel.ts`. Ne jamais écrire un score ou un état de partie depuis le client.

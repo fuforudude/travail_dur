@@ -24,6 +24,8 @@ class Refused extends Error {}
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 
 async function start(uid: string, mode: unknown, level: unknown, hero: unknown) {
+  // Les choix du client ne sont pas considérés comme acquis : la progression et la possession
+  // sont relues en base avant de créer un état initial avec une graine choisie par le serveur.
   const since = new Date(Date.now() - 60_000).toISOString();
   const { count } = await db.from('td_sessions').select('id', { count: 'exact', head: true }).eq('user_id', uid).gt('started_at', since);
   if ((count ?? 0) >= 10) throw new Refused('trop de parties, réessaie dans une minute');
@@ -65,6 +67,8 @@ async function wave(uid: string, session: unknown, actions: unknown) {
   const s = row.state as RunState;
   let ticks: number;
   try {
+    // `replayWave` valide les actions et fait évoluer l'état enregistré ; on ne reçoit jamais un
+    // état calculé par le navigateur comme résultat de la vague.
     ticks = replayWave(s, actions);
   } catch (e) {
     throw new Refused((e as Error).message);
@@ -78,6 +82,8 @@ async function wave(uid: string, session: unknown, actions: unknown) {
     .eq('step', row.step)
     .select('id');
   if (e2) throw new Error(e2.message);
+  // Le filtre sur `step` agit comme une comparaison-et-échange : deux requêtes concurrentes
+  // basées sur la même vague ne peuvent pas toutes deux enregistrer leur résultat.
   if (!saved?.length) throw new Refused('vague déjà envoyée');
   return { wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills, over: s.over, won: s.won, ticks };
 }
