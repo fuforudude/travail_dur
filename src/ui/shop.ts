@@ -73,7 +73,7 @@ export function shopView(root: HTMLElement): () => void {
       if (!owned.has(item.id)) {
         if (confirming !== item.id) {
           confirming = item.id;
-          notice.textContent = `${item.name} : ${formatPoints(price)} points. Entrée à nouveau pour confirmer l’achat.`;
+          notice.textContent = `${item.name} : ${formatPoints(price)} points. Entrée (ou un nouvel appui) pour confirmer l’achat.`;
           return;
         }
         await buy(item.id);

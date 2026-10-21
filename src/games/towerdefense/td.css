@@ -92,3 +92,7 @@
   .td-infinite { grid-column: auto; }
   .td-skin-row { flex-direction: column; align-items: flex-start; gap: 0.3rem; }
 }
+
+.td-chip { font: inherit; font-size: 0.85rem; cursor: pointer; }
+.touch .td-chip { padding: 0.45rem 0.8rem; font-size: 0.95rem; }
+.touch .td-shop { gap: 0.45rem; }

@@ -47,6 +47,9 @@ export function updateSettings(patch: Partial<Settings>): void {
 export function applyTheme(): void {
   document.documentElement.dataset.theme = current.theme;
   document.documentElement.dataset.palette = current.palette;
+  // Couleur de la barre du téléphone (appli installée) : celle du fond de la page.
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  if (bg) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg);
 }
 
 export function keyLabel(key: string): string {

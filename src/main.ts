@@ -1,7 +1,9 @@
 import './styles.css';
+import './mobile.css';
 import { initPanic } from './core/panic';
 import { initPrank } from './core/prank';
 import { applyTheme } from './core/settings';
+import { initTouch } from './core/touch';
 import { consumeAuthRedirect, ensureAccount, onAccount } from './net/auth';
 import { startNotifications } from './net/friends';
 import { startPoints } from './net/points';
@@ -13,6 +15,7 @@ import { playView } from './ui/play';
 import { initPointsUi, initSocialUi } from './ui/toast';
 
 applyTheme();
+initTouch();
 initPanic();
 initPrank();
 initPointsUi();
@@ -38,6 +41,11 @@ route(/^\/amis(?:\/(ajouter|demandes))?$/, lazy(() => import('./ui/friends').the
 route(/^\/td\/caisses$/, lazy(() => import('./games/towerdefense/crates').then((m) => m.tdCratesView)));
 
 // Retour d'un lien reçu par email : Supabase lit les jetons avant que le routeur ne touche au hash.
+// Appli installable (PWA) : le service worker garde le site pour l'ouvrir même sans réseau.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {}));
+}
+
 consumeAuthRedirect().finally(() => {
   startRouter();
   // Une fois l'accueil affiché et le navigateur au repos, on prépare les autres pages.

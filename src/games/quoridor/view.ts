@@ -1,5 +1,6 @@
 import { isTyping, pushKeys } from '../../core/input';
 import { applySkins } from '../../net/cosmetics';
+import { pressKey } from '../../core/touch';
 import { h } from '../../ui/dom';
 import { boardShell, legendItems, type Side } from '../board';
 import { statusText, type DuelView, type ViewHandlers, type ViewState } from '../duel';
@@ -52,6 +53,7 @@ export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints
     side,
     keys: [['← ↑ → ↓', 'case'], ['Entrée', 'jouer'], ['M', 'mode mur'], ['Espace', 'tourner'], ...extraHints],
     rules: RULES,
+    pad: [{ label: 'Mur / pion', key: 'm' }, { label: 'Tourner le mur', key: () => wallMode && pressKey(' ') }],
   });
 
   const mySide = (): Side | null => (state && state.me !== null ? ((state.me + 1) as Side) : null);

@@ -49,7 +49,7 @@ export function openCrateStage(o: CrateStageOptions): void {
   const reveal = h('div', { class: 'cr-reveal', hidden: true });
   const haulEl = h('div', { class: 'cr-haul', hidden: true });
   const againBtn = h('button', { class: 'field rl-spin', type: 'button' });
-  const closeBtn = h('button', { class: 'field', type: 'button' }, 'Fermer (Retour arrière)');
+  const closeBtn = h('button', { class: 'field', type: 'button' }, 'Fermer', h('span', { class: 'keyboard-only' }, ' (Retour arrière)'));
   const auto = autoPlay(AUTO_COUNTS, () => once(true), () => render());
   const stage = h(
     'div',
@@ -67,7 +67,8 @@ export function openCrateStage(o: CrateStageOptions): void {
   );
 
   const render = () => {
-    againBtn.textContent = `${o.again()} (Entrée)`;
+    againBtn.textContent = o.again();
+    againBtn.append(Object.assign(document.createElement('span'), { className: 'keyboard-only', textContent: ' (Entrée)' }));
     againBtn.disabled = busy || auto.running();
     auto.setDisabled(busy && !auto.running());
     haulEl.hidden = !haul.length;

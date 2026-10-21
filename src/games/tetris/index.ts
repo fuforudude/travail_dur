@@ -1,6 +1,7 @@
 import { isTyping, pushKeys } from '../../core/input';
 import { isPanicked, onPanicChange } from '../../core/panic';
 import { blip } from '../../core/sound';
+import { isTouch, onGesture, pressKey, touchPad } from '../../core/touch';
 import { getBest, setBest } from '../../core/storage';
 import { flushPending, startRanked, submitMessage, submitRanked } from '../../net/ranked';
 import { multiConfigured } from '../../net/supabase';
@@ -42,6 +43,7 @@ function mount(ctx: GameContext): () => void {
   const bestS = stat('Record');
   const rankEl = h('p', { class: 'muted small' });
   const noteEl = h('p', { class: 'status small' });
+  const board = h('div', { class: 'tt-board' }, ...cells);
 
   ctx.root.append(
     h(
@@ -50,7 +52,7 @@ function mount(ctx: GameContext): () => void {
       h(
         'div',
         { class: 'tt' },
-        h('div', { class: 'overlay-wrap' }, h('div', { class: 'tt-board' }, ...cells), overlay),
+        h('div', { class: 'overlay-wrap' }, board, overlay),
         h(
           'aside',
           { class: 'tt-side' },
@@ -63,6 +65,11 @@ function mount(ctx: GameContext): () => void {
         ),
       ),
       noteEl,
+      touchPad(
+        [{ label: '←', key: 'ArrowLeft', repeat: true }, { label: '↓', key: 'ArrowDown', repeat: true }, { label: '→', key: 'ArrowRight', repeat: true }],
+        [{ label: '⟲', key: 'c', title: 'Tourner à gauche' }, { label: '⟳', key: 'ArrowUp', wide: true, title: 'Tourner' }, { label: '⤓', key: ' ', title: 'Lâcher' }],
+        [{ label: 'Pause', key: 'p' }, { label: 'Rejouer', key: 'r' }],
+      ),
       hints(['← →', 'déplacer'], ['↑ X', 'tourner'], ['C', 'sens inverse'], ['↓', 'descendre'], ['Espace', 'lâcher'], ['P', 'pause'], ['R', 'rejouer'], ['Retour arrière', 'quitter']),
     ),
   );
@@ -101,8 +108,8 @@ function mount(ctx: GameContext): () => void {
     levelS.b.textContent = String(s.level);
     bestS.b.textContent = String(Math.max(best, s.score));
     overlay.hidden = true;
-    if (s.over) showOverlay('Partie terminée', `Score : ${s.score} · R pour rejouer`);
-    else if (paused) showOverlay('Pause', 'P pour reprendre');
+    if (s.over) showOverlay('Partie terminée', `Score : ${s.score} · ${isTouch() ? 'Rejouer' : 'R'} pour rejouer`);
+    else if (paused) showOverlay('Pause', isTouch() ? 'Pause pour reprendre' : 'P pour reprendre');
   };
 
   /** Envoie la partie au serveur (si classée et non vide), une seule fois. */
@@ -178,6 +185,14 @@ function mount(ctx: GameContext): () => void {
     scheduleGravity();
   };
 
+  // Sur le plateau : appui = tourner, glisser = déplacer ou descendre, glissement rapide vers le bas = lâcher.
+  const offGesture = onGesture(board, {
+    tap: () => pressKey('ArrowUp'),
+    move: (d) => pressKey(d === 'left' ? 'ArrowLeft' : d === 'right' ? 'ArrowRight' : 'ArrowDown'),
+    swipe: (d) => d === 'down' && pressKey(' '),
+    step: 26,
+    min: 60,
+  });
   const offPanic = onPanicChange((p) => (p ? stopGravity() : scheduleGravity()));
   void flushPending('tetris');
   void start();
@@ -206,6 +221,7 @@ function mount(ctx: GameContext): () => void {
     stopGravity();
     if (s && !s.over) finish();
     offPanic();
+    offGesture();
     popKeys();
   };
 }
