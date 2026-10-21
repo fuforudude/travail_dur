@@ -238,6 +238,21 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   else fail(`Divin : ${divine} meubles, ${elsewhere} autres caisses`);
 }
 
+// Vues en security_invoker (0044) : le classement Wordle montre tout le monde sans livrer les
+// propositions des autres, et le catalogue des meubles reste lisible.
+{
+  const other = await newUser();
+  await db.query(`update public.profiles set verified = true where id = $1`, [a]);
+  await db.query(`insert into public.wordle_games (user_id, day, guesses, solved, finished) values ($1, current_date, '{crane,poste}', true, true)`, [a]);
+  const ranked = (await as(other, `select count(*)::int as n from public.leaderboard_wordle where user_id = $1`, [a])).rows[0].n;
+  const games = (await as(other, `select count(*)::int as n from public.wordle_games where user_id = $1`, [a])).rows[0].n;
+  if (ranked === 1 && games === 0) ok('le classement Wordle montre les autres joueurs, pas leurs propositions');
+  else fail(`classement Wordle : ${ranked} ligne(s) pour A, ${games} partie(s) de A lisibles par un autre`);
+  const catalogue = (await as(a, `select count(*)::int as n from public.furniture_items`)).rows[0].n;
+  if (catalogue > 0) ok('le catalogue des meubles reste lisible par les joueurs');
+  else fail('furniture_items est vide pour un joueur');
+}
+
 await db.close();
 if (failures) {
   console.error(`\n${failures} échec(s).`);
