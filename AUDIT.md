@@ -23,9 +23,9 @@ Les tarifs et quotas cités sont des ordres de grandeur, à revérifier sur les 
   - Correctif : lire via une fonction `room_messages(code)`, ou passer la discussion en Realtime Broadcast, sans stockage.
 - [x] **Double authentification (TOTP) pour les admins.** *Fait (`0037_securite.sql`, `src/net/mfa.ts`) : `admin_check()` exige `aal2` ; la page Administration fait scanner un QR code la première fois, puis demande le code.* Aujourd'hui, le compte admin n'est protégé que par un lien par email.
   - Correctif : exiger `aal2` dans `admin_check()`.
-- [ ] **Sauvegardes de la base.** À ma connaissance, l'offre gratuite n'en a pas.
+- [x] **Sauvegardes de la base.** *Fait : workflow « Sauvegarde de la base » (`.github/workflows/backup.yml`), chaque nuit, copie chiffrée (GPG, secret `BACKUP_PASSPHRASE`) gardée 30 jours en artefact.* À ma connaissance, l'offre gratuite n'en a pas.
   - Correctif : un `pg_dump` chiffré et automatique vers un stockage privé, jamais dans le dépôt, qui est public.
-- [ ] **Migrations suivies et automatiques**, au lieu du copier-coller dans l'éditeur SQL.
+- [x] **Migrations suivies et automatiques** *Fait : workflow « Supabase » (`.github/workflows/supabase.yml`) : tests SQL, `supabase db push`, puis redéploiement de la fonction `td`. Historique du serveur réparé (0001 à 0037 marquées appliquées).*, au lieu du copier-coller dans l'éditeur SQL.
   - Correctif : `supabase db push` dans GitHub Actions.
 - [x] **Tests SQL en CI** *Fait : `npm run test:sql` (`scripts/sql-test.mjs`, workflow `Tests`) rejoue les migrations dans PGlite, compare les fonctions appelables par les joueurs à `supabase/tests/public-functions.txt` et teste la discussion, la suppression de compte, la double authentification. Il a trouvé l'ancien tower defense SQL (`td_start`, `td_wave`) encore appelable : fermé dans `0037`.*, avec PGlite comme pour les migrations de l'appart. Ils vérifient en particulier qu'aucune fonction interne n'est exécutable par `anon` ou `authenticated`.
 - [x] **Suppression de compte par le joueur lui-même.** *Fait : page Compte, confirmation par le pseudo (`account_delete`, `0037_securite.sql`).* C'est une obligation RGPD.

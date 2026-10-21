@@ -8,3 +8,5 @@ dist
 *.pdf
 # Dossiers de travail temporaires de Claude Code
 .claude/worktrees/
+# Fichiers locaux de la CLI Supabase (projet lié)
+supabase/.temp/

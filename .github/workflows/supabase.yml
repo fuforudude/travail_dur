@@ -1,0 +1,49 @@
+name: Supabase (migrations et fonction td)
+
+# À chaque push sur main qui touche supabase/ : tests SQL, puis nouvelles migrations appliquées
+# (supabase db push : seules celles absentes de l'historique du serveur), puis la fonction serveur du
+# tower defense redéployée. Fini le copier-coller dans l'éditeur SQL.
+# Secret nécessaire : SUPABASE_ACCESS_TOKEN (Settings → Secrets and variables → Actions).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+      - 'src/games/towerdefense/engine/**'
+      - '.github/workflows/supabase.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: supabase
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PROJECT_REF: wyawthtpqybhejlkaolt
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Pas de migration sur le serveur si elles ne passent pas d'abord en local (PGlite).
+      - run: npm run test:sql
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: supabase link --project-ref "$PROJECT_REF"
+      - name: Migrations
+        run: supabase db push --linked
+      - name: Fonction serveur td
+        run: |
+          npm run td:sync
+          supabase functions deploy td --project-ref "$PROJECT_REF"
