@@ -83,3 +83,11 @@ button.field:disabled { cursor: not-allowed; }
 /* Appart : actions du meuble en main (ranger, vendre, pivoter). */
 .ap-hand-actions { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.4rem; }
 .ap-hand-actions .rl-spin { margin-top: 0; }
+
+/* Appart : réserve en piles (« Chaise × 3 »), meuble en main. */
+.ap-inv.on { border-color: var(--accent); background: var(--accent-soft); }
+.ap-inv-n { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ap-hand { margin: 0.4rem 0 0.6rem; padding: 0.5rem 0.6rem; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft); }
+.ap-hand h3, .ap-reserve { margin: 0 0 0.3rem; font-size: 0.95rem; }
+.ap-reserve { margin-top: 0.6rem; }
+.ap-photo.on { border-color: var(--accent); }

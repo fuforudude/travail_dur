@@ -362,7 +362,6 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   const pickable = () => photos.filter((a) => admin || unlockedPhotos.has(a.id));
   let room = 'entree';
   let geom = geometry(roomOf(room));
-  let editing = false;
   let hand: Owned | null = null;
   let handRot = 0; // orientation du meuble en main
   let handArt: number | undefined; // sa photo (cadre, meuble personnalisable)
@@ -390,6 +389,15 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   const occupant = (zone: Zone, x: number, y: number) => layout()[zone].find((p) => covers(p, x, y));
   const fits = (item: string, zone: Zone, x: number, y: number, r = handRot) => fitsIn(layout()[zone], room, zone, item, r, x, y);
   const isFrame = (item: string) => baseOf(item)?.id === 'frame';
+  /** Chez soi, une pièce achetée et nettoyée s'aménage directement : pas de mode à part. */
+  const editing = () => mine() && unlocked() && state.cleanStep >= CLEAN_TASKS.length;
+  /** Réserve : meubles pas encore posés, regroupés par modèle (« Chaise × 3 »), dans l'ordre d'achat. */
+  const stacks = (): Owned[][] => {
+    const used = new Set(placedAll().map((p) => p.o));
+    const m = new Map<string, Owned[]>();
+    for (const o of owned) if (!used.has(o.id) && o.id !== hand?.id) m.set(o.item_id, [...(m.get(o.item_id) ?? []), o]);
+    return [...m.values()];
+  };
 
   // -------------------------------------------------------------------------
   // Zoom : molette ou pincement autour du point visé, + / − / 0, et glisser pour se déplacer.
@@ -591,8 +599,8 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   };
 
   const activate = (zone: Zone, x: number, y: number) => {
-    if (!editing) {
-      // Hors aménagement, cliquer un cadre montre sa photo en grand.
+    if (!editing()) {
+      // En visite, cliquer un cadre montre sa photo en grand.
       const art = photos.find((a) => a.id === occupant(zone, x, y)?.art);
       if (art) showPhoto(art);
       return;
@@ -601,15 +609,21 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     if (hand) {
       if (!fits(hand.item_id, zone, x, y)) return;
       const entry: Placed = { o: hand.id, i: hand.item_id, x, y, ...(handRot ? { r: handRot } : {}), ...(handArt ? { art: handArt } : {}) };
-      // Un cadre ou un meuble personnalisable garde sa photo quand on le déplace ; sinon, on la choisit.
-      if (takesPhoto(hand.item_id) && !handArt && photos.length) pickingPhoto = entry;
-      hand = null;
+      // Un cadre ou un meuble personnalisable : on choisit (ou garde) sa photo.
+      if (takesPhoto(hand.item_id) && photos.length) pickingPhoto = entry;
+      // Pile de meubles identiques : le suivant reste en main, pour en poser plusieurs d'affilée.
+      const used = new Set([...placedAll().map((p) => p.o), entry.o]);
+      const next = takesPhoto(hand.item_id) ? undefined : owned.find((o) => o.item_id === entry.i && !used.has(o.id));
+      hand = next ?? null;
       handArt = undefined;
+      sellArmed = false;
       setLayout({ ...layout(), [zone]: [...layout()[zone], entry] });
       return;
     }
     const p = occupant(zone, x, y);
     if (!p) return;
+    pickingPhoto = null;
+    sellArmed = false;
     hand = owned.find((o) => o.id === p.o) ?? null;
     handRot = p.r ?? 0;
     handArt = p.art;
@@ -618,7 +632,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
 
   /** Quart de tour : le meuble en main, sinon celui sous le curseur (s'il a la place une fois tourné). */
   const rotate = () => {
-    if (!editing) return;
+    if (!editing()) return;
     const target = hand ? hand.item_id : occupant(cursor.zone, cursor.x, cursor.y)?.i;
     if (target && isFrame(target)) {
       status = 'Un cadre reste droit, pour que la photo soit à l’endroit.';
@@ -652,7 +666,6 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     geom = geometry(roomOf(id));
     pickingPhoto = null;
     if (!unlocked()) {
-      editing = false;
       hand = null;
       handArt = undefined;
     }
@@ -682,7 +695,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   };
 
   // Gains par pièce : ce que rapportent les meubles de chaque pièce, bonus des équipements compris.
-  const breakdown = h('details', { class: 'ap-breakdown', open: true }, h('summary', {}, 'Revenus par pièce'));
+  const breakdown = h('details', { class: 'ap-breakdown' }, h('summary', {}, 'Revenus par pièce'));
   const breakdownBody = h('div', {});
   breakdown.append(breakdownBody);
   const bar = (pct: number) => {
@@ -774,12 +787,22 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     });
   };
 
-  const toggleEdit = () => {
-    if (!mine() || state.cleanStep < CLEAN_TASKS.length || !unlocked()) return;
-    editing = !editing;
+  /** Prend en main un meuble de la réserve. */
+  const take = (o: Owned) => {
+    hand = o;
+    sellArmed = false;
+    handArt = undefined;
+    handRot = 0;
+    pickingPhoto = null;
+    const zone = sizeOf(o.item_id).place;
+    if (zone !== cursor.zone) cursor = { zone, x: 0, y: 0 };
+    render();
+  };
+  /** Repose le meuble en main dans la réserve. */
+  const drop = () => {
     hand = null;
     handArt = undefined;
-    pickingPhoto = null;
+    sellArmed = false;
     render();
   };
 
@@ -870,63 +893,48 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       );
       return;
     }
-    const used = new Set(placedAll().map((p) => p.o));
-    if (!editing) {
-      const edit = h('button', { class: 'field rl-spin', type: 'button' }, 'Aménager (E)');
-      edit.addEventListener('click', toggleEdit);
-      const here = layout().floor.length + layout().wall.length;
-      side.replaceChildren(
-        h('h2', {}, `${roomOf(room).glyph} ${roomOf(room).name}`),
-        h('p', { class: 'ap-room-income' }, 'Cette pièce rapporte ', h('b', {}, `${formatPoints(Math.round(roomIncome(room)))} par heure`)),
-        h('p', { class: 'muted small' }, `${here} meuble${here > 1 ? 's' : ''} ici · ${owned.length - used.size} en réserve`),
-        edit,
-        specialCard(),
-      );
-      return;
-    }
-    const free = owned.filter((o) => !used.has(o.id) && o.id !== hand?.id);
-    const list = free.length
-      ? free.map((o) => {
+    const reserve = stacks();
+    const list = reserve.length
+      ? reserve.map((pile) => {
+          const o = pile[0];
           const b = h(
             'button',
-            { class: `ap-inv rar-${finishOf(o.item_id).rarity}`, type: 'button' },
+            { class: `ap-inv rar-${finishOf(o.item_id).rarity}${o.item_id === hand?.item_id ? ' on' : ''}`, type: 'button', title: 'Prendre en main' },
             furnitureEl(o.item_id),
             h('span', {}, itemName(o.item_id), h('span', { class: 'muted small' }, ` · ${formatPoints(Math.round(itemIncome(o.item_id)))}/h`)),
+            pile.length > 1 ? h('span', { class: 'ap-inv-n' }, `× ${pile.length}`) : '',
           );
           b.addEventListener('mousedown', (e) => e.preventDefault());
-          b.addEventListener('click', () => {
-            hand = o;
-            sellArmed = false;
-            handArt = undefined;
-            handRot = 0;
-            const zone = sizeOf(o.item_id).place;
-            if (zone !== cursor.zone) cursor = { zone, x: 0, y: 0 };
-            render();
-          });
+          b.addEventListener('click', () => take(o));
           return b;
         })
-      : [h('p', { class: 'muted small' }, 'Réserve vide.')];
-    const done = h('button', { class: 'field', type: 'button' }, 'Terminer (E)');
-    done.addEventListener('click', toggleEdit);
-    const turn = h('button', { class: 'field', type: 'button' }, hand ? `Pivoter (R) · ${handRot * 90}°` : 'Pivoter (R)');
-    const stash = hand ? h('button', { class: 'field rl-spin', type: 'button' }, 'Ranger dans la réserve (Suppr)') : null;
-    stash?.addEventListener('mousedown', (e) => e.preventDefault());
-    stash?.addEventListener('click', () => {
-      hand = null;
-      handArt = undefined;
-      sellArmed = false;
-      render();
-    });
-    const sell = hand
-      ? h('button', { class: 'field', type: 'button', disabled: busy }, sellArmed ? `Confirmer : vendre ◆ ${formatPoints(sellPrice(hand.item_id))} (V)` : `Vendre ◆ ${formatPoints(sellPrice(hand.item_id))} (V)`)
-      : null;
-    sell?.addEventListener('mousedown', (e) => e.preventDefault());
-    sell?.addEventListener('click', () => void sellHand());
-    turn.addEventListener('mousedown', (e) => e.preventDefault());
-    turn.addEventListener('click', rotate);
+      : [h('p', { class: 'muted small' }, 'Réserve vide : achète des meubles ou ouvre des caisses.')];
+    const btn = (label: string, f: () => void, cls = 'field') => {
+      const b = h('button', { class: cls, type: 'button', disabled: busy }, label);
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('click', f);
+      return b;
+    };
+    const left = hand ? owned.filter((o) => o.item_id === hand!.item_id && reserve.some((pile) => pile.includes(o))).length : 0;
+    const here = layout().floor.length + layout().wall.length;
     side.replaceChildren(
-      h('h2', {}, hand ? `En main : ${itemName(hand.item_id)}` : 'Mes meubles'),
-      h('p', { class: 'muted small' }, hand ? 'Clique une case libre pour le poser.' : 'Clique un meuble posé pour le prendre.'),
+      h('h2', {}, `${roomOf(room).glyph} ${roomOf(room).name}`),
+      h('p', { class: 'ap-room-income' }, 'Rapporte ', h('b', {}, `${formatPoints(Math.round(roomIncome(room)))} par heure`), h('span', { class: 'muted small' }, ` · ${here} meuble${here > 1 ? 's' : ''}`)),
+      hand
+        ? h(
+            'div',
+            { class: 'ap-hand' },
+            h('h3', {}, `En main : ${itemName(hand.item_id)}`, left ? h('span', { class: 'muted small' }, ` (encore ${left} en réserve)`) : ''),
+            h('p', { class: 'muted small' }, 'Clique une case libre pour le poser.'),
+            h(
+              'div',
+              { class: 'ap-hand-actions' },
+              btn('Ranger (Échap)', drop),
+              isFrame(hand.item_id) ? '' : btn(`Pivoter (R) · ${handRot * 90}°`, rotate),
+              btn(sellArmed ? `Confirmer : vendre ◆ ${formatPoints(sellPrice(hand.item_id))}` : `Vendre ◆ ${formatPoints(sellPrice(hand.item_id))} (V)`, () => void sellHand()),
+            ),
+          )
+        : h('p', { class: 'muted small' }, 'Choisis un meuble dans ta réserve, ou clique un meuble posé pour le déplacer.'),
       pickingPhoto
         ? h(
             'div',
@@ -934,26 +942,30 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
             h('h3', {}, isFrame(pickingPhoto.i) ? 'Photo du cadre' : 'Photo du papier peint'),
             pickable().length ? '' : h('p', { class: 'muted small' }, 'Aucune photo : caisse souvenirs.'),
             ...pickable().map((a) => {
-              const b = h('button', { class: 'ap-photo', type: 'button', title: a.title }, h('img', { src: a.url, alt: a.title, loading: 'lazy' }));
+              const b = h('button', { class: `ap-photo${a.id === pickingPhoto!.art ? ' on' : ''}`, type: 'button', title: a.title }, h('img', { src: a.url, alt: a.title, loading: 'lazy' }));
               b.addEventListener('click', () => setPhoto(pickingPhoto!, a.id));
               return b;
             }),
+            btn('Fermer', () => {
+              pickingPhoto = null;
+              render();
+            }),
           )
         : '',
-      hand ? h('div', { class: 'ap-hand-actions' }, stash!, sell!, turn) : turn,
+      h('h3', { class: 'ap-reserve' }, `Réserve · ${reserve.reduce((t, pile) => t + pile.length, 0)}`),
       h('div', { class: 'ap-inventory' }, ...list),
-      done,
+      specialCard(),
     );
   };
 
   let overlay: Overlay | null = null;
   let sceneKey = '';
   const drawOverlay = () =>
-    overlay?.draw(editing ? cursor : null, editing && hand ? { item: hand.item_id, r: handRot, ok: fits(hand.item_id, cursor.zone, cursor.x, cursor.y) } : null);
+    overlay?.draw(editing() ? cursor : null, editing() && hand ? { item: hand.item_id, r: handRot, ok: fits(hand.item_id, cursor.zone, cursor.x, cursor.y) } : null);
 
   const render = () => {
     // La pièce (des centaines de formes) n'est redessinée que si son contenu a changé.
-    const key = JSON.stringify([room, state.rooms, state.specials, layout(), state.cleanStep, editing, photos.length]);
+    const key = JSON.stringify([room, state.rooms, state.specials, layout(), state.cleanStep, editing(), photos.length]);
     if (key !== sceneKey || !overlay) {
       sceneKey = key;
       svg.setAttribute('class', `iso-room room-${room}${unlocked() ? '' : ' locked'}${view.z > 1 ? ' zoomed' : ''}`);
@@ -961,7 +973,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
         layout: layout(),
         clean: room === 'entree' ? state.cleanStep : CLEAN_TASKS.length,
         photos,
-        editing,
+        editing: editing(),
         isOpen: (id) => unlocked(id),
         fixture: (() => {
           const sp = specialOf(room);
@@ -981,14 +993,14 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
         },
         onCell: activate,
         onHover: (zone, x, y) => {
-          if (!editing || (cursor.zone === zone && cursor.x === x && cursor.y === y)) return;
+          if (!editing() || (cursor.zone === zone && cursor.x === x && cursor.y === y)) return;
           cursor = { zone, x, y };
           drawOverlay();
         },
       });
     }
     drawOverlay();
-    svg.classList.toggle('editing', editing);
+    svg.classList.toggle('editing', editing());
     statusEl.textContent = status;
     renderIncome();
     renderBreakdown();
@@ -1081,33 +1093,29 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
         e.preventDefault();
         return closePhoto();
       }
+      if (key === 'escape' && (hand || pickingPhoto)) {
+        pickingPhoto = null;
+        return drop();
+      }
       if (key === 'backspace') {
         e.preventDefault();
-        if (hand) {
-          hand = null;
-          handArt = undefined;
-          return render();
-        }
+        if (hand) return drop();
         return navigate('/');
       }
-      if (key === 'e') return toggleEdit();
       if (key === 'c') return void doCollect();
       if (key === '+' || key === '=') return zoomTo(view.z * 1.25);
       if (key === '-') return zoomTo(view.z / 1.25);
       if (key === '0') return resetView();
       if (/^[1-9]$/.test(key) && ROOMS[Number(key) - 1]) return selectRoom(ROOMS[Number(key) - 1].id);
-      if (!editing) return;
+      if (!editing()) return;
       if (key === 'arrowleft') move(-1, 0);
       else if (key === 'arrowright') move(1, 0);
       else if (key === 'arrowup') move(0, -1);
       else if (key === 'arrowdown') move(0, 1);
       else if (key === 'enter' || key === ' ') activate(cursor.zone, cursor.x, cursor.y);
       else if (key === 'delete' || key === 'x') {
-        if (hand) {
-          hand = null;
-          handArt = undefined;
-          render();
-        } else {
+        if (hand) drop();
+        else {
           const p = occupant(cursor.zone, cursor.x, cursor.y);
           if (p) setLayout({ ...layout(), [cursor.zone]: layout()[cursor.zone].filter((q) => q !== p) });
         }
@@ -1120,23 +1128,17 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
           render();
         }
       } else if (key === 'tab') {
-        const used = new Set(placedAll().map((p) => p.o));
-        const free = owned.filter((o) => !used.has(o.id));
-        if (!free.length) return;
-        const i = hand ? free.findIndex((o) => o.id === hand!.id) : -1;
-        hand = free[(i + 1) % free.length];
-        handArt = undefined;
-        handRot = 0;
-        const zone = sizeOf(hand.item_id).place;
-        if (zone !== cursor.zone) cursor = { zone, x: 0, y: 0 };
-        render();
+        // Modèle suivant de la réserve (une pile à la fois).
+        const piles = stacks();
+        if (!piles.length) return;
+        const i = hand ? piles.findIndex((pile) => pile[0].item_id === hand!.item_id) : -1;
+        take(piles[(i + 1) % piles.length][0]);
       } else return;
       e.preventDefault();
     }),
   );
   content.append(
     hints(
-      ['E', 'aménager'],
       ['C', 'récolter'],
       ['1 – 9', 'pièce'],
       ['+ − 0', 'zoom'],
@@ -1144,7 +1146,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       ['Tab', 'meuble suivant'],
       ['Entrée', 'poser / reprendre'],
       ['R', 'pivoter'],
-      ['Suppr', 'ranger'],
+      ['Échap', 'ranger'],
       ['P', 'photo (cadre, meuble personnalisable)'],
       ['Retour arrière', 'quitter'],
     ),
