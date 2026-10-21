@@ -134,11 +134,22 @@ async function startTicket(uid: string, ticket: unknown, o: Record<string, unkno
   }
   const known = Number(o.cleared);
   if (!Number.isInteger(known) || known < 0 || known > Number(cleared ?? 0)) throw new Refused('niveau pas encore débloqué');
+  // Défi Héroïque ou Fer : seulement sur un niveau déjà réussi avec 3 étoiles.
+  const variant = o.variant === 'heroic' || o.variant === 'iron' ? o.variant : undefined;
+  if (variant) {
+    const { data: three, error: e6 } = await db
+      .from('td_sessions')
+      .select('id')
+      .eq('user_id', uid).eq('rules', 3).eq('mode', 'campaign').eq('level', Number(o.level)).eq('won', true).eq('stars', 3).is('variant', null)
+      .limit(1);
+    if (e6) throw new Error(e6.message);
+    if (!three?.length) throw new Refused('défi débloqué en réussissant le niveau avec 3 étoiles');
+  }
   // Chapitre 2 : même principe, la progression connue du site ne doit pas dépasser la vraie.
   const known2 = Number(o.cleared2 ?? 0);
   if (!Number.isInteger(known2) || known2 < 0 || known2 > Number(cleared2 ?? 0)) throw new Refused('niveau pas encore débloqué');
   const options: RunOptions = {
-    mode: o.mode, level: o.mode === 'campaign' ? Number(o.level) : 0, cleared: known, cleared2: known2,
+    mode: o.mode, level: o.mode === 'campaign' ? Number(o.level) : 0, cleared: known, cleared2: known2, variant,
     hero: hero ? { id: hero.id as string, level: hero.level as number } : null, perks: perks as Record<string, number>,
   };
   const err = runError(options);
@@ -148,7 +159,7 @@ async function startTicket(uid: string, ticket: unknown, o: Record<string, unkno
     .from('td_sessions')
     .update({
       mode: options.mode, level: options.mode === 'campaign' ? options.level : null, hero: options.hero?.id ?? null,
-      hero_level: options.hero?.level ?? null, state, wave: 0, lives: state.lives, gold: state.gold, kills: 0,
+      hero_level: options.hero?.level ?? null, state, wave: 0, lives: state.lives, gold: state.gold, kills: 0, variant: variant ?? null,
     })
     .eq('id', ticket)
     .is('state', null)

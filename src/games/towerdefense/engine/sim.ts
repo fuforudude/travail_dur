@@ -6,7 +6,7 @@
 import {
   bonusLevel, CHAPTER2_FIRST, CHAPTER2_LAST, ENEMIES, inChapter2, FINAL_WAVE, hpMult, LEVEL_COUNT, levelBoss, levelGold, levelWave, levelWaves, MAPS, mapOf, MAX_LEVEL,
   maxTier, MINI, PERK_MAX, PERKS, runBonus, SELL_RATIO, START_GOLD, START_LIVES, starsFor, themeOf, tierOfWave, TOWERS, towersFor, towerStats,
-  upgradeAt, waveBonus, waveBudget, type DamageType, type Perks, type TowerStats,
+  upgradeAt, HEROIC_WAVES, ironTowers, levelOffset, SPELLS, type SpellId, type Variant, waveBonus, waveBudget, type DamageType, type Perks, type TowerStats,
 } from './data.ts';
 
 export const TICK = 0.1; // s
@@ -79,6 +79,8 @@ export interface RunState {
   tier: number; // niveau d'amélioration maximal (débloqué par la campagne)
   hero: { id: string; level: number } | null;
   perks?: Perks; // boutique à étoiles
+  variant?: Variant; // défi Héroïque ou Fer (campagne)
+  spells?: Record<SpellId, number>; // recharge restante des sorts (ticks)
   startLives?: number; // vies de départ, pour les étoiles
   won: boolean; // campagne : le niveau est réussi
   wave: number; // vagues terminées
@@ -99,6 +101,7 @@ export interface RunOptions {
   cleared2?: number; // chapitre 2 : plus haut niveau réussi (26 à 75), 0 si aucun
   hero: { id: string; level: number } | null;
   perks?: Perks;
+  variant?: Variant; // défi (le serveur vérifie les 3 étoiles sur le niveau)
 }
 
 /** Vérifie qu'une partie peut être lancée ; retourne un message d'erreur ou null. */
@@ -116,6 +119,10 @@ export function runError(o: RunOptions): string | null {
   for (const [id, n] of Object.entries(o.perks ?? {})) {
     if (!PERKS.some((p) => p.id === id) || !Number.isInteger(n) || n < 0 || n > PERK_MAX) return 'amélioration inconnue';
   }
+  if (o.variant !== undefined && o.variant !== null) {
+    if (o.variant !== 'heroic' && o.variant !== 'iron') return 'défi inconnu';
+    if (o.mode !== 'campaign' || bonusLevel(o.level)) return 'défi impossible sur ce niveau';
+  }
   return null;
 }
 
@@ -124,12 +131,18 @@ export function newRun(seed: number, o: RunOptions): RunState {
   const level = campaign ? o.level : 0;
   const perks = { ...(o.perks ?? {}) };
   const bonus = runBonus(o.hero, perks, level);
-  const lives = bonusLevel(level)?.lives ?? START_LIVES + bonus.lives;
+  const variant = campaign && o.variant ? o.variant : undefined;
+  const lives = variant === 'heroic' ? 1 : bonusLevel(level)?.lives ?? START_LIVES + bonus.lives;
+  // Défis : l'or suit la difficulté de départ (fin du niveau pour Héroïque, toute la vague pour Fer).
+  const end = campaign ? levelOffset(level) + levelWaves(level) : 0;
+  const gold = !campaign ? START_GOLD : variant === 'heroic' ? levelGold(level, end - HEROIC_WAVES - 1) : variant === 'iron' ? levelGold(level, end) : levelGold(level);
+  const all = towersFor(o.cleared);
   const s: RunState = {
     seed: seed >>> 0, mode: o.mode, level, map: level,
-    allowed: towersFor(o.cleared), tier: maxTier(o.cleared), hero: o.hero, perks, startLives: lives, won: false,
-    wave: 0, lives, gold: (campaign ? levelGold(o.level) : START_GOLD) + bonus.startGold,
+    allowed: variant === 'iron' ? ironTowers(level, all) : all, tier: maxTier(o.cleared), hero: o.hero, perks, startLives: lives, won: false,
+    wave: 0, lives, gold: gold + bonus.startGold,
     kills: 0, bossKills: 0, over: false, lostTo: null, towers: [], nextId: 1,
+    ...(variant ? { variant } : {}),
   };
   const sp = mapOf(s.map).special;
   const kind = sp ? TOWERS.findIndex((t) => t.id === sp.tower) : -1;
@@ -147,7 +160,23 @@ export const specialPrice = (s: RunState) => {
   return sp ? priceOf(s, sp.cost) : null;
 };
 /** Étoiles gagnées (0 tant que le niveau n'est pas réussi). */
-export const starsOf = (s: RunState) => (s.won ? starsFor(s.lives, s.startLives ?? START_LIVES) : 0);
+export const starsOf = (s: RunState) => (s.won && !s.variant ? starsFor(s.lives, s.startLives ?? START_LIVES) : 0);
+
+/** Nombre de vagues de la partie (campagne : selon le niveau et le défi). */
+export const runWaves = (s: RunState) => (s.variant === 'heroic' ? HEROIC_WAVES : s.variant === 'iron' ? 1 : levelWaves(s.level));
+
+/** Vague n de la partie : niveau de campagne (et son défi éventuel) ou mode infini. */
+export function planFor(s: RunState, n: number): WavePlan {
+  if (s.mode !== 'campaign') return planWave(s.seed, n);
+  const end = levelOffset(s.level) + levelWaves(s.level);
+  if (s.variant === 'heroic') {
+    const plan = composeWave(s.seed, n, end - HEROIC_WAVES - 2 + n, null, false);
+    plan.mult *= 1.15; // élite
+    return plan;
+  }
+  if (s.variant === 'iron') return composeWave(s.seed, 1, end - 5, null, false, 2.2);
+  return planLevelWave(s.seed, s.level, n);
+}
 export const sellValue = (t: TowerState) => (t.fresh ? t.invested : Math.floor(t.invested * SELL_RATIO));
 /** Prochaine amélioration de la tour (au 3e niveau, celle de la voie `path`). */
 export const upgradeOf = (t: TowerState, path: number = t.path) => upgradeAt(TOWERS[t.kind], t.level, t.level === 2 ? path : t.path);
@@ -162,6 +191,7 @@ export const ACTION_RE = /^([BUSA])(\d{1,2})\.(\d{1,2})(?:\.(\d))?$/;
 /** Applique une action ; retourne un message d'erreur (et ne change rien) si elle est impossible. */
 export function applyAction(s: RunState, a: string, running = false): string | null {
   if (s.over) return 'partie terminée';
+  if (/^[FG]\d/.test(a)) return 'un sort se lance pendant une vague';
   const m = ACTION_RE.exec(a);
   if (!m) return 'action invalide';
   const x = Number(m[2]);
@@ -257,9 +287,9 @@ export function planLevelWave(seed: number, L: number, w: number): WavePlan {
   return plan;
 }
 
-function composeWave(seed: number, n: number, w: number, boss: number | null, themes: boolean): WavePlan {
+function composeWave(seed: number, n: number, w: number, boss: number | null, themes: boolean, budgetMult = 1): WavePlan {
   const rng = makeRng(subSeed(seed, n, 1));
-  let budget = waveBudget(w);
+  let budget = waveBudget(w) * budgetMult;
   const regular = ENEMIES.map((_, i) => i).filter((i) => ENEMIES[i].tier !== 'boss' && ENEMIES[i].firstWave <= w);
   if (boss !== null) budget *= 0.5; // escorte
   const theme = boss === null && themes ? themeOf(w) : null;
@@ -444,7 +474,7 @@ const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) * (a
 export function startWave(s: RunState) {
   const n = s.wave + 1;
   const campaign = s.mode === 'campaign';
-  const plan = campaign ? planLevelWave(s.seed, s.level, n) : planWave(s.seed, n);
+  const plan = planFor(s, n);
   const rng = makeRng(subSeed(s.seed, n, 2));
   const mult = plan.mult;
   // Le Titan se renforce à chaque apparition : niveaux 5, 10, 15 de la campagne ; vagues 10, 20, 30, 40 en infini.
@@ -812,6 +842,7 @@ export function startWave(s: RunState) {
     fx = collect ?? null;
     const dt = TICK;
 
+    if (s.spells) for (const k of Object.keys(s.spells) as SpellId[]) if (s.spells[k] > 0) s.spells[k]--;
     while (nextSpawn < plan.spawns.length && plan.spawns[nextSpawn].at <= ticks) {
       const sp = plan.spawns[nextSpawn++];
       spawn(sp.enemy, sp.lane % routeCount, 0);
@@ -1040,7 +1071,7 @@ export function startWave(s: RunState) {
       }
       s.gold += Math.round(income * bonus.waveGoldMult);
       // Campagne : la dernière vague passée, le niveau est réussi.
-      if (campaign && n >= levelWaves(s.level)) {
+      if (campaign && n >= runWaves(s)) {
         s.won = true;
         s.over = true;
       }
@@ -1052,9 +1083,30 @@ export function startWave(s: RunState) {
     return !done;
   }
 
+  /** Sort sur la case (x, y) : effet immédiat, puis recharge. Retourne l'erreur éventuelle. */
+  function cast(id: SpellId, x: number, y: number): string | null {
+    const m = mapOf(s.map);
+    if (x < 0 || y < 0 || x >= m.w || y >= m.h) return 'case hors de la carte';
+    s.spells ??= { fire: 0, frost: 0 };
+    if (s.spells[id] > 0) return `${SPELLS[id].name} : encore ${Math.ceil(s.spells[id] / 10)} s`;
+    const cx = x + 0.5;
+    const cy = y + 0.5;
+    if (id === 'fire') {
+      // Dégâts à l'échelle de la vague : le sort reste utile du niveau 1 au dernier.
+      area(cx, cy, SPELLS.fire.radius, (e) => hit(e, SPELLS.fire.damage * plan.mult, 'pure'), { air: true, buried: true });
+    } else {
+      area(cx, cy, SPELLS.frost.radius, (e) => freeze(e, SPELLS.frost.freeze, 0.6), { air: true, buried: true });
+    }
+    fx?.push({ k: 'boom', x: cx, y: cy, r: SPELLS[id].radius, tower: 0 });
+    s.spells[id] = SPELLS[id].cooldown;
+    return null;
+  }
+
   /** Construction pendant la vague : appliquée avant le prochain tick. Retourne l'erreur éventuelle. */
   function act(a: string): string | null {
     if (done) return 'vague terminée';
+    const spell = /^([FG])(\d{1,2})\.(\d{1,2})$/.exec(a);
+    if (spell) return cast(spell[1] === 'F' ? 'fire' : 'frost', Number(spell[2]), Number(spell[3]));
     const err = applyAction(s, a, true);
     if (!err) derive();
     return err;

@@ -18,7 +18,8 @@
 import { load, remove, save } from '../../core/storage';
 import { functionUrl, multiConfigured, publicKey, getSupabase } from '../../net/supabase';
 import type { RunOptions } from './engine/sim';
-import { currentUid, knownUid, recordStars, reserveTicket, syncItems, TD_PROTOCOL, type Meta, type SyncItem, type WaveResult } from './net';
+import type { Variant } from './engine/data';
+import { currentUid, knownUid, recordCrown, recordStars, reserveTicket, syncItems, TD_PROTOCOL, type Meta, type SyncItem, type WaveResult } from './net';
 
 /** Ce que le site sait de la partie après cette vague (affichage en attendant le serveur). */
 interface Outcome {
@@ -27,6 +28,7 @@ interface Outcome {
   wave: number;
   won: boolean;
   stars: number;
+  variant?: Variant; // défi Héroïque ou Fer : une couronne, pas d'étoiles
 }
 
 type Upload =
@@ -83,7 +85,10 @@ export function withPending(meta: Meta): Meta {
   for (const u of read()) {
     const o = u.kind !== 'start' ? u.outcome : undefined;
     if (!o) continue;
-    if (o.mode === 'campaign' && o.won) recordStars(meta, o.level, o.stars);
+    if (o.mode === 'campaign' && o.won) {
+      if (o.variant) recordCrown(meta, o.level, o.variant);
+      else recordStars(meta, o.level, o.stars);
+    }
     if (o.mode === 'infinite') meta.best = Math.max(meta.best, o.wave);
   }
   return meta;

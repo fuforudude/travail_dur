@@ -731,8 +731,8 @@ export const levelBoss = (L: number): BossId | null => {
  * Or de départ d'un niveau : environ les trois quarts de ce qu'un joueur du mode infini a gagné
  * (or et tours) en arrivant à la même difficulté.
  */
-export function levelGold(L: number): number {
-  const o = levelOffset(L);
+export function levelGold(L: number, offset = levelOffset(L)): number {
+  const o = offset;
   // Plusieurs entrées ou sorties : il faut défendre plus de terrain, on donne un peu plus d'or.
   const routes = mapOf(L).routes;
   const ends = (k: 0 | 1) => new Set(routes.map((r) => String(k ? r[r.length - 1] : r[0]))).size;
@@ -740,6 +740,41 @@ export function levelGold(L: number): number {
   const extra = (1 + 0.2 * (ends(0) - 1) + 0.12 * (ends(1) - 1)) * (inChapter2(L) ? 1.25 : 1);
   return START_GOLD + 10 * Math.round((0.65 * (105 * o + 7 * o * o) * extra) / 10);
 }
+
+// --- Défis Héroïque et Fer (comme dans Kingdom Rush) --------------------------------------------
+
+/**
+ * Sur un niveau réussi avec 3 étoiles : Héroïque (6 vagues d'élite, une seule vie) et Fer (une seule
+ * énorme vague, deux types de tours imposés). Chaque défi gagné rapporte une couronne.
+ */
+export type Variant = 'heroic' | 'iron';
+export const VARIANTS: Record<Variant, { name: string; rule: string }> = {
+  heroic: { name: 'Héroïque', rule: '6 vagues d’élite, une seule vie' },
+  iron: { name: 'Fer', rule: 'Une seule énorme vague, deux tours imposées' },
+};
+export const HEROIC_WAVES = 6;
+/**
+ * Les deux tours imposées du défi Fer, selon le numéro du niveau : des paires qui se complètent
+ * (toujours une tour anti-aérienne, et de quoi voir les ennemis camouflés).
+ */
+const IRON_PAIRS: [string, string][] = [
+  ['crossbow', 'cannon'], ['tesla', 'cannon'], ['sniper', 'flamer'], ['crossbow', 'alchemist'], ['sniper', 'cannon'],
+  ['tesla', 'sniper'], ['frost', 'railgun'], ['crossbow', 'flamer'], ['sniper', 'singularity'], ['tesla', 'alchemist'],
+];
+export function ironTowers(L: number, available: string[]): string[] {
+  const pairs = IRON_PAIRS.filter(([a, b]) => available.includes(a) && available.includes(b));
+  if (!pairs.length) return available.filter((id) => id !== 'bank').slice(0, 2);
+  return [...pairs[(L * 7) % pairs.length]];
+}
+
+// --- Sorts (comme les pouvoirs de Kingdom Rush) ------------------------------------------------
+
+/** Lancés pendant une vague, sur une case ; recharge en temps de jeu (ticks de 100 ms). */
+export const SPELLS = {
+  fire: { key: 'F', name: 'Pluie de feu', radius: 1.6, damage: 70, cooldown: 300, text: 'Dégâts purs autour de la case visée' },
+  frost: { key: 'G', name: 'Blizzard', radius: 2.2, freeze: 3, cooldown: 450, text: 'Gèle 3 s les ennemis autour de la case visée (boss : ralentis)' },
+} as const;
+export type SpellId = keyof typeof SPELLS;
 
 // --- Étoiles et boutique à étoiles -------------------------------------------------------------
 

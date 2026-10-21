@@ -7,22 +7,22 @@ import { GAIN_MULT } from '../../net/points';
 import { multiConfigured } from '../../net/supabase';
 import { navigate } from '../../router';
 import { h, hints } from '../../ui/dom';
-import { spatialNav } from '../../ui/menu';
 import type { Game, GameContext } from '../types';
 import {
-  BONUS, bonusLevel, CHAPTER2_COUNT, CHAPTER2_FIRST, CHAPTER2_LAST, ENEMIES, inChapter2, FINAL_WAVE, HEROES, LEVEL_COUNT, levelBoss, levelWaves, mapOf, MAX_LEVEL, MAX_STARS, maxTier,
-  PERK_MAX, perkCost, PERKS, TIER_UNLOCK, TOWERS, towersFor, towerStats, type TowerStats,
+  BONUS, bonusLevel, CHAPTER2_FIRST, CHAPTER2_LAST, ENEMIES, inChapter2, FINAL_WAVE, HEROES, LEVEL_COUNT, levelBoss, levelWaves, mapOf, MAX_LEVEL, MAX_STARS, maxTier,
+  PERK_MAX, perkCost, PERKS, TIER_UNLOCK, TOWERS, towersFor, SPELLS, type SpellId, towerStats, type TowerStats, type Variant, VARIANTS,
 } from './engine/data';
 import {
-  applyAction, newRun, planLevelWave, planWave, priceOf, sellValue, specialPrice, starsOf, startWave, TICK, upgradeOf,
+  applyAction, newRun, planFor, priceOf, runWaves, sellValue, specialPrice, starsOf, startWave, TICK, upgradeOf,
   type Enemy, type Fx, type Mode, type Running, type RunState,
 } from './engine/sim';
 import {
-  buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, starBalance, tdServerUp, type Meta,
+  buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordCrown, recordStars, resetPerks, starBalance, tdServerUp, type Meta,
 } from './net';
 import { enqueue, keepTicket, onUpload, pendingFor, startUploads, takeTicket, withPending } from './uploads';
 import { drawEnemy, drawTower, enemyLook, enemyRadius, previewItem, readPalette, towerLook, type Palette } from './render';
-import { ACTS, ACTS2, actOf, BONUS_ACT, bossName, levelStory, prologueOf, type Line } from './story';
+import { actOf, bossName, levelStory, prologueOf, type Line } from './story';
+import { nodePosition, pathThrough, worldPages } from './world';
 import './td.css';
 
 interface Saved {
@@ -34,6 +34,8 @@ interface Saved {
 
 const SAVE_KEY = 'state:td4'; // td4 : cartes à plusieurs routes (les parties en cours d'avant sont oubliées)
 const HERO_KEY = 'hero:td';
+const AUTO_KEY = 'auto:td'; // vagues lancées toutes seules
+const AUTO_DELAY = 4000; // ms entre la fin d'une vague et le lancement automatique de la suivante
 const TICK_MS = TICK * 1000;
 const DAMAGE = { physical: 'physique', magic: 'magique', pure: 'pur' } as const;
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
@@ -125,41 +127,11 @@ function mount(ctx: GameContext): () => void {
   let focusLevel = 0;
 
   const menuScreen = () => {
-    const wrap = h('div', { class: 'game td-deck td-menu' }, h('p', { class: 'muted' }, 'Chargement…'));
+    const wrap = h('div', { class: 'game td-world' }, h('p', { class: 'muted' }, 'Chargement…'));
     ctx.root.append(wrap);
-    let note = '';
     let starting = false;
-
-    const levelButton = (L: number, open: boolean, lockText: string) => {
-      const stars = meta.stars.get(L) ?? 0;
-      const boss = levelBoss(L);
-      const bonus = bonusLevel(L);
-      const traits = [...(bonus ? [bonus.rule] : []), ...mapTraits(L)];
-      const b = h(
-        'button',
-        { class: `td-level${stars ? ' done' : ''}${open && !stars ? ' next' : ''}${bonus ? ' td-bonus' : ''}`, type: 'button', disabled: !open, 'data-id': `level:${L}` },
-        h('b', {}, bonus ? `B${L - LEVEL_COUNT}` : String(shownLevel(L))),
-        h('span', { class: 'td-level-name' }, open ? levelStory(L).name : '???'),
-        h('span', { class: 'td-stars' + (stars ? '' : ' muted') }, open ? starText(stars) : `🔒 ${lockText || ''}`.trim()),
-        h('span', { class: 'small muted' }, `${levelWaves(L)} vagues${boss ? ' · boss' : ''}${open && traits.length ? ` · ${traits.join(' · ')}` : ''}`),
-      );
-      b.addEventListener('click', () => play('campaign', L));
-      return b;
-    };
-
-    // Message de la boutique à étoiles, affiché juste sous elle (la page est longue).
-    let shopNote = '';
-    const shopAction = async (run: () => Promise<void>, ok: string) => {
-      try {
-        await run();
-        shopNote = ok;
-        blip(660);
-      } catch (e) {
-        const msg = (e as Error).message;
-        shopNote = msg.includes('étoiles') && serverDown ? `${msg} : le serveur du tower defense est injoignable, tes niveaux réussis n’ont pas été enregistrés.` : msg;
-      }
-      if (!disposed) render();
-    };
+    let modal: HTMLElement | null = null;
+    let offModalKeys: (() => void) | null = null;
 
     // Serveur du tower defense joignable ? Sans lui, rien n'est enregistré : on le dit clairement.
     let serverDown = false;
@@ -169,159 +141,305 @@ function mount(ctx: GameContext): () => void {
       if (serverDown && !disposed) render();
     });
 
-    const render = () => {
-      // Garde le bouton cliqué et la position dans la page (choisir un héros ne remonte plus en haut).
-      const kept = (document.activeElement as HTMLElement | null)?.dataset?.id;
-      const scrollY = window.scrollY;
+    // --- Débloqué ou non (le contenu verrouillé n'est pas montré)
+    const isOpen = (L: number) => {
       const cleared = meta.cleared;
+      const b = bonusLevel(L);
+      if (b) return cleared >= b.unlock;
+      if (inChapter2(L)) return cleared >= LEVEL_COUNT && (L === CHAPTER2_FIRST || meta.cleared2 >= L - 1);
+      return L <= cleared + 1;
+    };
+    const pages = () => worldPages().filter((p) => p.levels.some(isOpen));
+    const nextLevel = () => {
+      const all = pages().flatMap((p) => p.levels).filter((L) => isOpen(L) && !bonusLevel(L));
+      return all.find((L) => !meta.stars.get(L)) ?? all[all.length - 1] ?? 1;
+    };
+    const pageOf = (L: number) => Math.max(0, pages().findIndex((p) => p.levels.includes(L)));
+    let page = -1; // page affichée (choisie au premier affichage)
+
+    // --- Fenêtres
+    const closeModal = () => {
+      modal?.remove();
+      modal = null;
+      offModalKeys?.();
+      offModalKeys = null;
+    };
+    const openModal = (content: HTMLElement[], wide = false) => {
+      closeModal();
+      const close = h('button', { class: 'field', type: 'button' }, 'Fermer');
+      close.addEventListener('click', closeModal);
+      const box = h('div', { class: `td-modal${wide ? ' wide' : ''}`, role: 'dialog', 'aria-modal': 'true' }, ...content, close);
+      modal = h('div', { class: 'td-modal-back' }, box);
+      modal.addEventListener('click', (e) => e.target === modal && closeModal());
+      document.body.append(modal);
+      offModalKeys = pushKeys((e) => {
+        if (e.key === 'Backspace' && !isTyping(e)) {
+          e.preventDefault();
+          closeModal();
+        } else if (e.key === 'Tab') {
+          // le focus reste dans la fenêtre
+          const items = [...box.querySelectorAll<HTMLElement>('button:not(:disabled)')];
+          const i = items.indexOf(document.activeElement as HTMLElement);
+          e.preventDefault();
+          items[(i + (e.shiftKey ? items.length - 1 : 1)) % items.length]?.focus();
+        }
+      });
+      box.querySelector<HTMLElement>('.rl-spin, button')?.focus();
+    };
+
+    /** Fenêtre d'un niveau : étoiles, histoire, particularités, Lancer (et défis si 3 étoiles). */
+    const openLevel = (L: number) => {
+      const stars = meta.stars.get(L) ?? 0;
+      const crowns = meta.crowns.get(L) ?? new Set();
+      const bonus = bonusLevel(L);
+      const boss = levelBoss(L);
+      const story = levelStory(L);
+      const facts = [`${levelWaves(L)} vagues`, ...(boss ? [`Boss : ${bossName(ENEMIES.find((e) => e.id === boss)!, L)}`] : []), ...(bonus ? [bonus.rule] : []), ...mapTraits(L)];
+      const launch = h('button', { class: 'field rl-spin', type: 'button' }, 'Lancer');
+      launch.addEventListener('click', () => {
+        closeModal();
+        play('campaign', L);
+      });
+      const challenges = !bonus && stars >= 3
+        ? (['heroic', 'iron'] as Variant[]).map((v) => {
+            const b = h('button', { class: 'field', type: 'button', title: VARIANTS[v].rule }, `${v === 'heroic' ? '👑' : '⛓'} ${VARIANTS[v].name}${crowns.has(v) ? ' ✓' : ''}`);
+            b.addEventListener('click', () => {
+              closeModal();
+              play('campaign', L, v);
+            });
+            return b;
+          })
+        : [];
+      openModal([
+        h('p', { class: 'td-modal-act' }, actOf(L).name),
+        h('h2', {}, `${levelTitle(L)} · ${story.name}`),
+        h('div', { class: 'td-modal-stars', 'aria-label': `${stars} étoile${stars > 1 ? 's' : ''} sur 3` }, ...[0, 1, 2].map((k) => h('span', { class: k < stars ? '' : 'empty' }, '★'))),
+        h('p', { class: 'td-modal-story' }, story.intro[0] ? `${story.intro[0].who} : ${story.intro[0].text}` : ''),
+        h('div', { class: 'td-modal-facts' }, ...facts.map((f) => h('span', {}, f))),
+        ...(challenges.length ? [h('p', { class: 'small muted' }, `Défis : Héroïque (${VARIANTS.heroic.rule}) · Fer (${VARIANTS.iron.rule}).`)] : []),
+        h('div', { class: 'td-modal-actions' }, launch, ...challenges),
+      ]);
+    };
+
+    /** Inventaire : héros (à choisir), améliorations de la boutique à étoiles, skins. */
+    let invTab: 'heroes' | 'perks' | 'skins' = 'heroes';
+    let invNote = '';
+    const openInventory = () => {
       const hero = chosenHero();
-      const heroBtn = (id: string | null) => {
-        const def = id ? HEROES.find((x) => x.id === id)! : null;
-        const lvl = id ? meta.heroes.get(id) ?? 0 : 0;
-        const b = h(
-          'button',
-          { class: `shop-item td-hero${(hero?.id ?? null) === id ? ' on' : ''}`, type: 'button', 'data-id': `hero:${id ?? 'none'}` },
-          id ? h('span', { class: 'shop-preview' }, previewItem(`hero:${id}`, 36)) : h('span', { class: 'td-hero-none' }, '∅'),
-          h('span', { class: 'shop-name' }, def ? `${def.name} · niv. ${lvl}` : 'Sans héros'),
-          h('span', { class: 'small muted' }, def ? def.text(lvl) : 'Aucun bonus'),
-        );
+      const balance = starBalance(meta);
+      const tab = (id: typeof invTab, label: string) => {
+        const b = h('button', { class: `chip${invTab === id ? ' on' : ''}`, type: 'button' }, label);
         b.addEventListener('click', () => {
-          save(HERO_KEY, id);
-          blip(520);
-          render();
+          invTab = id;
+          invNote = '';
+          openInventory();
         });
         return b;
       };
-      const owned = HEROES.filter((x) => meta.heroes.has(x.id)).map((x) => x.id);
-
-      const acts = ACTS.map((act, k) => {
-        const to = (ACTS[k + 1]?.from ?? LEVEL_COUNT + 1) - 1;
-        const buttons: HTMLElement[] = [];
-        for (let L = act.from; L <= to; L++) buttons.push(levelButton(L, L <= cleared + 1, ''));
-        return h('section', { class: 'td-act' }, h('h3', {}, act.name), h('div', { class: 'td-levels' }, ...buttons));
-      });
-      const bonusButtons = BONUS.map((b, k) => levelButton(LEVEL_COUNT + 1 + k, cleared >= b.unlock, `après le niveau ${b.unlock}`));
-      // Chapitre 2 : après le niveau 20, puis dans l'ordre.
-      const cleared2 = meta.cleared2;
-      const acts2 = ACTS2.map((act, k) => {
-        const to = (ACTS2[k + 1]?.from ?? CHAPTER2_LAST + 1) - 1;
-        const buttons: HTMLElement[] = [];
-        for (let L = act.from; L <= to; L++) {
-          const open = cleared >= LEVEL_COUNT && (L === CHAPTER2_FIRST || cleared2 >= L - 1);
-          buttons.push(levelButton(L, open, L === CHAPTER2_FIRST ? `après le niveau ${LEVEL_COUNT}` : ''));
-        }
-        return h('section', { class: 'td-act' }, h('h3', {}, act.name), h('div', { class: 'td-levels' }, ...buttons));
-      });
-      const done2 = [...meta.stars.keys()].filter(inChapter2).length;
-
-      // Boutique à étoiles
-      const balance = starBalance(meta);
-      const perkRows = PERKS.map((p) => {
-        const rank = meta.perks.get(p.id) ?? 0;
-        const cost = perkCost(rank + 1);
-        const maxed = rank >= PERK_MAX;
-        const b = h(
-          'button',
-          { class: `shop-item td-perk${maxed ? ' on' : ''}`, type: 'button', disabled: maxed || balance.left < cost, 'data-id': `perk:${p.id}` },
-          h('span', { class: 'shop-name' }, `${p.name} · ${'●'.repeat(rank)}${'○'.repeat(PERK_MAX - rank)}`),
-          h('span', { class: 'small' }, rank ? p.text(rank) : 'Pas encore acheté'),
-          h('span', { class: 'small muted' }, maxed ? 'Rang maximum' : `Rang ${rank + 1} : ${p.text(rank + 1)} · ★ ${cost}`),
-        );
-        b.addEventListener('click', () => void shopAction(() => buyPerk(meta, p.id), `${p.name} : rang ${rank + 1} !`));
-        return b;
-      });
-      const reset = h('button', { class: 'field', type: 'button', disabled: !balance.spent }, 'Récupérer mes étoiles');
-      reset.addEventListener('click', () => void shopAction(() => resetPerks(meta), 'Étoiles récupérées : tu peux tout redépenser.'));
-
-      const infinite = h(
-        'button',
-        { class: 'td-level td-infinite', type: 'button', 'data-id': 'infinite' },
-        h('b', {}, '∞'),
-        h('span', { class: 'td-level-name' }, 'Mode infini'),
-        h('span', { class: 'small muted' }, meta.best ? `Record : vague ${meta.best}` : 'Classé'),
-      );
-      infinite.addEventListener('click', () => play('infinite', 0));
-      const crates = h('button', { class: 'field', type: 'button' }, 'Caisses (héros, skins)');
-      crates.addEventListener('click', () => navigate('/td/caisses'));
-
-      wrap.replaceChildren(
-        serverDown && !navigator.onLine
-          ? h('p', { class: 'notice td-server-down' }, 'Pas de réseau : tes parties sont gardées sur cet appareil et enregistrées dès le retour de la connexion.')
-          : serverDown && pendingFor()
-          ? h('p', { class: 'notice td-server-down' }, 'Le serveur ne répond pas pour l’instant : tes parties sont gardées sur cet appareil et enregistrées dès qu’il répond.')
-          : serverDown
-          ? h('p', { class: 'notice td-server-down' }, '⚠ Le serveur du tower defense est injoignable : tes parties ne sont pas enregistrées (niveaux réussis, étoiles, classement). Il faut déployer la fonction serveur « td » sur Supabase.')
-          : '',
-        h(
-          'div',
-          { class: 'td-deck-head' },
+      const body: HTMLElement[] = [];
+      if (invTab === 'heroes') {
+        const owned = HEROES.filter((x) => meta.heroes.has(x.id));
+        const heroBtn = (id: string | null) => {
+          const def = id ? HEROES.find((x) => x.id === id)! : null;
+          const lvl = id ? meta.heroes.get(id) ?? 0 : 0;
+          const b = h(
+            'button',
+            { class: `shop-item td-hero${(hero?.id ?? null) === id ? ' on' : ''}`, type: 'button' },
+            id ? h('span', { class: 'shop-preview' }, previewItem(`hero:${id}`, 36)) : h('span', { class: 'td-hero-none' }, '∅'),
+            h('span', { class: 'shop-name' }, def ? `${def.name} · niv. ${lvl}` : 'Sans héros'),
+            h('span', { class: 'small muted' }, def ? def.text(lvl) : 'Aucun bonus'),
+          );
+          b.addEventListener('click', () => {
+            save(HERO_KEY, id);
+            blip(520);
+            openInventory();
+            render();
+          });
+          return b;
+        };
+        body.push(h('div', { class: 'td-heroes' }, heroBtn(null), ...owned.map((x) => heroBtn(x.id))));
+        if (!owned.length) body.push(h('p', { class: 'small muted' }, 'Les héros sortent des caisses.'));
+      } else if (invTab === 'perks') {
+        body.push(h('p', { class: 'small muted' }, `★ ${balance.left} à dépenser (${balance.earned} gagnées)`));
+        body.push(
           h(
             'div',
-            {},
-            h('h2', {}, 'L’expédition'),
-            h('p', { class: 'muted small' }, `${cleared} / ${LEVEL_COUNT} niveaux${cleared >= LEVEL_COUNT ? ` · chapitre 2 : ${done2} / ${CHAPTER2_COUNT}` : ''} · ★ ${balance.earned} / ${MAX_STARS}`),
+            { class: 'td-heroes' },
+            ...PERKS.map((p) => {
+              const rank = meta.perks.get(p.id) ?? 0;
+              const cost = perkCost(rank + 1);
+              const maxed = rank >= PERK_MAX;
+              const b = h(
+                'button',
+                { class: `shop-item td-perk${maxed ? ' on' : ''}`, type: 'button', disabled: maxed || balance.left < cost },
+                h('span', { class: 'shop-name' }, `${p.name} · ${'●'.repeat(rank)}${'○'.repeat(PERK_MAX - rank)}`),
+                h('span', { class: 'small' }, rank ? p.text(rank) : 'Pas encore acheté'),
+                h('span', { class: 'small muted' }, maxed ? 'Rang maximum' : `Rang ${rank + 1} : ${p.text(rank + 1)} · ★ ${cost}`),
+              );
+              b.addEventListener('click', () => void perkAction(() => buyPerk(meta, p.id), `${p.name} : rang ${rank + 1} !`));
+              return b;
+            }),
           ),
-          h('div', { class: 'td-deck-actions' }, crates),
-        ),
-        ...acts,
-        h('section', { class: 'td-act' }, h('h3', {}, BONUS_ACT.name), h('div', { class: 'td-levels' }, ...bonusButtons)),
-        h('h2', { class: 'td-chapter' }, 'Chapitre 2 · La chasse à la sorcière'),
-        ...acts2,
-        h('section', { class: 'td-act' }, h('h3', {}, 'Après l’expédition'), h('div', { class: 'td-levels' }, infinite)),
-        h(
-          'section',
-          { class: 'td-act' },
-          h('h3', {}, `Boutique à étoiles · ★ ${balance.left} à dépenser`),
-          h('div', { class: 'td-heroes' }, ...perkRows),
-          h('div', { class: 'td-deck-actions' }, reset),
-          shopNote ? h('p', { class: 'status td-shop-note' }, shopNote) : '',
-        ),
-        h(
-          'section',
-          { class: 'td-act' },
-          h('h3', {}, 'Héros'),
-          h('div', { class: 'td-heroes' }, heroBtn(null), ...owned.map(heroBtn)),
-          owned.length ? '' : h('p', { class: 'muted small' }, 'Les héros sortent des caisses (C).'),
-        ),
-        h('p', { class: 'status' }, starting ? 'Lancement…' : note),
-        hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'jouer'], ['I', 'mode infini'], ['C', 'caisses'], ['Retour arrière', 'quitter']),
-      );
-      const again = kept ? wrap.querySelector<HTMLElement>(`[data-id="${kept}"]`) : null;
-      if (again && !(again as HTMLButtonElement).disabled) {
-        again.focus({ preventScroll: true });
-        window.scrollTo(0, scrollY);
-        return;
+        );
+        const reset = h('button', { class: 'field', type: 'button', disabled: !balance.spent }, 'Récupérer mes étoiles');
+        reset.addEventListener('click', () => void perkAction(() => resetPerks(meta), 'Étoiles récupérées.'));
+        body.push(h('div', { class: 'td-modal-actions' }, reset));
+      } else {
+        const skins = meta.owned.size;
+        const go = h('button', { class: 'field rl-spin', type: 'button' }, 'Voir et porter mes skins');
+        go.addEventListener('click', () => {
+          closeModal();
+          navigate('/td/caisses');
+        });
+        body.push(h('p', {}, skins ? `${skins} skin${skins > 1 ? 's' : ''} dans ta collection.` : 'Aucun skin pour l’instant : ils sortent des caisses.'), h('div', { class: 'td-modal-actions' }, go));
       }
-      if (kept) return window.scrollTo(0, scrollY);
-      const next = cleared < LEVEL_COUNT ? cleared + 1 : cleared2 ? Math.min(CHAPTER2_LAST, cleared2 + 1) : CHAPTER2_FIRST;
-      const target = focusLevel ? `level:${focusLevel}` : `level:${next}`;
-      (wrap.querySelector<HTMLElement>(`[data-id="${target}"]`) ?? wrap.querySelector<HTMLElement>('.td-level'))?.focus();
+      if (invNote) body.push(h('p', { class: 'status' }, invNote));
+      openModal([h('h2', {}, 'Inventaire'), h('div', { class: 'td-tabs' }, tab('heroes', 'Héros'), tab('perks', 'Boutique à étoiles'), tab('skins', 'Skins')), ...body], true);
+    };
+    const perkAction = async (run: () => Promise<void>, ok: string) => {
+      try {
+        await run();
+        invNote = ok;
+        blip(660);
+      } catch (e) {
+        invNote = (e as Error).message;
+      }
+      if (!disposed && modal) openInventory();
+      render();
     };
 
-    const play = (mode: Mode, L: number) => {
+    // --- Carte
+    const render = () => {
+      const list = pages();
+      if (page < 0 || page >= list.length) page = pageOf(focusLevel || nextLevel());
+      const p = list[page];
+      const balance = starBalance(meta);
+      const done = [...meta.stars.keys()].filter((L) => !bonusLevel(L)).length;
+      const crownsCount = [...meta.crowns.values()].reduce((a, s) => a + s.size, 0);
+
+      const button = (label: string, run: () => void, cls = 'field') => {
+        const b = h('button', { class: cls, type: 'button' }, label);
+        b.addEventListener('click', run);
+        return b;
+      };
+      const top = h(
+        'div',
+        { class: 'td-world-top' },
+        h('h2', {}, 'L’expédition'),
+        h('span', { class: 'td-world-progress' }, `${done} niveaux · `, h('b', {}, `★ ${balance.earned}`), ` / ${MAX_STARS}${crownsCount ? ` · 👑 ${crownsCount}` : ''}`),
+        serverDown ? h('span', { class: 'small td-unsaved' }, navigator.onLine ? '⚠ serveur injoignable' : '⚠ hors ligne') : '',
+        h(
+          'span',
+          { class: 'push' },
+          button(meta.best ? `∞ Infini · vague ${meta.best}` : '∞ Mode infini', () => play('infinite', 0)),
+          button('🎒 Inventaire (V)', openInventory),
+          button('Caisses (C)', () => navigate('/td/caisses')),
+        ),
+      );
+
+      const open = p.levels.filter(isOpen);
+      const points = open.map((_, i) => nodePosition(i, open.length, page));
+      const next = nextLevel();
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'td-world-svg');
+      svg.setAttribute('viewBox', '0 0 100 100');
+      svg.setAttribute('preserveAspectRatio', 'none');
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', pathThrough(points));
+      svg.append(path);
+      const nodes = open.map((L, i) => {
+        const stars = meta.stars.get(L) ?? 0;
+        const crowns = meta.crowns.get(L);
+        const b = h(
+          'button',
+          {
+            class: `td-node${stars ? ' done' : ''}${L === next && !stars ? ' next' : ''}${levelBoss(L) ? ' boss' : ''}`,
+            type: 'button',
+            style: `left:${points[i][0]}%;top:${points[i][1]}%`,
+            'data-id': `level:${L}`,
+            title: levelStory(L).name,
+          },
+          bonusLevel(L) ? `B${L - LEVEL_COUNT}` : String(shownLevel(L)),
+          stars ? h('span', { class: 'td-node-stars' }, '★'.repeat(stars) + '☆'.repeat(3 - stars)) : '',
+          crowns?.size ? h('span', { class: 'td-node-crowns' }, `${crowns.has('heroic') ? '👑' : ''}${crowns.has('iron') ? '⛓' : ''}`) : '',
+        );
+        b.addEventListener('click', () => openLevel(L));
+        return b;
+      });
+      const map = h(
+        'div',
+        { class: 'td-world-map', style: `--wtone: var(--tone${p.tone})` },
+        svg,
+        h('div', { class: 'td-world-title' }, h('b', {}, p.title), h('span', {}, p.chapter)),
+        ...nodes,
+      );
+      const prevBtn = h('button', { class: 'td-arrow', type: 'button', disabled: page === 0, 'aria-label': 'Carte précédente' }, '‹');
+      const nextBtn = h('button', { class: 'td-arrow', type: 'button', disabled: page >= list.length - 1, 'aria-label': 'Carte suivante' }, '›');
+      prevBtn.addEventListener('click', () => turnPage(-1));
+      nextBtn.addEventListener('click', () => turnPage(1));
+      wrap.replaceChildren(
+        top,
+        h('div', { class: 'td-world-body' }, prevBtn, map, nextBtn),
+        h('div', { class: 'td-world-dots' }, ...list.map((_, k) => h('span', { class: k === page ? 'on' : '' }))),
+        hints(['← →', 'niveau'], ['Entrée', 'ouvrir'], ['Page préc./suiv.', 'carte'], ['V', 'inventaire'], ['I', 'infini'], ['Retour arrière', 'quitter']),
+      );
+      const target = focusLevel && open.includes(focusLevel) ? focusLevel : open.includes(next) ? next : open[open.length - 1];
+      (wrap.querySelector<HTMLElement>(`[data-id="level:${target}"]`) ?? nodes[0])?.focus({ preventScroll: true });
+    };
+
+    const turnPage = (d: number) => {
+      const n = pages().length;
+      page = Math.max(0, Math.min(n - 1, page + d));
+      focusLevel = 0;
+      blip(440, 0.02);
+      render();
+    };
+
+    const play = (mode: Mode, L: number, variant?: Variant) => {
       if (starting) return;
       focusLevel = L;
       if (mode === 'infinite') return void begin(mode, 0);
+      if (variant) return void begin(mode, L, variant); // défi : pas d'histoire
       const lines = [...prologueOf(L), ...levelStory(L).intro];
       show(() => storyScreen(`${levelTitle(L)} · ${levelStory(L).name}`, actOf(L).name, lines, () => void begin(mode, L), () => show(menuScreen)));
     };
 
     void metaReady.then(() => !disposed && render());
-    const nav = spatialNav(wrap);
     const offKeys = pushKeys((e) => {
-      if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === 'Backspace') {
+      if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey || modal) return;
+      const key = e.key.toLowerCase();
+      if (key === 'backspace') {
         e.preventDefault();
         return ctx.onExit();
       }
-      const key = e.key.toLowerCase();
       if (key === 'i') return play('infinite', 0);
       if (key === 'c') return navigate('/td/caisses');
-      nav(e);
+      if (key === 'v') return openInventory();
+      if (key === 'pageup' || key === 'pagedown') {
+        e.preventDefault();
+        return turnPage(key === 'pagedown' ? 1 : -1);
+      }
+      if (key === 'arrowleft' || key === 'arrowright' || key === 'arrowup' || key === 'arrowdown') {
+        // Niveau précédent / suivant sur le chemin ; au bout du chemin, la carte voisine.
+        e.preventDefault();
+        const nodes = [...wrap.querySelectorAll<HTMLElement>('.td-node')];
+        const i = nodes.indexOf(document.activeElement as HTMLElement);
+        const d = key === 'arrowright' || key === 'arrowdown' ? 1 : -1;
+        const j = i + d;
+        if (j >= 0 && j < nodes.length) return nodes[j].focus();
+        const before = page;
+        turnPage(d);
+        if (page !== before) {
+          const now = [...wrap.querySelectorAll<HTMLElement>('.td-node')];
+          (d > 0 ? now[0] : now[now.length - 1])?.focus();
+        }
+      }
     });
-    return offKeys;
+    return () => {
+      closeModal();
+      offKeys();
+    };
   };
-
 
   /**
    * Lance une partie, sans attendre le serveur : elle démarre sur le ticket réservé d'avance, et son
@@ -330,17 +448,17 @@ function mount(ctx: GameContext): () => void {
    * non enregistrée.
    */
   let launching = false;
-  const begin = async (mode: Mode, L: number) => {
+  const begin = async (mode: Mode, L: number, variant?: Variant) => {
     if (launching) return;
     launching = true;
     try {
-      await beginRun(mode, L);
+      await beginRun(mode, L, variant);
     } finally {
       launching = false;
     }
   };
-  const beginRun = async (mode: Mode, L: number) => {
-    const options = { mode, level: L, cleared: meta.cleared, cleared2: meta.cleared2, hero: chosenHero(), perks: perksOf(meta) };
+  const beginRun = async (mode: Mode, L: number, variant?: Variant) => {
+    const options = { mode, level: L, cleared: meta.cleared, cleared2: meta.cleared2, hero: chosenHero(), perks: perksOf(meta), ...(variant ? { variant } : {}) };
     const ticket = takeTicket() ?? (multiConfigured && (await keepTicket(6000)) ? takeTicket() : null);
     if (disposed) return;
     let saved: Saved;
@@ -427,6 +545,7 @@ function mount(ctx: GameContext): () => void {
     const ROWS = map.h;
     const clearedBefore = meta.cleared;
     const starsBefore = meta.stars.get(s.level) ?? 0;
+    const crownBefore = Boolean(s.variant && meta.crowns.get(s.level)?.has(s.variant));
     let cx = 6;
     let cy = 4;
     let speed = 1;
@@ -443,6 +562,9 @@ function mount(ctx: GameContext): () => void {
     let showVictory = false;
     let choosing = false; // choix de la voie d'amélioration de la tour sous le curseur
     let gone = false;
+    let armed: SpellId | null = null; // sort choisi, lancé au prochain clic sur le plateau
+    let auto = load<boolean>(AUTO_KEY, false);
+    let idleSince = performance.now(); // fin de la dernière vague (pour le lancement automatique)
     let pal: Palette = readPalette();
     runNote = '';
 
@@ -452,21 +574,23 @@ function mount(ctx: GameContext): () => void {
     const info = h('div', { class: 'td-info' });
     const overlay = h('div', { class: 'overlay', hidden: true });
     const noteEl = h('p', { class: 'status small' });
+    const powers = h('div', { class: 'td-powers' });
     ctx.root.append(
       h(
         'div',
         { class: 'game' },
         stats,
         h('div', { class: 'overlay-wrap' }, canvas, overlay),
+        powers,
         info,
         noteEl,
         touchPad(
           [{ label: map.special ? 'Améliorer / débloquer' : 'Améliorer', key: 'u', wide: true }, { label: 'Vendre', key: 's' }],
-          [{ label: '▶ Vague', key: ' ', wide: true }, { label: 'Vitesse', key: 'f' }, { label: 'Pause', key: 'p' }],
+          [{ label: '▶ Vague', key: ' ', wide: true }, { label: 'Auto', key: 'a' }, { label: 'Vitesse', key: 'f' }, { label: 'Pause', key: 'p' }],
         ),
         hints(
           ['← ↑ → ↓', 'case'], ['1 – 0', 'construire'], ['U', map.special ? 'améliorer / débloquer' : 'améliorer'], ['S', 'vendre'], ['Espace', 'lancer la vague'],
-          ['F', 'vitesse'], ['P', 'pause'], ['R', 'abandonner'], ['Retour arrière', 'quitter'],
+          ['A', 'vagues auto'], ['Q W', 'sorts'], ['F', 'vitesse'], ['P', 'pause'], ['R', 'abandonner'], ['Retour arrière', 'quitter'],
         ),
       ),
     );
@@ -787,9 +911,10 @@ function mount(ctx: GameContext): () => void {
     const render = () => {
       if (gone) return;
       const w = running ? running.number : s.wave + 1;
-      const total = campaign ? levelWaves(s.level) : FINAL_WAVE;
+      const total = campaign ? runWaves(s) : FINAL_WAVE;
       stats.replaceChildren(
         campaign ? h('span', { class: 'stat' }, bonusLevel(s.level) ? 'Défi ' : 'Niveau ', h('b', {}, String(bonusLevel(s.level) ? s.level - LEVEL_COUNT : shownLevel(s.level)))) : '',
+        s.variant ? h('span', { class: 'td-crown' }, `${s.variant === 'heroic' ? '👑' : '⛓'} ${VARIANTS[s.variant].name}`) : '',
         h('span', { class: 'stat' }, 'Vague ', h('b', {}, w <= total ? `${Math.min(w, total)}/${total}` : `${w} ∞`)),
         h('span', { class: 'stat' }, 'Vies ', h('b', { 'data-k': 'lives' }, String(s.lives))),
         h('span', { class: 'stat' }, 'Or ', h('b', { 'data-k': 'gold' }, String(s.gold))),
@@ -812,12 +937,12 @@ function mount(ctx: GameContext): () => void {
 
       const blocks: HTMLElement[] = [];
       if (!running && !s.over) {
-        const plan = campaign ? planLevelWave(s.seed, s.level, s.wave + 1) : planWave(s.seed, s.wave + 1);
+        const plan = planFor(s, s.wave + 1);
         const counts = new Map<number, number>();
         for (const sp of plan.spawns) counts.set(sp.enemy, (counts.get(sp.enemy) ?? 0) + 1);
         const list = [...counts].map(([e, n]) => (ENEMIES[e].tier === 'boss' ? bossName(ENEMIES[e], s.level) : `${n} ${ENEMIES[e].name}`)).join(', ');
         const tag = plan.boss !== null ? ' · BOSS' : plan.theme ? ` · vague thématique « ${plan.theme} »` : '';
-        blocks.push(h('p', { class: 'small' }, h('b', {}, `Vague ${plan.wave}${tag}`), ` : ${list}. ${isTouch() ? '▶ Vague' : 'Espace'} pour lancer.`));
+        blocks.push(h('p', { class: 'small' }, h('b', {}, `Vague ${s.wave + 1}${tag}`), ` : ${list}. ${isTouch() ? '▶ Vague' : 'Espace'} pour lancer.`));
         const intro = plan.intro ?? (plan.boss !== null ? plan.boss : null);
         if (intro !== null) {
           const d = ENEMIES[intro];
@@ -832,6 +957,7 @@ function mount(ctx: GameContext): () => void {
         }
       }
       info.replaceChildren(h('div', { class: 'td-shop' }, ...shop), ...detail, ...blocks);
+      renderPowers();
       info.querySelectorAll<HTMLButtonElement>('button').forEach((b) => (b.tabIndex = -1));
       noteEl.textContent = note;
 
@@ -866,6 +992,18 @@ function mount(ctx: GameContext): () => void {
       const bonusUnlocked = !bonus && first ? BONUS.filter((b) => b.unlock > clearedBefore && b.unlock <= s.level) : [];
       if (bonusUnlocked.length) unlocks.push('un défi de Tonton Jean-Mi');
       const stars = starsOf(s);
+      if (s.variant) {
+        const firstCrown = !crownBefore;
+        return [
+          h('strong', {}, `Défi ${VARIANTS[s.variant].name} réussi !`),
+          h('span', { class: 'td-stars big' }, s.variant === 'heroic' ? '👑' : '⛓'),
+          h('span', {}, `${levelTitle(s.level)} · ${plural(s.kills, 'ennemi')} vaincu${s.kills > 1 ? 's' : ''}`),
+          session ? h('span', { class: 'small' }, `+${GAIN_MULT * (firstCrown ? 200 + 20 * Math.min(s.level, 45) : 5 * Math.min(s.level, 45))} points ◆${firstCrown ? '' : ' (défi rejoué)'}`) : '',
+          saveLine(),
+          h('div', { class: 'td-deck-actions' }, button('Carte', toMenu, true)),
+          h('span', { class: 'muted small keyboard-only' }, 'Entrée ou M carte'),
+        ];
+      }
       return [
         h('strong', {}, `${levelTitle(s.level)} réussi !`),
         h('span', { class: 'td-stars big' }, starText(stars)),
@@ -898,7 +1036,7 @@ function mount(ctx: GameContext): () => void {
     };
     const retry = () => {
       remove(SAVE_KEY);
-      void begin(s.mode, s.level);
+      void begin(s.mode, s.level, s.variant);
     };
     const outro = () => {
       remove(SAVE_KEY);
@@ -945,11 +1083,14 @@ function mount(ctx: GameContext): () => void {
       const sent = actions.join(';');
       actions = [];
       snapshot = null;
-      if (s.won) recordStars(meta, s.level, starsOf(s));
+      if (s.won) {
+        if (s.variant) recordCrown(meta, s.level, s.variant);
+        else recordStars(meta, s.level, starsOf(s));
+      }
       // La vague part au serveur tout de suite (file gardée dans le navigateur jusqu'à confirmation),
       // avec son résultat attendu : la carte en tient compte en attendant le serveur.
       if (session) {
-        const outcome = { mode: s.mode, level: s.level, wave: s.wave, won: s.won, stars: s.won ? starsOf(s) : 0 };
+        const outcome = { mode: s.mode, level: s.level, wave: s.wave, won: s.won, stars: s.won ? starsOf(s) : 0, ...(s.variant ? { variant: s.variant } : {}) };
         enqueue({ session, step: number - 1, actions: sent, outcome });
       }
       if (!campaign && s.wave >= FINAL_WAVE && !victorySeen && !s.over) {
@@ -957,14 +1098,73 @@ function mount(ctx: GameContext): () => void {
         showVictory = true;
       }
       if (s.won) blip(880);
+      armed = null;
+      idleSince = performance.now();
       persist();
       render();
     };
 
+    // --- Sorts (pendant les vagues) et vagues automatiques
+    const SPELL_KEYS: Record<string, SpellId> = { q: 'fire', w: 'frost' };
+    const powerButtons = new Map<SpellId, HTMLButtonElement>();
+    let autoButton: HTMLButtonElement | null = null;
+    const cast = (id: SpellId, x: number, y: number) => {
+      armed = null;
+      act(`${SPELLS[id].key}${x}.${y}`);
+      if (!note) blip(id === 'fire' ? 200 : 900, 0.05);
+    };
+    const arm = (id: SpellId) => {
+      if (!running) {
+        note = 'Les sorts se lancent pendant une vague.';
+        return render();
+      }
+      if ((s.spells?.[id] ?? 0) > 0) return;
+      armed = armed === id ? null : id;
+      note = armed ? `${SPELLS[id].name} : clique sur le plateau (ou Entrée pour la case choisie).` : '';
+      render();
+    };
+    const toggleAuto = () => {
+      auto = !auto;
+      save(AUTO_KEY, auto);
+      idleSince = performance.now();
+      render();
+    };
+    /** Boutons des sorts et du lancement auto (mis à jour à chaque image, sans tout redessiner). */
+    const updatePowers = () => {
+      for (const [id, b] of powerButtons) {
+        const left = s.spells?.[id] ?? 0;
+        b.disabled = !running || left > 0 || s.over;
+        b.classList.toggle('armed', armed === id);
+        b.textContent = `${id === 'fire' ? '🔥' : '❄'} ${SPELLS[id].name}${left > 0 ? ` · ${Math.ceil((left * TICK_MS) / 1000)} s` : ''}`;
+      }
+      if (autoButton) {
+        const wait = !running && auto && !s.over && s.wave > 0 ? Math.max(0, Math.ceil((AUTO_DELAY - (performance.now() - idleSince)) / 1000)) : 0;
+        autoButton.classList.toggle('on', auto);
+        autoButton.textContent = `⏩ Vagues auto${auto ? (wait ? ` · ${wait} s` : ' · oui') : ''}`;
+      }
+    };
+    const renderPowers = () => {
+      powerButtons.clear();
+      const list = (Object.keys(SPELLS) as SpellId[]).map((id, i) => {
+        const b = h('button', { class: 'td-power', type: 'button', title: SPELLS[id].text }) as HTMLButtonElement;
+        b.addEventListener('click', () => arm(id));
+        powerButtons.set(id, b);
+        return h('span', {}, h('kbd', { class: 'keyboard-only' }, ['Q', 'W'][i]), ' ', b);
+      });
+      autoButton = h('button', { class: 'td-power', type: 'button' }) as HTMLButtonElement;
+      autoButton.addEventListener('click', toggleAuto);
+      powers.replaceChildren(...list, h('span', {}, h('kbd', { class: 'keyboard-only' }, 'A'), ' ', autoButton));
+      powers.querySelectorAll<HTMLButtonElement>('button').forEach((b) => (b.tabIndex = -1));
+      updatePowers();
+    };
+
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
+      updatePowers();
       if (!running) {
         if (ripples.length) draw(1); // l'onde d'un clic s'anime aussi entre les vagues
+        // Vagues auto : la suivante part toute seule (la première attend toujours le joueur).
+        if (auto && s.wave > 0 && !s.over && !showVictory && !paused && !isPanicked() && now - idleSince >= AUTO_DELAY) void launch();
         return;
       }
       const dt = now - last;
@@ -1024,6 +1224,7 @@ function mount(ctx: GameContext): () => void {
       cx = Math.max(0, Math.min(COLS - 1, Math.floor((e.clientX - r.left) / cell)));
       cy = Math.max(0, Math.min(ROWS - 1, Math.floor((e.clientY - r.top) / cell)));
       ripples.push({ x: e.clientX - r.left, y: e.clientY - r.top, at: performance.now() });
+      if (armed && running) return cast(armed, cx, cy);
       blip(towerAt(cx, cy) ? 620 : 480, 0.02);
       render();
     });
@@ -1034,7 +1235,7 @@ function mount(ctx: GameContext): () => void {
       if (s.over) {
         if (key === 'enter' || key === ' ') {
           e.preventDefault();
-          return s.won ? outro() : retry();
+          return s.won ? (s.variant ? toMenu() : outro()) : retry();
         }
         if (key === 'm') return toMenu();
         if (key === 'c') return navigate('/td/caisses');
@@ -1056,6 +1257,22 @@ function mount(ctx: GameContext): () => void {
         if (key !== 'u') render();
         if (key === 'u') return render();
       }
+      if (SPELL_KEYS[key]) {
+        e.preventDefault();
+        const id = SPELL_KEYS[key];
+        return armed === id && running ? cast(id, cx, cy) : arm(id);
+      }
+      if (armed && (key === 'enter' || key === ' ') && running) {
+        e.preventDefault();
+        return cast(armed, cx, cy);
+      }
+      if (armed && key === 'backspace') {
+        e.preventDefault();
+        armed = null;
+        note = '';
+        return render();
+      }
+      if (key === 'a') return toggleAuto();
       const slot = KEYS.indexOf(key);
       if (key === 'arrowleft') cx = Math.max(0, cx - 1);
       else if (key === 'arrowright') cx = Math.min(COLS - 1, cx + 1);

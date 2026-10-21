@@ -6,7 +6,7 @@ import { load, save } from '../../core/storage';
 import { ensureAccount, getAccount } from '../../net/auth';
 import { errorMessage, getSupabase, multiConfigured } from '../../net/supabase';
 import { skinOf, type Finish, type Rarity } from './catalog';
-import { inChapter2, LEVEL_COUNT, PERK_MAX, perkCost, type Perks } from './engine/data';
+import { inChapter2, LEVEL_COUNT, PERK_MAX, perkCost, type Perks, type Variant } from './engine/data';
 import type { RunOptions } from './engine/sim';
 
 export interface Meta {
@@ -16,13 +16,14 @@ export interface Meta {
   cleared: number; // niveaux de la campagne terminés
   cleared2: number; // chapitre 2 : plus haut niveau réussi (26 à 75), 0 si aucun
   stars: Map<number, number>; // niveau → meilleures étoiles
+  crowns: Map<number, Set<Variant>>; // niveau → défis gagnés (Héroïque, Fer)
   perks: Map<string, number>; // amélioration de la boutique à étoiles → rang
   best: number; // record du mode infini
   online: boolean;
 }
 
 export const emptyMeta = (): Meta => ({
-  owned: new Set(), equipped: new Map(), heroes: new Map(), cleared: 0, cleared2: 0, stars: new Map(), perks: new Map(), best: 0, online: false,
+  owned: new Set(), equipped: new Map(), heroes: new Map(), cleared: 0, cleared2: 0, stars: new Map(), crowns: new Map(), perks: new Map(), best: 0, online: false,
 });
 
 /** Étoiles gagnées, dépensées et disponibles. */
@@ -46,6 +47,7 @@ interface Cached {
   heroes: [string, number][];
   cleared: number;
   stars?: [number, number][];
+  crowns?: [number, Variant[]][];
   perks?: [string, number][];
   best: number;
 }
@@ -54,12 +56,14 @@ const fromCache = (): Meta => {
   const c = load<Cached | null>(CACHE, null);
   return {
     owned: new Set(c?.owned ?? []), equipped: new Map(c?.equipped ?? []), heroes: new Map(c?.heroes ?? []),
-    cleared: c?.cleared ?? 0, cleared2: chapter2Max(c?.stars ?? []), stars: new Map(c?.stars ?? []), perks: new Map(c?.perks ?? []), best: c?.best ?? 0, online: false,
+    cleared: c?.cleared ?? 0, cleared2: chapter2Max(c?.stars ?? []), stars: new Map(c?.stars ?? []),
+    crowns: new Map((c?.crowns ?? []).map(([L, v]) => [L, new Set(v)])), perks: new Map(c?.perks ?? []), best: c?.best ?? 0, online: false,
   };
 };
 const toCache = (m: Meta) =>
   save(CACHE, {
-    owned: [...m.owned], equipped: [...m.equipped], heroes: [...m.heroes], cleared: m.cleared, stars: [...m.stars], perks: [...m.perks], best: m.best,
+    owned: [...m.owned], equipped: [...m.equipped], heroes: [...m.heroes], cleared: m.cleared, stars: [...m.stars],
+    crowns: [...m.crowns].map(([L, v]) => [L, [...v]] as [number, Variant[]]), perks: [...m.perks], best: m.best,
   } satisfies Cached);
 
 /** Hors ligne (pas de serveur) : la progression de la campagne reste sur cet appareil. */
@@ -72,6 +76,14 @@ export function recordStars(meta: Meta, level: number, stars: number) {
   if (stars > (meta.stars.get(level) ?? 0)) meta.stars.set(level, stars);
   if (level <= LEVEL_COUNT && level > meta.cleared) meta.cleared = level;
   if (inChapter2(level) && level > meta.cleared2) meta.cleared2 = level;
+  saveLocalProgress(meta);
+}
+
+/** Note un défi gagné (couronne). */
+export function recordCrown(meta: Meta, level: number, variant: Variant) {
+  const set = meta.crowns.get(level) ?? new Set<Variant>();
+  set.add(variant);
+  meta.crowns.set(level, set);
   saveLocalProgress(meta);
 }
 
@@ -92,15 +104,20 @@ export async function loadMeta(): Promise<Meta> {
       supabase.from('td_items').select('item_id').eq('user_id', uid),
       supabase.from('td_equipped').select('slot, item_id').eq('user_id', uid),
       supabase.from('td_heroes').select('hero_id, level').eq('user_id', uid),
-      supabase.from('td_sessions').select('level, stars').eq('user_id', uid).eq('rules', 3).eq('mode', 'campaign').eq('won', true).limit(5000),
+      supabase.from('td_sessions').select('level, stars, variant').eq('user_id', uid).eq('rules', 3).eq('mode', 'campaign').eq('won', true).limit(5000),
       supabase.from('td_perks').select('perk_id, rank').eq('user_id', uid),
       sessions().eq('mode', 'infinite').order('wave', { ascending: false }).limit(1),
     ]);
     const error = items.error ?? equipped.error ?? heroes.error ?? won.error ?? perks.error ?? best.error;
     if (error) throw new Error(errorMessage(error));
     const stars = new Map<number, number>();
+    const crowns = new Map<number, Set<Variant>>();
     for (const r of won.data ?? []) {
       const L = Number(r.level);
+      if (r.variant === 'heroic' || r.variant === 'iron') {
+        crowns.set(L, (crowns.get(L) ?? new Set<Variant>()).add(r.variant));
+        continue;
+      }
       stars.set(L, Math.max(stars.get(L) ?? 0, Number(r.stars ?? 0), 1));
     }
     const meta: Meta = {
@@ -110,6 +127,7 @@ export async function loadMeta(): Promise<Meta> {
       cleared: Math.max(0, ...[...stars.keys()].filter((L) => L <= LEVEL_COUNT)),
       cleared2: chapter2Max([...stars]),
       stars,
+      crowns,
       perks: new Map((perks.data ?? []).map((r) => [String(r.perk_id), Number(r.rank)])),
       best: Number(best.data?.[0]?.wave ?? 0),
       online: true,
