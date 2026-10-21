@@ -6,3 +6,5 @@ dist
 .DS_Store
 # Documents de cours : protégés, jamais publiés avec le site
 *.pdf
+# Dossiers de travail temporaires de Claude Code
+.claude/worktrees/
