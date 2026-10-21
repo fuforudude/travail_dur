@@ -19,12 +19,12 @@ const LOOK: Record<string, { icon: string; tone: number; tags: string[] }> = {
   wordle: { icon: 'W', tone: 3, tags: ['Mot du jour', 'Classé'] },
   flappy: { icon: '➶', tone: 4, tags: ['Solo', 'Classé'] },
   td: { icon: '♜', tone: 2, tags: ['Solo', 'Classé'] },
-  connect4: { icon: '●', tone: 2, tags: ['Solo', 'À deux'] },
-  tictactoe: { icon: '✕', tone: 3, tags: ['Solo', 'À deux'] },
-  chess: { icon: '♞︎', tone: 5, tags: ['Solo', 'À deux'] },
-  checkers: { icon: '◉', tone: 4, tags: ['Solo', 'À deux'] },
-  quoridor: { icon: '▥', tone: 3, tags: ['Solo', 'À deux'] },
-  quarto: { icon: '◧', tone: 1, tags: ['Solo', 'À deux'] },
+  connect4: { icon: '●', tone: 2, tags: ['Solo', 'Multi'] },
+  tictactoe: { icon: '✕', tone: 3, tags: ['Solo', 'Multi'] },
+  chess: { icon: '♞︎', tone: 5, tags: ['Solo', 'Multi'] },
+  checkers: { icon: '◉', tone: 4, tags: ['Solo', 'Multi'] },
+  quoridor: { icon: '▥', tone: 3, tags: ['Solo', 'Multi'] },
+  quarto: { icon: '◧', tone: 1, tags: ['Solo', 'Multi'] },
 };
 
 let lastFocus = ''; // pour revenir sur la même carte en rentrant à l'accueil
@@ -73,7 +73,7 @@ export function homeView(root: HTMLElement): () => void {
     ),
     section('Jeux', ...solo.map(gameCard)),
     section(
-      'À deux',
+      'Multijoueur',
       ...duel.map(gameCard),
       card('room', 'Créer un salon', off ? 'Multijoueur non configuré' : 'Un code à partager', '+', 1, () => navigate(`/room/${generateCode()}`), { disabled: off }),
       card('join', 'Rejoindre un salon', off ? 'Multijoueur non configuré' : 'Avec le code d’un ami', '→', 1, () => navigate('/join'), { disabled: off }),
