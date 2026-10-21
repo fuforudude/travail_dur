@@ -1539,6 +1539,7 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .ap-room.locked { color: var(--muted); border-style: dashed; }
 .iso-slot.photo { cursor: zoom-in; }
 .iso-door { cursor: pointer; }
+.wp { mix-blend-mode: multiply; pointer-events: none; } /* papier peint des meubles personnalisables */
 .ap-frame { position: relative; }
 .ap-motif { position: absolute; right: 0.08em; bottom: 0.08em; font-size: 0.55em; line-height: 1; }
 .iso-door-frame { fill: #5a3d24; }

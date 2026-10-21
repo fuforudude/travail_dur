@@ -50,6 +50,7 @@ const FINISH_MAIN: Record<string, string> = {
   obsidian: '#231e2d',
   rainbow: '#e0504a',
   ghost: '#eef2f8',
+  perso: '#ffffff', // blanc : la photo en papier peint garde ainsi l'ombrage des faces
 };
 
 interface Box {
@@ -818,22 +819,53 @@ function sketch(item: string, r: number): Sketch {
   return s;
 }
 
-/** Meuble du sol posé en (x, y) avec l'orientation r, dans le repère de iso(). */
-export function floorModel(item: string, x: number, y: number, r = 0): SVGGElement {
+// ---------------------------------------------------------------------------
+// Meubles personnalisables : la photo choisie recouvre tout le meuble en papier peint. Chaque forme
+// reçoit par-dessus une copie remplie de la photo répétée, en « multiplication » : le meuble est
+// blanc, donc chaque face garde son ombrage (dessus clair, côtés plus sombres) et les détails sombres
+// restent sombres. Sans photo (inventaire, caisses), un damier coloré annonce le motif à venir.
+// ---------------------------------------------------------------------------
+
+let wallpapers = 0;
+export function wallpaper(g: SVGElement, url: string | null, tile: number) {
+  const id = `ap-wp-${++wallpapers}`;
+  const pattern = el('pattern', { id, patternUnits: 'userSpaceOnUse', width: tile, height: tile });
+  if (url) pattern.append(el('image', { href: url, width: tile, height: tile, preserveAspectRatio: 'xMidYMid slice' }));
+  else
+    ['#ff7eb6', '#7ec8ff', '#ffd23f', '#3fb56a'].forEach((fill, i) =>
+      pattern.append(el('rect', { x: (i % 2) * (tile / 2), y: Math.floor(i / 2) * (tile / 2), width: tile / 2, height: tile / 2, fill })),
+    );
+  const defs = el('defs');
+  defs.append(pattern);
+  for (const n of [...g.querySelectorAll('.m')]) {
+    const copy = n.cloneNode(false) as SVGElement;
+    copy.setAttribute('fill', `url(#${id})`);
+    copy.setAttribute('class', 'wp');
+    n.after(copy);
+  }
+  g.prepend(defs);
+}
+const isPerso = (item: string) => finishOf(item).id === 'perso';
+
+/** Meuble du sol posé en (x, y) avec l'orientation r, dans le repère de iso() ; `photo` : papier peint. */
+export function floorModel(item: string, x: number, y: number, r = 0, photo: string | null = null): SVGGElement {
   // Le placement est sur un groupe à part : les animations CSS des finitions (transform) ne le touchent pas.
   const [dx, dy] = iso(x, y);
   const g = el('g', { transform: `translate(${dx.toFixed(1)} ${dy.toFixed(1)})` });
-  g.append(sketch(item, r).build(modelClass(item)));
+  const model = sketch(item, r).build(modelClass(item));
+  if (isPerso(item)) wallpaper(model, photo, 34);
+  g.append(model);
   return g;
 }
 
 /** Objet mural, dessiné de face autour de (0, 0). */
-export function wallModel(item: string): SVGGElement {
+export function wallModel(item: string, photo: string | null = null): SVGGElement {
   const g = el('g', { class: modelClass(item) });
   const model = WALL[kind(item)];
   if (model) model.draw(g, mainOf(item, model.main));
   const decor = wallDecor(item, 22, 22);
   if (decor) g.append(decor);
+  if (isPerso(item)) wallpaper(g, photo, 16);
   return g;
 }
 
@@ -847,6 +879,7 @@ export function modelIcon(item: string): SVGSVGElement {
   }
   const s = sketch(item, 0);
   const g = s.build(modelClass(item));
+  if (isPerso(item)) wallpaper(g, null, 34);
   const pad = 4;
   const [w, h] = [s.maxX - s.minX + 2 * pad, s.maxY - s.minY + 2 * pad];
   const side = Math.max(w, h);
