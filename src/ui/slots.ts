@@ -1,6 +1,6 @@
 import { isTyping, pushKeys } from '../core/input';
 import { blip } from '../core/sound';
-import { formatPoints, getWallet, holdWallet, onWallet, spinSlots } from '../net/points';
+import { formatPoints, getWallet, holdWallet, keepStake, onWallet, shortPoints, spinSlots, stakeSteps } from '../net/points';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { autoPlay } from './autoplay';
@@ -13,7 +13,6 @@ export const NAMES = ['cerise', 'citron', 'cloche', 'étoile', 'diamant', 'sept'
 export const WEIGHTS = [10, 8, 6, 4, 3, 1]; // sur 32, pour chaque rouleau
 export const TRIPLE = [5, 9, 18, 36, 75, 400]; // gain × la mise pour trois symboles identiques
 export const TWO_CHERRIES = 2;
-const BETS = [1, 5, 10, 25, 50, 100, 250, 500];
 
 export function slotsView(root: HTMLElement): () => void {
   const content = page(root, 'Machine à sous');
@@ -22,7 +21,8 @@ export function slotsView(root: HTMLElement): () => void {
     return pushKeys((e) => e.key === 'Backspace' && navigate('/'));
   }
 
-  let bet = 2; // index dans BETS
+  let bet = 10; // mise choisie
+  const bets = () => stakeSteps(getWallet()?.balance ?? 0, 8);
   let spinning = false;
   let message = 'Choisis ta mise, puis joue.';
   const timers: number[] = [];
@@ -72,12 +72,14 @@ export function slotsView(root: HTMLElement): () => void {
   const render = () => {
     const w = getWallet();
     balanceEl.replaceChildren('Solde ', h('b', {}, w ? formatPoints(w.balance) : '…'));
+    const list = bets();
+    bet = keepStake(list, bet); // le solde a pu changer
     betEl.replaceChildren(
-      ...BETS.map((v, i) => {
-        const b = h('button', { class: 'rl-token' + (i === bet ? ' on' : ''), type: 'button' }, String(v));
+      ...list.map((v) => {
+        const b = h('button', { class: 'rl-token' + (v === bet ? ' on' : ''), type: 'button' }, shortPoints(v));
         b.addEventListener('mousedown', (e) => e.preventDefault());
         b.addEventListener('click', () => {
-          bet = i;
+          bet = v;
           render();
         });
         return b;
@@ -91,7 +93,7 @@ export function slotsView(root: HTMLElement): () => void {
   /** Un tour ; `fast` en auto. Retourne false si le tour n'a pas pu être joué. */
   const spin = async (fast = false): Promise<boolean> => {
     if (spinning) return false;
-    const stake = BETS[bet];
+    const stake = bet;
     if ((getWallet()?.balance ?? 0) < stake) {
       message = 'Pas assez de points pour cette mise.';
       render();
@@ -145,8 +147,11 @@ export function slotsView(root: HTMLElement): () => void {
   const offKeys = pushKeys((e) => {
     if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
     const key = e.key.toLowerCase();
-    if (key === 'arrowleft') bet = Math.max(0, bet - 1);
-    else if (key === 'arrowright') bet = Math.min(BETS.length - 1, bet + 1);
+    if (key === 'arrowleft' || key === 'arrowright') {
+      const list = bets();
+      const i = list.indexOf(keepStake(list, bet));
+      bet = list[Math.max(0, Math.min(list.length - 1, i + (key === 'arrowleft' ? -1 : 1)))];
+    }
     else if (key === ' ' || key === 'enter') {
       if (!auto.running()) void spin();
     } else if (key === 's') auto.stop();

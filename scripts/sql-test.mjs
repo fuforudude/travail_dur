@@ -220,6 +220,24 @@ const withCode = await throws(() => asAdmin('aal2', `select public.admin_points(
 if (!withCode) ok('un admin avec double authentification peut agir');
 else fail(`admin avec double authentification refusé : ${withCode}`);
 
+// Grande échelle (0043) : la mise maximale suit le solde, les caisses chères donnent du Divin.
+{
+  const rich = await newUser();
+  await as(rich, `select public.casino_slots(1)`);
+  await db.query(`update public.wallets set balance = 10000000 where user_id = $1`, [rich]);
+  const tooMuch = await throws(() => as(rich, `select public.casino_slots(2000001)`));
+  const max = await throws(() => as(rich, `select public.casino_slots(2000000)`));
+  if (tooMuch?.includes('mise maximale') && !max) ok('avec 10 millions, on mise jusqu’à 2 millions (20 % du solde), pas plus');
+  else fail(`mise maximale : 2 000 001 → ${tooMuch ?? 'acceptée'}, 2 000 000 → ${max ?? 'acceptée'}`);
+  const small = await throws(() => as(a, `select public.casino_slots(501)`));
+  if (small?.includes('mise maximale')) ok('avec un petit solde, la mise reste limitée à 500');
+  else fail(`petit solde : 501 → ${small ?? 'acceptée'}`);
+  const divine = (await db.query(`select count(*)::int as n from public.furniture_items where rarity = 'divine'`)).rows[0].n;
+  const elsewhere = (await db.query(`select count(*)::int as n from public.crate_odds where rarity = 'divine' and crate_id not in ('royale', 'divine')`)).rows[0].n;
+  if (divine > 0 && elsewhere === 0) ok('des meubles Divins existent, seulement dans les caisses royale et divine');
+  else fail(`Divin : ${divine} meubles, ${elsewhere} autres caisses`);
+}
+
 await db.close();
 if (failures) {
   console.error(`\n${failures} échec(s).`);

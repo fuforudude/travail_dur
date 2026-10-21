@@ -83,7 +83,7 @@ export const CLEAN_TASKS: { name: string; cost: number }[] = [
 ];
 export const CLEAN_RATE = 200; // points par heure pour chaque tâche faite (comme public.apartment_rate)
 export const CAP_HOURS = 24;
-const RARITY_MULT: Record<string, number> = { standard: 1, common: 1.5, rare: 2.5, epic: 4, legendary: 8, mythic: 20 };
+const RARITY_MULT: Record<string, number> = { standard: 1, common: 1.5, rare: 2.5, epic: 4, legendary: 8, mythic: 20, divine: 60 };
 
 /** Revenu par heure d'un meuble posé (comme public.apartment_rate). */
 export function itemIncome(item: string): number {
@@ -125,7 +125,7 @@ export const BASES: Base[] = [
   { id: 'mirror', name: 'Miroir', glyph: '🪞', place: 'wall', w: 1, h: 1, price: 300 },
 ];
 
-export type Rarity = 'standard' | 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
+export type Rarity = 'standard' | 'common' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'divine';
 
 /** Finitions (classe CSS fin-<id>) : mêmes identifiants et raretés que public.furniture_finishes. */
 export const FINISHES: { id: string; name: string; rarity: Rarity; motif?: boolean }[] = [
@@ -141,6 +141,8 @@ export const FINISHES: { id: string; name: string; rarity: Rarity; motif?: boole
   { id: 'obsidian', name: 'Obsidienne', rarity: 'legendary' },
   { id: 'rainbow', name: 'Arc-en-ciel', rarity: 'mythic' },
   { id: 'ghost', name: 'Spectre', rarity: 'mythic' },
+  { id: 'cosmos', name: 'Cosmos', rarity: 'divine' },
+  { id: 'aurore', name: 'Aurore', rarity: 'divine' },
   // Versions décorées : le meuble garde sa couleur, avec des motifs en plus (dessinés dans furnitureArt.ts).
   { id: 'fleurs', name: 'à fleurs', rarity: 'common', motif: true },
   { id: 'coeurs', name: 'à cœurs', rarity: 'common', motif: true },
@@ -161,11 +163,14 @@ export const RARITY_NAMES: Record<Rarity, string> = {
   epic: 'Épique',
   legendary: 'Légendaire',
   mythic: 'Mythique',
+  divine: 'Divin',
 };
 
 export const CRATES: { id: string; name: string; text: string }[] = [
   { id: 'classic', name: 'Caisse classique', text: 'Toutes les finitions, de Commun à Mythique.' },
   { id: 'prestige', name: 'Caisse prestige', text: 'Rien en dessous de Rare, et bien plus de chances de Légendaire et Mythique.' },
+  { id: 'royale', name: 'Caisse royale', text: 'Rien en dessous de Légendaire, et 4 % de chances de Divin (revenu × 60), introuvable ailleurs.' },
+  { id: 'divine', name: 'Caisse divine', text: 'Mythique ou Divin, rien d’autre : 40 % de chances de Divin.' },
   { id: 'photos', name: 'Caisse souvenirs', text: '5 % de chances de débloquer une photo pour tes cadres ; sinon un meuble, comme la caisse classique.' },
 ];
 

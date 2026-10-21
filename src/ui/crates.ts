@@ -61,7 +61,7 @@ export function cratesView(root: HTMLElement): () => void {
         return {
           rarity,
           cell: cell(r.photo ? 'photo' : r.item),
-          jackpot: Boolean(r.photo) || r.rarity === 'mythic' || r.rarity === 'legendary',
+          jackpot: Boolean(r.photo) || r.rarity === 'divine' || r.rarity === 'mythic' || r.rarity === 'legendary',
           chip: h('span', { class: rarity }, r.photo ? `📷 ${r.photo.title}` : itemName(r.item)),
           reveal: r.photo
             ? [

@@ -1242,12 +1242,19 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .nc-sapphire { --nc: #2563eb; }
 .nc-amethyst { --nc: #9b5de5; }
 .nc-ruby .pseudo-text, .nc-emerald .pseudo-text, .nc-sapphire .pseudo-text, .nc-amethyst .pseudo-text { color: var(--nc); font-weight: 600; }
-.nc-gold, .nc-ice, .nc-sunset, .nc-rainbow { font-weight: 700; }
+.nc-gold, .nc-ice, .nc-sunset, .nc-rainbow, .nc-platinum, .nc-obsidian, .nc-aurora, .nc-cosmos, .nc-diamond { font-weight: 700; }
 .nc-gold { --nc: #e0a800; --grad: linear-gradient(180deg, #ffe58a, #e0a800 55%, #a87400); }
 .nc-ice { --nc: #38bdf8; --grad: linear-gradient(90deg, #38bdf8, #a5f3fc, #e0f2fe, #38bdf8); }
 .nc-sunset { --nc: #ff5e99; --grad: linear-gradient(90deg, #ff7e5f, #feb47b, #ff5e99); }
 .nc-rainbow { --nc: #a855f7; --grad: linear-gradient(90deg, #ef4444, #f59e0b, #eab308, #22c55e, #3b82f6, #a855f7, #ef4444); }
-.nc-gold .pseudo-text, .nc-ice .pseudo-text, .nc-sunset .pseudo-text, .nc-rainbow .pseudo-text {
+.nc-platinum { --nc: #64748b; --grad: linear-gradient(180deg, #cbd5e1, #64748b 55%, #334155); }
+.nc-obsidian { --nc: #6d28d9; --grad: linear-gradient(90deg, #1f1630, #6d28d9, #1f1630, #a78bfa, #1f1630); }
+.nc-aurora { --nc: #34d399; --grad: linear-gradient(90deg, #34d399, #60a5fa, #a78bfa, #f0abfc, #34d399); }
+.nc-cosmos { --nc: #8b5cf6; --grad: radial-gradient(circle at 20% 40%, #fff 0 2%, transparent 3%), radial-gradient(circle at 70% 60%, #fff 0 2%, transparent 3%), linear-gradient(90deg, #1e1b4b, #7c3aed, #db2777, #1e1b4b); }
+.nc-diamond { --nc: #0ea5e9; --grad: linear-gradient(110deg, #0369a1 0 15%, #38bdf8 32%, #bae6fd 45%, #6366f1 62%, #0369a1 85%); }
+.nc-aurora .pseudo-text, .nc-cosmos .pseudo-text, .nc-diamond .pseudo-text { animation: rainbow 5s linear infinite; }
+.nc-gold .pseudo-text, .nc-ice .pseudo-text, .nc-sunset .pseudo-text, .nc-rainbow .pseudo-text,
+.nc-platinum .pseudo-text, .nc-obsidian .pseudo-text, .nc-aurora .pseudo-text, .nc-cosmos .pseudo-text, .nc-diamond .pseudo-text {
   background: var(--grad);
   background-size: 200% 100%;
   -webkit-background-clip: text;
@@ -1309,6 +1316,33 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .ne-sparkle .pseudo-text::after { right: 0.15em; bottom: -0.2em; font-size: 0.45em; animation-delay: 0.8s; }
 @keyframes twinkle { 0%, 100% { opacity: 0.1; transform: scale(0.6) rotate(0); } 50% { opacity: 1; transform: scale(1.1) rotate(45deg); } }
 .ne-fire .pseudo-text { animation: fire 0.9s ease-in-out infinite alternate; }
+.ne-holo .pseudo-text { animation: holo 2.6s linear infinite; }
+@keyframes holo {
+  0%, 100% { filter: drop-shadow(1px 0 0 #2bf3ff) drop-shadow(-1px 0 0 #ff2bd6); opacity: 1; }
+  50% { filter: drop-shadow(-1px 0 0 #2bf3ff) drop-shadow(1px 0 0 #ff2bd6) brightness(1.3); opacity: 0.8; }
+}
+.ne-storm .pseudo-text { animation: storm 3s steps(1) infinite; }
+@keyframes storm {
+  0%, 100% { filter: drop-shadow(0 0 2px #93c5fd); }
+  8% { filter: drop-shadow(0 0 6px #fff) drop-shadow(0 0 12px #60a5fa) brightness(1.6); }
+  12% { filter: drop-shadow(0 0 2px #93c5fd); }
+  16% { filter: drop-shadow(0 0 8px #fff) drop-shadow(0 0 16px #3b82f6) brightness(1.8); }
+}
+.ne-aura .pseudo-text { animation: aura 2s ease-in-out infinite; }
+@keyframes aura {
+  50% { filter: drop-shadow(0 0 4px #ffd54f) drop-shadow(0 0 10px #f59e0b) drop-shadow(0 0 18px #fde68a); }
+}
+.ne-nova .pseudo-text { animation: nova 1.6s ease-out infinite; }
+@keyframes nova {
+  0% { filter: drop-shadow(0 0 0 #fff); transform: scale(1); }
+  30% { filter: drop-shadow(0 0 8px #fff) drop-shadow(0 0 16px #f472b6) drop-shadow(0 0 26px #8b5cf6); transform: scale(1.08); }
+  100% { filter: drop-shadow(0 0 0 #fff); transform: scale(1); }
+}
+.ne-divine .pseudo-text { animation: divine 3s ease-in-out infinite; }
+@keyframes divine {
+  0%, 100% { filter: drop-shadow(0 -2px 4px #fff7c2) drop-shadow(0 0 10px #fbbf24) drop-shadow(0 0 20px #f472b6); transform: translateY(0); }
+  50% { filter: drop-shadow(0 -3px 6px #ffffff) drop-shadow(0 0 16px #fde68a) drop-shadow(0 0 30px #c084fc); transform: translateY(-2px); }
+}
 @keyframes fire {
   from { filter: drop-shadow(0 -1px 2px #ffb300) drop-shadow(0 -3px 5px #ff5a00); }
   to { filter: drop-shadow(0 -2px 3px #ffd54f) drop-shadow(0 -5px 8px #ff2d00); }
@@ -1359,6 +1393,7 @@ button.shop-item:hover:not(:disabled) { border-color: color-mix(in srgb, var(--a
 .rar-epic { --rar: #8847ff; }
 .rar-legendary { --rar: #d32ce6; }
 .rar-mythic { --rar: #e4ae39; }
+.rar-divine { --rar: #ff4fa3; }
 .rar-photo { --rar: #23c4b0; }
 .cr-photo-icon { font-size: 2.6rem; line-height: 1; }
 .cr-photo { max-width: min(320px, 80vw); max-height: 240px; border-radius: 8px; box-shadow: 0 0 0 4px var(--rar), var(--shadow); }
@@ -1376,7 +1411,16 @@ button.shop-item:hover:not(:disabled) { border-color: color-mix(in srgb, var(--a
 @keyframes rainbow-fin { from { filter: sepia(1) saturate(5) hue-rotate(0deg); } to { filter: sepia(1) saturate(5) hue-rotate(360deg); } }
 .fin-ghost { opacity: 0.6; filter: grayscale(1) brightness(1.6) drop-shadow(0 0 6px #ffffff); animation: ghost 3s ease-in-out infinite; }
 @keyframes ghost { 50% { transform: translateY(-6%); opacity: 0.4; } }
-@media (prefers-reduced-motion: reduce) { .fin-diamond, .fin-rainbow, .fin-ghost { animation: none; } }
+/* Divin : seulement dans les caisses royale et divine */
+.fin-cosmos { filter: hue-rotate(250deg) saturate(2.5) brightness(0.8) drop-shadow(0 0 4px #c084fc) drop-shadow(0 0 10px #4c1d95); animation: cosmos-fin 4s ease-in-out infinite; }
+@keyframes cosmos-fin { 50% { filter: hue-rotate(300deg) saturate(3) brightness(1) drop-shadow(0 0 6px #f0abfc) drop-shadow(0 0 14px #6d28d9); } }
+.fin-aurore { animation: aurore-fin 5s linear infinite; }
+@keyframes aurore-fin {
+  0% { filter: sepia(1) saturate(4) hue-rotate(110deg) brightness(1.1) drop-shadow(0 0 6px #34d399); }
+  50% { filter: sepia(1) saturate(4) hue-rotate(200deg) brightness(1.2) drop-shadow(0 0 9px #60a5fa); }
+  100% { filter: sepia(1) saturate(4) hue-rotate(110deg) brightness(1.1) drop-shadow(0 0 6px #34d399); }
+}
+@media (prefers-reduced-motion: reduce) { .fin-diamond, .fin-rainbow, .fin-ghost, .fin-cosmos, .fin-aurore { animation: none; } }
 
 /* ---------------------------------------------------------------------------
    Appartement
@@ -1412,6 +1456,8 @@ button.shop-item:hover:not(:disabled) { border-color: color-mix(in srgb, var(--a
 .ap-frame.fin-obsidian { border-color: #111; box-shadow: 0 0 1cqw #8847ff; }
 .ap-frame.fin-rainbow { border-image: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #a855f7) 1; }
 .ap-frame.fin-ghost { opacity: 0.65; border-color: #fff; box-shadow: 0 0 1.2cqw #fff; }
+.ap-frame.fin-cosmos { border-color: #7c3aed; box-shadow: 0 0 1.4cqw #c084fc; }
+.ap-frame.fin-aurore { border-image: linear-gradient(90deg, #34d399, #60a5fa, #a78bfa, #34d399) 1; }
 .ap-side { flex: 0 1 260px; max-height: 70vh; overflow: auto; }
 .ap-side h2 { margin: 0 0 0.4rem; font-size: 1rem; }
 .ap-side[hidden] { display: none; }

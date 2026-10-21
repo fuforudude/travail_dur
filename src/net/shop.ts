@@ -37,6 +37,11 @@ export const ITEMS: Item[] = [
   { id: 'nc-ice', slot: 'name_color', name: 'Givre', price: 35000 },
   { id: 'nc-sunset', slot: 'name_color', name: 'Coucher de soleil', price: 50000 },
   { id: 'nc-rainbow', slot: 'name_color', name: 'Arc-en-ciel', price: 150000 },
+  { id: 'nc-platinum', slot: 'name_color', name: 'Platine', price: 500000 },
+  { id: 'nc-obsidian', slot: 'name_color', name: 'Obsidienne', price: 2000000 },
+  { id: 'nc-aurora', slot: 'name_color', name: 'Aurore boréale', price: 10000000 },
+  { id: 'nc-cosmos', slot: 'name_color', name: 'Cosmos', price: 50000000 },
+  { id: 'nc-diamond', slot: 'name_color', name: 'Diamant', price: 250000000 },
   // Effets de pseudo (classes ne-*)
   { id: 'ne-glow', slot: 'name_effect', name: 'Halo', price: 15000 },
   { id: 'ne-pulse', slot: 'name_effect', name: 'Battement', price: 25000 },
@@ -44,6 +49,11 @@ export const ITEMS: Item[] = [
   { id: 'ne-glitch', slot: 'name_effect', name: 'Glitch', price: 90000 },
   { id: 'ne-sparkle', slot: 'name_effect', name: 'Étincelles', price: 120000 },
   { id: 'ne-fire', slot: 'name_effect', name: 'Flammes', price: 250000 },
+  { id: 'ne-holo', slot: 'name_effect', name: 'Hologramme', price: 1000000 },
+  { id: 'ne-storm', slot: 'name_effect', name: 'Orage', price: 5000000 },
+  { id: 'ne-aura', slot: 'name_effect', name: 'Aura dorée', price: 25000000 },
+  { id: 'ne-nova', slot: 'name_effect', name: 'Supernova', price: 100000000 },
+  { id: 'ne-divine', slot: 'name_effect', name: 'Divin', price: 500000000 },
   // Skins : Puissance 4 (jetons)
   { id: 'c4-neon', slot: 'skin:connect4', name: 'Néon', price: 30000, vars: (s) => ({ [`--c4-disc-${s}`]: s === 1 ? 'radial-gradient(circle, #fff 0 18%, #ff2bd6 20% 62%, #7a0d6c 100%)' : 'radial-gradient(circle, #fff 0 18%, #2bf3ff 20% 62%, #0b5c7a 100%)' }) },
   { id: 'c4-gold', slot: 'skin:connect4', name: 'Pièces d’or', price: 20000, vars: (s) => ({ [`--c4-disc-${s}`]: 'radial-gradient(circle at 35% 30%, #fff6c4, #f1c232 45%, #9c6f06)' }) },
@@ -74,8 +84,12 @@ export const ITEMS: Item[] = [
  * il n'apparaît pas dans la boutique et ne peut pas être acheté.
  */
 export const TITLES: Item[] = [
-  // { id: 'title-exemple-1', slot: 'title', name: 'Exemple 1', price: 100000 },
-  // { id: 'title-exemple-2', slot: 'title', name: 'Exemple 2', price: 250000 },
+  { id: 'title-millionnaire', slot: 'title', name: 'Millionnaire', price: 1000000 },
+  { id: 'title-rentier', slot: 'title', name: 'Rentier', price: 5000000 },
+  { id: 'title-magnat', slot: 'title', name: 'Magnat', price: 20000000 },
+  { id: 'title-nabab', slot: 'title', name: 'Nabab', price: 75000000 },
+  { id: 'title-cresus', slot: 'title', name: 'Crésus', price: 200000000 },
+  { id: 'title-milliardaire', slot: 'title', name: 'Milliardaire', price: 1000000000 },
 ];
 
 const ALL = [...ITEMS, ...TITLES];

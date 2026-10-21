@@ -172,3 +172,21 @@ export async function spinSlots(bet: number): Promise<SlotsResult> {
 }
 
 export const formatPoints = (n: number) => n.toLocaleString('fr-FR');
+
+/** Montant court pour les jetons : 2,5 k, 10 M… */
+export const shortPoints = (n: number) =>
+  n >= 1e6 ? `${(n / 1e6).toLocaleString('fr-FR')} M` : n >= 1e4 ? `${(n / 1e3).toLocaleString('fr-FR')} k` : formatPoints(n);
+
+/** Mise maximale par tour au casino : 20 % du solde, au moins 500, au plus 100 millions (comme public.casino_max). */
+export const casinoMax = (balance: number) => Math.max(500, Math.min(100_000_000, Math.floor(balance / 5)));
+
+const STAKES = [1, 5, ...[1, 2, 3, 4, 5, 6, 7].flatMap((e) => [1, 2.5, 5].map((k) => k * 10 ** e)), 100_000_000];
+
+/** Jetons proposés au casino : les `n` plus gros montants (1, 5, 10, 25, 50, 100, 250…) jusqu'à la mise maximale. */
+export function stakeSteps(balance: number, n: number): number[] {
+  const max = casinoMax(balance);
+  return STAKES.filter((v) => v <= max).slice(-n);
+}
+
+/** Jeton à garder quand la liste change : le même montant s'il y est encore, sinon le plus proche en dessous. */
+export const keepStake = (list: number[], v: number) => [...list].reverse().find((x) => x <= v) ?? list[0];

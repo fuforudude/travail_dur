@@ -1,6 +1,6 @@
 import { isTyping, pushKeys } from '../core/input';
 import { blip } from '../core/sound';
-import { formatPoints, getWallet, holdWallet, onWallet, spinRoulette } from '../net/points';
+import { casinoMax, formatPoints, getWallet, holdWallet, keepStake, onWallet, shortPoints, spinRoulette, stakeSteps } from '../net/points';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { autoPlay } from './autoplay';
@@ -10,15 +10,13 @@ import { page } from './layout';
 // Roulette européenne : ordre des cases sur la roue, et numéros rouges.
 const WHEEL = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
 const REDS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
-const CHIPS = [1, 5, 10, 25, 100];
-const MAX_STAKE = 500;
 const colorOf = (n: number) => (n === 0 ? 'green' : REDS.has(n) ? 'red' : 'black');
 const colorName = (n: number) => (n === 0 ? 'vert' : REDS.has(n) ? 'rouge' : 'noir');
 
 export const ROULETTE_RULES = [
   'Roulette européenne : 37 cases, de 0 à 36. Le 0 est vert, les autres sont rouges ou noirs.',
   'Gains (mise comprise) : un numéro plein rapporte 36 fois la mise (le 0 vert aussi) ; une douzaine 3 fois ; rouge, noir, pair, impair, 1–18 ou 19–36 rapportent 2 fois. Sur le 0, toutes ces chances simples perdent.',
-  'On peut miser sur plusieurs cases à la fois, jusqu’à 500 points par tour.',
+  'On peut miser sur plusieurs cases à la fois, jusqu’à 20 % de son solde par tour (au moins 500 points, au plus 100 millions).',
 ];
 
 /** Mise : clé du serveur (n0..n36, red, black, even, odd, low, high, d1..d3) et libellé. */
@@ -95,7 +93,8 @@ export function rouletteView(root: HTMLElement): () => void {
   const spots = layout();
   let bets: Record<string, number> = {};
   let lastBets: Record<string, number> = {};
-  let chip = 1; // index dans CHIPS
+  let chip = 5; // montant du jeton choisi
+  const chipList = () => stakeSteps(getWallet()?.balance ?? 0, 6);
   let cursor = spots.findIndex((s) => s.key === 'red');
   let spinning = false;
   let rotation = 0;
@@ -181,12 +180,14 @@ export function rouletteView(root: HTMLElement): () => void {
       el.querySelector('.rl-chip')?.remove();
       if (amount) el.append(h('span', { class: 'rl-chip' }, formatPoints(amount)));
     });
+    const list = chipList();
+    chip = keepStake(list, chip); // le solde a pu changer
     chips.replaceChildren(
-      ...CHIPS.map((v, i) => {
-        const b = h('button', { class: 'rl-token' + (i === chip ? ' on' : ''), type: 'button' }, String(v));
+      ...list.map((v) => {
+        const b = h('button', { class: 'rl-token' + (v === chip ? ' on' : ''), type: 'button' }, shortPoints(v));
         b.addEventListener('mousedown', (e) => e.preventDefault());
         b.addEventListener('click', () => {
-          chip = i;
+          chip = v;
           render();
         });
         return b;
@@ -202,9 +203,9 @@ export function rouletteView(root: HTMLElement): () => void {
 
   const add = (key: string) => {
     if (spinning) return;
-    const value = CHIPS[chip];
+    const value = chip;
     const balance = getWallet()?.balance ?? 0;
-    if (total() + value > MAX_STAKE) message = `Mise maximale : ${MAX_STAKE} points par tour.`;
+    if (total() + value > casinoMax(balance)) message = `Mise maximale : ${formatPoints(casinoMax(balance))} points par tour (20 % de ton solde).`;
     else if (total() + value > balance) message = 'Pas assez de points.';
     else {
       bets = { ...bets, [key]: (bets[key] ?? 0) + value };
@@ -217,7 +218,7 @@ export function rouletteView(root: HTMLElement): () => void {
   const remove = (key: string) => {
     if (spinning || !bets[key]) return;
     const next = { ...bets };
-    next[key] = Math.max(0, next[key] - CHIPS[chip]);
+    next[key] = Math.max(0, next[key] - chip);
     if (!next[key]) delete next[key];
     bets = next;
     render();
@@ -302,8 +303,11 @@ export function rouletteView(root: HTMLElement): () => void {
     else if (key === 'arrowdown') move(1, 0);
     else if (key === 'enter') add(spots[cursor].key);
     else if (key === 'delete' || key === 'x') remove(spots[cursor].key);
-    else if (key === '+' || key === '=') chip = Math.min(CHIPS.length - 1, chip + 1);
-    else if (key === '-') chip = Math.max(0, chip - 1);
+    else if (key === '+' || key === '=' || key === '-') {
+      const list = chipList();
+      const i = list.indexOf(keepStake(list, chip));
+      chip = list[Math.max(0, Math.min(list.length - 1, i + (key === '-' ? -1 : 1)))];
+    }
     else if (key === ' ') {
       if (!auto.running()) void spin();
     } else if (key === 's') auto.stop();
