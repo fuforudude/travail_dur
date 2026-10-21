@@ -146,13 +146,20 @@ export function createView4(root: HTMLElement, handlers: View4Handlers) {
 
   const drawQuoridor = (s: View4State, legal: string[], n: number) => {
     const b = s.board;
-    // Cases, avec la case d'arrivée de chaque joueur teintée de sa couleur.
+    // Cases, et la case centrale à atteindre, dorée et étoilée.
     for (let r = 0; r < n; r++)
       for (let c = 0; c < n; c++) {
         const { x, y } = cellRect(r, c);
-        g.fillStyle = '#e9edf5';
-        for (const seat of [0, 1, 2, 3] as Seat[]) if (quoridor.atGoal(seat, r * n + c) && alive(s, seat)) g.fillStyle = COLORS[seat] + '30';
+        const goal = r * n + c === quoridor.CENTER;
+        g.fillStyle = goal ? '#f6d77a' : '#e9edf5';
         g.fillRect(x + 2, y + 2, px - 4, px - 4);
+        if (goal) {
+          g.fillStyle = '#b7860b';
+          g.font = `${Math.round(px * 0.5)}px system-ui, sans-serif`;
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          g.fillText('★', x + px / 2, y + px / 2 + 1);
+        }
       }
     // Cases où le pion peut aller.
     if (mode === 'move')
@@ -179,9 +186,10 @@ export function createView4(root: HTMLElement, handlers: View4Handlers) {
       g.stroke();
     }
     // Murs posés, puis l'aperçu du mur sous la souris.
-    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (quoridor.wallAt(b, r, c)) drawWall(r, c, quoridor.wallAt(b, r, c) as 1 | 2, '#5b4636');
+    // Chaque barricade a la couleur de celui qui l'a posée.
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (quoridor.wallAt(b, r, c)) drawWall(r, c, quoridor.wallAt(b, r, c) as 1 | 2, COLORS[quoridor.wallOwner(b, r, c)]);
     const wall = hoverWall();
-    if (wall) drawWall(wall.r, wall.c, wall.o, legal.includes(wall.mv) ? '#5b463699' : '#c8343c66');
+    if (wall) drawWall(wall.r, wall.c, wall.o, legal.includes(wall.mv) ? `${COLORS[s.me ?? 0]}99` : '#c8343c66');
   };
 
   /** Mur à l'intersection (r, c) : entre les lignes r et r+1 (horizontal) ou les colonnes c et c+1. */
@@ -195,13 +203,17 @@ export function createView4(root: HTMLElement, handlers: View4Handlers) {
       for (let i = 0; i < turns(); i++) [y, x] = [x, n - y];
       return [x * px, y * px];
     });
-    g.strokeStyle = color;
-    g.lineWidth = Math.max(4, px * 0.16);
+    const width = Math.max(4, px * 0.16);
     g.lineCap = 'round';
-    g.beginPath();
-    g.moveTo(screen[0][0], screen[0][1]);
-    g.lineTo(screen[1][0], screen[1][1]);
-    g.stroke();
+    // un fin contour sombre, pour que les couleurs claires restent visibles sur les cases
+    for (const [stroke, w] of [['#1f233066', width + 3], [color, width]] as const) {
+      g.strokeStyle = stroke;
+      g.lineWidth = w;
+      g.beginPath();
+      g.moveTo(screen[0][0], screen[0][1]);
+      g.lineTo(screen[1][0], screen[1][1]);
+      g.stroke();
+    }
   };
 
   /** Mur visé par la souris, en mode mur : l'intersection la plus proche. */
@@ -299,7 +311,7 @@ export function createView4(root: HTMLElement, handlers: View4Handlers) {
           { class: `f4-player${seat === s.turn ? ' on' : ''}${out ? ' out' : ''}` },
           dot(COLORS[seat]),
           h('span', { class: 'f4-name' }, p.name, seat === s.me ? ' (toi)' : ''),
-          h('span', { class: 'muted small' }, out ? 'éliminé' : s.game === 'quoridor4' ? `${s.board[4 + seat]} murs` : ''),
+          h('span', { class: 'muted small' }, out ? 'éliminé' : s.game === 'quoridor4' ? `${s.board[4 + seat]} barricade${s.board[4 + seat] > 1 ? 's' : ''}` : ''),
         );
       }),
     );
@@ -315,7 +327,7 @@ export function createView4(root: HTMLElement, handlers: View4Handlers) {
         });
         return b;
       };
-      tools.append(tool('move', 'Déplacer'), tool('h', 'Mur ─'), tool('v', 'Mur │'));
+      tools.append(tool('move', 'Déplacer'), tool('h', 'Barricade ─'), tool('v', 'Barricade │'));
     }
     if (s.note) status.textContent = s.note;
     else if (s.turn === null) {

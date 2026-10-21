@@ -31,7 +31,7 @@ export const chess4: Game = {
 export const quoridor4: Game = {
   id: 'quoridor4',
   name: 'Corridor à 4',
-  description: 'Quatre pions, cinq murs chacun',
+  description: 'Le premier au centre gagne, cinq barricades chacun',
   modes: ['solo', 'multi'],
   mount: mount('quoridor4'),
 };

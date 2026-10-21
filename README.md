@@ -19,7 +19,7 @@ En ligne : https://fuforudude.github.io/travail_dur/
 | Dames (internationales, 10×10) | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches case · `Entrée` sur la pièce puis sur chaque arrêt de la rafle · `R` revanche |
 | Quoridor (« corridor ») | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches case · `Entrée` avancer · `M` mode mur · `Espace` tourner le mur · `R` revanche ; à la souris, clic entre deux cases pour un mur |
 | Quarto | solo contre l’ordinateur, ou en ligne à 2 (classé) | flèches · `Entrée` poser puis donner une pièce · `Tab` plateau ↔ réserve · `R` revanche |
-| Échecs à 4, Corridor à 4 | solo contre 3 ordinateurs, ou en salon (bouton « À 4 joueurs » : les joueurs présents, l’ordinateur complète) | clic sur une pièce puis sur sa case d’arrivée ; corridor : Déplacer, Mur ─, Mur │ |
+| Échecs à 4, Corridor à 4 | solo contre 3 ordinateurs, ou en salon (bouton « À 4 joueurs » : les joueurs présents, l’ordinateur complète) | clic sur une pièce puis sur sa case d’arrivée ; corridor : Déplacer, Barricade ─, Barricade │ — départ dans les coins, le premier sur la case centrale gagne, 5 barricades de sa couleur chacun |
 
 Dans chaque jeu de plateau, `I` (ou le bouton *Règles*) affiche les règles complètes. En solo, les camps s’échangent à chaque revanche.
 

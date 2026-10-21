@@ -1,13 +1,16 @@
 // Copie de src/games/four/engine/quoridor4.ts (scripts/td-sync.mjs) : ne pas modifier ici.
-// Corridor à 4 (Quoridor, règle officielle à 4 joueurs).
+// Corridor à 4 : course à la case centrale. Chacun son tour, on avance son pion d'une case (sauts par-dessus
+// les pions comme au corridor à 2) ou on pose une barricade de sa couleur ; une barricade ne doit jamais
+// couper complètement un pion du centre. Le premier pion sur la case centrale gagne.
 //
 // État : 72 nombres.
 //   0..3   case du pion de chaque joueur (ligne * 9 + colonne, ligne 0 en haut), −1 s'il a abandonné
-//   4..7   murs restants de chaque joueur (5 au départ)
-//   8..71  intersections 8 × 8 : 0 libre, 1 mur horizontal, 2 mur vertical (comme le corridor à 2).
-// Le joueur 0 part d'en bas et vise la ligne du haut, 1 part de gauche et vise la colonne de droite,
-// 2 part d'en haut et vise le bas, 3 part de droite et vise la gauche. Le premier arrivé gagne.
-// Coups : « m40 » (aller en case 40), « h34 » / « v34 » (mur à l'intersection (3, 4)), « pass ».
+//   4..7   barricades restantes de chaque joueur (5 au départ)
+//   8..71  intersections 8 × 8 : 0 libre, sinon 2 × joueur + 1 (horizontale) ou + 2 (verticale) ; les
+//          parties commencées avant les couleurs n'ont que 1 et 2 (barricades du joueur 0).
+// Départs dans les coins (8 pas du centre, comme une traversée au corridor à 2) : 0 en bas à gauche,
+// 1 en haut à gauche, 2 en haut à droite, 3 en bas à droite.
+// Coups : « m40 » (aller en case 40), « h34 » / « v34 » (barricade à l'intersection (3, 4)), « pass ».
 
 import { nextAlive, SEATS, type Rules4, type Seat } from './types.ts';
 
@@ -16,7 +19,8 @@ export const WALLS = 5;
 export const MAX_PLIES = 800; // au-delà : partie nulle
 const W = 8; // début des intersections
 
-const START = [8 * N + 4, 4 * N, 4, 4 * N + 8];
+const START = [8 * N, 0, N - 1, N * N - 1];
+export const CENTER = 4 * N + 4;
 const inside = (r: number, c: number) => r >= 0 && r < N && c >= 0 && c < N;
 const STEPS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 
@@ -29,14 +33,17 @@ export function initial(): number[] {
   return b;
 }
 
-export const wallAt = (b: number[], r: number, c: number) => (r < 0 || r > 7 || c < 0 || c > 7 ? 0 : b[W + r * 8 + c]);
-
-/** Case d'arrivée pour `seat` ? */
-export const atGoal = (seat: Seat, cell: number) => {
-  const r = Math.floor(cell / N);
-  const c = cell % N;
-  return seat === 0 ? r === 0 : seat === 1 ? c === N - 1 : seat === 2 ? r === N - 1 : c === 0;
+const raw = (b: number[], r: number, c: number) => (r < 0 || r > 7 || c < 0 || c > 7 ? 0 : b[W + r * 8 + c]);
+/** Barricade à l'intersection (r, c) : 0 aucune, 1 horizontale, 2 verticale. */
+export const wallAt = (b: number[], r: number, c: number) => {
+  const v = raw(b, r, c);
+  return v ? ((v - 1) % 2) + 1 : 0;
 };
+/** Joueur qui a posé la barricade de l'intersection (r, c). */
+export const wallOwner = (b: number[], r: number, c: number) => Math.floor((raw(b, r, c) - 1) / 2) as Seat;
+
+/** Case d'arrivée (la même pour tous : le centre). */
+export const atGoal = (_seat: Seat, cell: number) => cell === CENTER;
 
 export function blocked(b: number[], r: number, c: number, dr: number, dc: number): boolean {
   if (dr === 1) return wallAt(b, r, c) === 1 || wallAt(b, r, c - 1) === 1;
@@ -106,15 +113,15 @@ export function wallFits(b: number[], r: number, c: number, o: 1 | 2): boolean {
   return wallAt(b, r - 1, c) !== 2 && wallAt(b, r + 1, c) !== 2;
 }
 
-const withWall = (b: number[], r: number, c: number, o: 1 | 2) => {
+const withWall = (b: number[], r: number, c: number, o: 1 | 2, seat: Seat) => {
   const n = b.slice();
-  n[W + r * 8 + c] = o;
+  n[W + r * 8 + c] = 2 * seat + o;
   return n;
 };
 
 export function wallLegal(b: number[], seat: Seat, r: number, c: number, o: 1 | 2): boolean {
   if (b[seat] < 0 || b[4 + seat] <= 0 || !wallFits(b, r, c, o)) return false;
-  const n = withWall(b, r, c, o);
+  const n = withWall(b, r, c, o, seat);
   return SEATS.every((s) => n[s] < 0 || distance(n, s) >= 0);
 }
 
@@ -154,7 +161,7 @@ export function apply(b: number[], seat: Seat, mv: string): number[] {
     n[seat] = p.cell;
     return n;
   }
-  const n = withWall(b, p.r, p.c, p.o);
+  const n = withWall(b, p.r, p.c, p.o, seat);
   n[4 + seat] -= 1;
   return n;
 }
