@@ -24,6 +24,7 @@ import {
   roomOf,
   ROOMS,
   saveLayout,
+  takesPhoto,
   WALL_ROWS,
   zoneDims,
   type ApartmentState,
@@ -35,12 +36,13 @@ import {
   type Zone,
 } from '../net/apartment';
 import { ensureAccount } from '../net/auth';
+import { onIdleIncome } from '../net/idle';
 import { nameEl } from '../net/cosmetics';
 import { formatPoints, refreshWallet } from '../net/points';
 import { getSupabase } from '../net/supabase';
 import { navigate } from '../router';
 import { h, hints } from './dom';
-import { floorModel, iso, modelIcon, MOTIF_GLYPH, TH, TW, wallDecor, wallModel } from './furnitureArt';
+import { floorModel, iso, modelIcon, MOTIF_GLYPH, TH, TW, wallDecor, wallModel, wallpaper } from './furnitureArt';
 import { page } from './layout';
 
 /** Un meuble en HTML (inventaire, caisses) : son modèle et sa finition, ou la photo pour un cadre. */
@@ -221,15 +223,16 @@ function drawScene(svg: SVGSVGElement, g: Geom, s: Scene): Overlay {
       const fh = f.h * SLOT_H - 8;
       const art = s.photos.find((q) => q.id === p.art);
       const box = el('g', { class: `iso-frame fin-${finishOf(p.i).id}` });
-      box.append(el('rect', { x: -fw / 2, y: -fh / 2, width: fw, height: fh, class: 'iso-frame-border' }));
+      box.append(el('rect', { x: -fw / 2, y: -fh / 2, width: fw, height: fh, class: `iso-frame-border${finishOf(p.i).id === 'perso' ? ' m' : ''}` }));
       const inner = { x: -fw / 2 + 5, y: -fh / 2 + 5, width: fw - 10, height: fh - 10 };
       if (art) box.append(el('image', { href: art.url, ...inner, preserveAspectRatio: 'xMidYMid slice' }));
       else box.append(el('rect', { ...inner, class: 'iso-frame-empty' }));
       const decor = wallDecor(p.i, fw / 2, fh / 2);
       if (decor) box.append(decor);
+      if (finishOf(p.i).id === 'perso') wallpaper(box, art?.url ?? null, 16); // le cadre aussi, de la même photo
       node.append(box);
     } else {
-      node.append(wallModel(p.i));
+      node.append(wallModel(p.i, s.photos.find((q) => q.id === p.art)?.url ?? null));
     }
     return node;
   };
@@ -261,7 +264,7 @@ function drawScene(svg: SVGSVGElement, g: Geom, s: Scene): Overlay {
 
   // Objets du sol, du fond vers l'avant (le plus proche est dessiné en dernier)
   const sprites: { depth: number; node: SVGElement }[] = [];
-  const floorItem = (item: string, x: number, y: number, r = 0, ghost = false) => {
+  const floorItem = (item: string, x: number, y: number, r = 0, ghost = false, art?: number) => {
     const f = footprint(item, r);
     const [cx, cy] = P(x + f.w / 2, y + f.h / 2);
     // Le modèle est construit dans son emprise : il ne déborde jamais de ses cases, seulement vers le haut.
@@ -272,13 +275,13 @@ function drawScene(svg: SVGSVGElement, g: Geom, s: Scene): Overlay {
       return [cx + (px - cx) * 0.72, cy + (py - cy) * 0.72] as const;
     };
     node.append(el('polygon', { points: pts(shrink(x, y), shrink(x + f.w, y), shrink(x + f.w, y + f.h), shrink(x, y + f.h)), class: 'iso-shadow' }));
-    const model = floorModel(item, x, y, r);
+    const model = floorModel(item, x, y, r, s.photos.find((q) => q.id === art)?.url ?? null);
     model.setAttribute('transform', `translate(${g.ox} ${g.oy}) ${model.getAttribute('transform')}`);
     node.append(model);
     sprites.push({ depth: x + f.w + y + f.h + (ghost ? 0.01 : 0), node });
     return node;
   };
-  for (const p of s.layout.floor) floorItem(p.i, p.x, p.y, p.r ?? 0);
+  for (const p of s.layout.floor) floorItem(p.i, p.x, p.y, p.r ?? 0, false, p.art);
   if (clean < 1) for (const [x, y] of BOXES) floorItem('box', x, y);
   if (clean < 2) for (const [x, y] of TRASH) floorItem('trash', x, y);
   sprites.sort((a, b) => a.depth - b.depth).forEach((sp) => parts.push(sp.node));
@@ -336,6 +339,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   let editing = false;
   let hand: Owned | null = null;
   let handRot = 0; // orientation du meuble en main
+  let handArt: number | undefined; // sa photo (cadre, meuble personnalisable)
   let cursor: { zone: Zone; x: number; y: number } = { zone: 'floor', x: 2, y: 2 };
   let status = '';
   let saveTimer: number | undefined;
@@ -537,10 +541,11 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     cursor = { zone, x, y };
     if (hand) {
       if (!fits(hand.item_id, zone, x, y)) return;
-      const entry: Placed = { o: hand.id, i: hand.item_id, x, y, ...(handRot ? { r: handRot } : {}) };
-      const frame = isFrame(hand.item_id);
+      const entry: Placed = { o: hand.id, i: hand.item_id, x, y, ...(handRot ? { r: handRot } : {}), ...(handArt ? { art: handArt } : {}) };
+      // Un cadre ou un meuble personnalisable garde sa photo quand on le déplace ; sinon, on la choisit.
+      if (takesPhoto(hand.item_id) && !handArt && photos.length) pickingPhoto = entry;
       hand = null;
-      if (frame && photos.length) pickingPhoto = entry;
+      handArt = undefined;
       setLayout({ ...layout(), [zone]: [...layout()[zone], entry] });
       return;
     }
@@ -548,6 +553,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     if (!p) return;
     hand = owned.find((o) => o.id === p.o) ?? null;
     handRot = p.r ?? 0;
+    handArt = p.art;
     setLayout({ ...layout(), [zone]: layout()[zone].filter((q) => q !== p) });
   };
 
@@ -576,7 +582,8 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
 
   const setPhoto = (p: Placed, art: number | undefined) => {
     pickingPhoto = null;
-    setLayout({ ...layout(), wall: layout().wall.map((q) => (q.o === p.o ? { ...q, art } : q)) });
+    const set = (l: Placed[]) => l.map((q) => (q.o === p.o ? { ...q, art } : q));
+    setLayout({ floor: set(layout().floor), wall: set(layout().wall) });
   };
 
   /** Va dans une autre pièce ; le meuble en main suit (on peut ainsi le déménager). */
@@ -588,6 +595,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     if (!unlocked()) {
       editing = false;
       hand = null;
+      handArt = undefined;
     }
     cursor = { zone: 'floor', x: 0, y: 0 };
     sceneKey = '';
@@ -607,8 +615,8 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     const full = p >= Math.max(state.rate, 1) * CAP_HOURS - 0.5;
     rateEl.textContent = `${(state.rate / 3600).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} pt/s`;
     perHourEl.textContent = ` · ${formatPoints(Math.round(state.rate))} par heure`;
-    pendingLabel.textContent = full ? `Coffre plein (${CAP_HOURS} h) : récolte !` : 'À récolter';
-    collectBtn.textContent = `Récolter ${formatPoints(Math.floor(p))} (C)`;
+    pendingLabel.textContent = full ? `Coffre plein (${CAP_HOURS} h) : récolte !` : 'Versé tout seul chaque minute, où que tu sois sur le site';
+    collectBtn.textContent = `Récolter ${formatPoints(Math.floor(p))} maintenant (C)`;
     collectBtn.disabled = p < 1 || busy;
     if (!income.firstChild) income.append(h('div', {}, rateEl, perHourEl), mine() ? h('div', { class: 'ap-pending' }, pendingLabel, collectBtn) : '');
   };
@@ -656,6 +664,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     if (!mine() || state.cleanStep < CLEAN_TASKS.length || !unlocked()) return;
     editing = !editing;
     hand = null;
+    handArt = undefined;
     pickingPhoto = null;
     render();
   };
@@ -753,6 +762,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
           b.addEventListener('mousedown', (e) => e.preventDefault());
           b.addEventListener('click', () => {
             hand = o;
+            handArt = undefined;
             handRot = 0;
             const zone = sizeOf(o.item_id).place;
             if (zone !== cursor.zone) cursor = { zone, x: 0, y: 0 };
@@ -777,7 +787,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
         ? h(
             'div',
             { class: 'ap-photos' },
-            h('h3', {}, 'Photo du cadre'),
+            h('h3', {}, isFrame(pickingPhoto.i) ? 'Photo du cadre' : 'Photo du papier peint'),
             pickable().length ? '' : h('p', { class: 'muted small' }, 'Aucune photo débloquée : tente ta chance avec la caisse souvenirs.'),
             ...pickable().map((a) => {
               const b = h('button', { class: 'ap-photo', type: 'button', title: a.title }, h('img', { src: a.url, alt: a.title, loading: 'lazy' }));
@@ -877,6 +887,8 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     // Le compteur de revenus avance chaque seconde.
     const tick = window.setInterval(renderIncome, 1000);
     offs.push(() => clearInterval(tick));
+    // Récolte automatique (toutes les pages) : le compteur repart de ce qui reste.
+    if (mine()) offs.push(onIdleIncome(() => void reloadState().then(render)));
     // Visite : l'appart se met à jour en direct quand son propriétaire le modifie.
     if (!mine() && supabase) {
       const ch = supabase
@@ -918,6 +930,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
         e.preventDefault();
         if (hand) {
           hand = null;
+          handArt = undefined;
           return render();
         }
         return navigate('/');
@@ -937,6 +950,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       else if (key === 'delete' || key === 'x') {
         if (hand) {
           hand = null;
+          handArt = undefined;
           render();
         } else {
           const p = occupant(cursor.zone, cursor.x, cursor.y);
@@ -945,7 +959,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       } else if (key === 'r') rotate();
       else if (key === 'p') {
         const p = occupant(cursor.zone, cursor.x, cursor.y);
-        if (p && isFrame(p.i)) {
+        if (p && takesPhoto(p.i)) {
           pickingPhoto = p;
           render();
         }
@@ -955,6 +969,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
         if (!free.length) return;
         const i = hand ? free.findIndex((o) => o.id === hand!.id) : -1;
         hand = free[(i + 1) % free.length];
+        handArt = undefined;
         handRot = 0;
         const zone = sizeOf(hand.item_id).place;
         if (zone !== cursor.zone) cursor = { zone, x: 0, y: 0 };
@@ -974,7 +989,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       ['Entrée', 'poser / reprendre'],
       ['R', 'pivoter'],
       ['Suppr', 'ranger'],
-      ['P', 'photo du cadre'],
+      ['P', 'photo (cadre, meuble personnalisable)'],
       ['Retour arrière', 'quitter'],
     ),
   );

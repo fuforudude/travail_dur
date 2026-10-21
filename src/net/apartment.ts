@@ -107,7 +107,7 @@ export const saveLayout = (layout: Layout) =>
       Object.entries(layout).map(([room, l]) => [
         room,
         {
-          floor: l.floor.map(({ o, x, y, r }) => (r ? { o, x, y, r } : { o, x, y })),
+          floor: l.floor.map(({ o, x, y, r, art }) => ({ o, x, y, ...(r ? { r } : {}), ...(art ? { art } : {}) })),
           wall: l.wall.map(({ o, x, y, r, art }) => ({ o, x, y, ...(r ? { r } : {}), ...(art ? { art } : {}) })),
         },
       ]),

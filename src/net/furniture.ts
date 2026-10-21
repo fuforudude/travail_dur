@@ -110,6 +110,8 @@ export const FINISHES: { id: string; name: string; rarity: Rarity; motif?: boole
   { id: 'nounours', name: 'à nounours', rarity: 'legendary', motif: true },
   { id: 'flammes', name: 'en flammes', rarity: 'legendary', motif: true },
   { id: 'couronne', name: 'à couronne', rarity: 'mythic', motif: true },
+  // Personnalisable : une fois posé, le meuble est recouvert d'une photo débloquée, en papier peint.
+  { id: 'perso', name: 'personnalisable', rarity: 'mythic' },
 ];
 
 export const RARITY_NAMES: Record<Rarity, string> = {
@@ -130,6 +132,8 @@ export const CRATES: { id: string; name: string; text: string }[] = [
 /** Caisse souvenirs : chance de débloquer une photo (comme public.crate_open). */
 export const PHOTO_CHANCE = 0.05;
 
+/** Peut-on mettre une photo sur ce meuble (cadre, ou meuble personnalisable) ? Comme public.apartment_save. */
+export const takesPhoto = (item: string) => item.split(':')[0] === 'frame' || item.split(':')[1] === 'perso';
 export const baseOf = (item: string) => BASES.find((b) => b.id === item.split(':')[0]);
 export const finishOf = (item: string) => FINISHES.find((f) => f.id === item.split(':')[1]) ?? FINISHES[0];
 export const itemName = (item: string) => {
