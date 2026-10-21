@@ -2,12 +2,12 @@
 // de 0030_td_roguelike.sql, 0032_td_campagne.sql et 0033_td_etoiles.sql pour la progression, les
 // étoiles, la boutique à étoiles, les héros, la collection et les caisses). Le serveur fait foi pour tout.
 
-import { load, save } from '../../core/storage';
+import { load, remove, save } from '../../core/storage';
 import { ensureAccount } from '../../net/auth';
 import { errorMessage, getSupabase, multiConfigured } from '../../net/supabase';
 import { skinOf, type Finish, type Rarity } from './catalog';
 import { LEVEL_COUNT, PERK_MAX, perkCost, type Perks } from './engine/data';
-import type { Mode, RunState } from './engine/sim';
+import type { Mode, RunOptions, RunState } from './engine/sim';
 
 export interface Meta {
   owned: Set<string>; // skins
@@ -180,6 +180,42 @@ export interface WaveResult {
 }
 /** Envoie une vague ; `step` = vagues déjà envoyées avant elle (le serveur ignore un doublon). */
 export const sendWave = (session: string, actions: string, step: number) => invoke<WaveResult>({ op: 'wave', session, actions, step, v: TD_PROTOCOL });
+
+// --- Parties hors ligne ---------------------------------------------------------------------------
+// Le serveur tire la graine de chaque partie. Pour pouvoir jouer une partie enregistrée sans réseau,
+// le site garde d'avance un ticket : une partie réservée sur le serveur, avec sa graine. Lancée hors
+// ligne, la partie utilise ce ticket ; son démarrage puis ses vagues partent au retour du réseau
+// (file de uploads.ts). Le serveur rend toujours le même ticket tant qu'il n'a pas servi.
+
+interface Ticket {
+  id: string;
+  seed: number;
+  uid: string; // compte qui l'a réservé (changement de compte : on en réserve un autre)
+}
+const TICKET_KEY = 'ticket:td';
+
+/** Réserve un ticket s'il n'y en a pas déjà un (au chargement du jeu, quand le serveur répond). */
+export async function keepTicket(): Promise<void> {
+  if (!multiConfigured) return;
+  try {
+    const { uid } = await client();
+    if (load<Ticket | null>(TICKET_KEY, null)?.uid === uid) return;
+    const t = await invoke<{ id: string; seed: number }>({ op: 'reserve' });
+    save(TICKET_KEY, { id: t.id, seed: t.seed, uid } satisfies Ticket);
+  } catch {
+    // hors ligne ou fonction pas encore déployée : on réessaiera au prochain chargement
+  }
+}
+
+/** Prend le ticket gardé : il ne sert qu'une fois. */
+export function takeTicket(): Ticket | null {
+  const t = load<Ticket | null>(TICKET_KEY, null);
+  remove(TICKET_KEY);
+  return t;
+}
+
+/** Démarre sur le serveur une partie lancée hors ligne, avec les réglages utilisés par le site. */
+export const sendStart = (ticket: string, options: RunOptions) => invoke<{ id: string }>({ op: 'start', ticket, options, v: TD_PROTOCOL });
 
 // --- Caisses ------------------------------------------------------------------------------------
 

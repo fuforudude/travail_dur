@@ -6,6 +6,10 @@
 // que le jeu (./engine, copié depuis src/ par scripts/td-sync.mjs) et enregistre le résultat
 // dans td_sessions ; le déclencheur points_on_td attribue alors les points.
 //
+// Hors ligne : le site garde d'avance un ticket (`reserve` : une partie réservée, graine tirée ici).
+// Si le serveur est injoignable au lancement, il joue avec cette graine et envoie plus tard
+// `start` avec le ticket et ses réglages, puis les vagues gardées dans le navigateur.
+//
 // Déploiement : `npm run td:sync` puis `npx supabase functions deploy td` (voir le README).
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -27,6 +31,73 @@ const PROTOCOL = 2;
 const OUTDATED = 'nouvelle version du jeu : recharge la page (Ctrl+F5)';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
+
+/** Ticket pour une partie hors ligne : toujours le même tant qu'il n'a pas servi. */
+async function reserve(uid: string) {
+  const { data: free, error } = await db.from('td_sessions').select('id, seed').eq('user_id', uid).eq('rules', 3).is('state', null).limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (free) return { id: free.id, seed: Number(free.seed) };
+  const seed = crypto.getRandomValues(new Uint32Array(1))[0] || 1;
+  const { data, error: e2 } = await db.from('td_sessions').insert({ user_id: uid, rules: 3, seed, state: null }).select('id').single();
+  if (e2) throw new Error(e2.message);
+  return { id: data.id, seed };
+}
+
+/**
+ * Démarre une partie lancée hors ligne avec un ticket. Le site a déjà joué avec ses réglages
+ * (progression, niveau du héros, améliorations qu'il connaissait) : on les reprend s'ils ne
+ * dépassent pas ce que le joueur possède vraiment, pour rejouer exactement la même partie.
+ */
+async function startTicket(uid: string, ticket: unknown, o: Record<string, unknown> | null): Promise<{ id: string; state: RunState; already?: boolean }> {
+  if (typeof ticket !== 'string' || !/^[0-9a-f-]{36}$/.test(ticket) || !o || typeof o !== 'object') throw new Refused('ticket inconnu');
+  const { data: row, error } = await db.from('td_sessions').select('user_id, rules, seed, state, mode').eq('id', ticket).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!row || row.user_id !== uid || row.rules !== 3) throw new Refused('ticket inconnu');
+  if (row.state) {
+    // Déjà démarrée (réponse perdue, renvoi) : rien à refaire.
+    if (row.mode === o.mode) return { id: ticket, state: row.state as RunState, already: true };
+    throw new Refused('ticket déjà utilisé');
+  }
+  if (o.mode !== 'campaign' && o.mode !== 'infinite') throw new Refused('mode inconnu');
+  const hero = (o.hero ?? null) as { id?: unknown; level?: unknown } | null;
+  if (hero !== null && (typeof hero !== 'object' || !HEROES.some((h) => h.id === hero.id) || !Number.isInteger(hero.level) || (hero.level as number) < 1)) {
+    throw new Refused('héros inconnu');
+  }
+  const perks = (o.perks ?? {}) as Record<string, unknown>;
+  if (typeof perks !== 'object' || Array.isArray(perks)) throw new Refused('amélioration inconnue');
+  const [{ data: cleared, error: e1 }, { data: owned, error: e2 }, { data: perkRows, error: e3 }] = await Promise.all([
+    db.rpc('td_cleared', { uid }),
+    hero ? db.from('td_heroes').select('level').eq('user_id', uid).eq('hero_id', hero.id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    db.from('td_perks').select('perk_id, rank').eq('user_id', uid),
+  ]);
+  if (e1 || e2 || e3) throw new Error((e1 ?? e2 ?? e3)!.message);
+  if (hero && (!owned || (hero.level as number) > Number(owned.level))) throw new Refused('héros pas encore obtenu');
+  const ranks = new Map((perkRows ?? []).map((r) => [String(r.perk_id), Number(r.rank)]));
+  for (const [id, n] of Object.entries(perks)) {
+    if (typeof n !== 'number' || n > (ranks.get(id) ?? 0)) throw new Refused('amélioration pas encore achetée');
+  }
+  const known = Number(o.cleared);
+  if (!Number.isInteger(known) || known < 0 || known > Number(cleared ?? 0)) throw new Refused('niveau pas encore débloqué');
+  const options = {
+    mode: o.mode, level: o.mode === 'campaign' ? Number(o.level) : 0, cleared: known,
+    hero: hero ? { id: hero.id as string, level: hero.level as number } : null, perks: perks as Record<string, number>,
+  } as const;
+  const err = runError(options);
+  if (err) throw new Refused(err);
+  const state = newRun(Number(row.seed), options);
+  const { data: saved, error: e4 } = await db
+    .from('td_sessions')
+    .update({
+      mode: options.mode, level: options.mode === 'campaign' ? options.level : null, hero: options.hero?.id ?? null,
+      hero_level: options.hero?.level ?? null, state, wave: 0, lives: state.lives, gold: state.gold, kills: 0,
+    })
+    .eq('id', ticket)
+    .is('state', null)
+    .select('id');
+  if (e4) throw new Error(e4.message);
+  if (!saved?.length) return startTicket(uid, ticket, o); // démarrée entre-temps par un autre envoi
+  return { id: ticket, state };
+}
 
 async function start(uid: string, mode: unknown, level: unknown, hero: unknown) {
   // Les choix du client ne sont pas considérés comme acquis : la progression et la possession
@@ -69,7 +140,7 @@ async function wave(uid: string, session: unknown, actions: unknown, step: unkno
   if (typeof actions !== 'string' || actions.length > 20000) throw new Refused('actions invalides');
   const { data: row, error } = await db
     .from('td_sessions')
-    .select('user_id, rules, over, state, step, last_call_at, wave, lives, gold, kills, won, stars')
+    .select('user_id, rules, over, state, step, started_at, ticks_total, wave, lives, gold, kills, won, stars')
     .eq('id', session)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -93,18 +164,22 @@ async function wave(uid: string, session: unknown, actions: unknown, step: unkno
   } catch (e) {
     throw new Refused((e as Error).message);
   }
-  // La vague a duré `ticks` × 100 ms ; le jeu accélère ×3 au maximum (marge ×5 pour le réseau).
-  if (Date.now() - Date.parse(row.last_call_at) < ticks * 20) throw new Refused('vague jouée trop vite');
+  // Les vagues ont duré `total` × 100 ms ; le jeu accélère ×3 au maximum (marge ×5). Le compte se
+  // fait depuis le début de la partie, pas depuis l'envoi précédent : des vagues gardées pendant une
+  // coupure réseau peuvent arriver l'une après l'autre.
+  const total = row.ticks_total + ticks;
+  if (Date.now() - Date.parse(row.started_at) < total * 20) throw new Refused('vague jouée trop vite');
   const { data: saved, error: e2 } = await db
     .from('td_sessions')
-    .update({ state: s, wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills, over: s.over, won: s.won, stars: starsOf(s), last_call_at: new Date().toISOString(), last_ticks: ticks, step: row.step + 1 })
+    .update({ state: s, wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills, over: s.over, won: s.won, stars: starsOf(s), last_call_at: new Date().toISOString(), last_ticks: ticks, ticks_total: total, step: row.step + 1 })
     .eq('id', session)
     .eq('step', row.step)
     .select('id');
   if (e2) throw new Error(e2.message);
   // Le filtre sur `step` agit comme une comparaison-et-échange : deux requêtes concurrentes
-  // basées sur la même vague ne peuvent pas toutes deux enregistrer leur résultat.
-  if (!saved?.length) throw new Refused('vague déjà envoyée');
+  // basées sur la même vague (envoi normal et envoi à la fermeture de la page) ne peuvent pas toutes
+  // deux l'enregistrer. La seconde relit la ligne et reçoit le résultat de la première (le même).
+  if (!saved?.length) return wave(uid, session, actions, step);
   return { wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills, over: s.over, won: s.won, stars: starsOf(s), ticks };
 }
 
@@ -118,8 +193,10 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => null);
   try {
     if (body?.op === 'ping') return reply({ ok: true });
+    if (body?.op === 'reserve') return reply(await reserve(uid));
     if (body?.op === 'start') {
       if (!(Number(body.v) >= PROTOCOL)) throw new Refused(OUTDATED);
+      if (body.ticket !== undefined) return reply(await startTicket(uid, body.ticket, body.options ?? null));
       return reply(await start(uid, body.mode, body.level, body.hero ?? null));
     }
     if (body?.op === 'wave') {

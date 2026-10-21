@@ -18,7 +18,7 @@ import {
   type Enemy, type Fx, type Mode, type Running, type RunState,
 } from './engine/sim';
 import {
-  buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, starBalance, startRun, tdServerUp, type Meta,
+  buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, starBalance, startRun, takeTicket, keepTicket, tdServerUp, TdError, type Meta,
 } from './net';
 import { enqueue, onUpload, startUploads } from './uploads';
 import { drawEnemy, drawTower, enemyLook, enemyRadius, previewItem, readPalette, towerLook, type Palette } from './render';
@@ -157,6 +157,7 @@ function mount(ctx: GameContext): () => void {
     // Serveur du tower defense joignable ? Sans lui, rien n'est enregistré : on le dit clairement.
     let serverDown = false;
     void tdServerUp().then((up) => {
+      if (up) void keepTicket(); // de quoi lancer une partie enregistrée si le réseau coupe plus tard
       serverDown = !up;
       if (serverDown && !disposed) render();
     });
@@ -225,7 +226,9 @@ function mount(ctx: GameContext): () => void {
       crates.addEventListener('click', () => navigate('/td/caisses'));
 
       wrap.replaceChildren(
-        serverDown
+        serverDown && !navigator.onLine
+          ? h('p', { class: 'notice td-server-down' }, 'Pas de réseau : ta partie est gardée sur cet appareil et sera enregistrée dès le retour de la connexion.')
+          : serverDown
           ? h('p', { class: 'notice td-server-down' }, '⚠ Le serveur du tower defense est injoignable : tes parties ne sont pas enregistrées (niveaux réussis, étoiles, classement). Il faut déployer la fonction serveur « td » sur Supabase.')
           : '',
         h(
@@ -310,18 +313,29 @@ function mount(ctx: GameContext): () => void {
   };
   const beginRun = async (mode: Mode, L: number) => {
     const hero = chosenHero();
+    const options = { mode, level: L, cleared: meta.cleared, hero, perks: perksOf(meta) };
     let saved: Saved;
-    let msg = '';
+    let note = '';
     try {
       if (!multiConfigured) throw new Error('');
       const r = await startRun(mode, L, hero?.id ?? null);
       saved = { s: r.state, actions: [], session: r.id };
     } catch (e) {
-      msg = (e as Error).message;
-      saved = { s: newRun((Math.random() * 2 ** 32) >>> 0, { mode, level: L, cleared: meta.cleared, hero, perks: perksOf(meta) }), actions: [], session: null };
+      const msg = (e as Error).message;
+      // Serveur injoignable (pas un refus) : partie lancée avec le ticket réservé d'avance. Elle est
+      // gardée dans le navigateur et envoyée (démarrage puis vagues) au retour de la connexion.
+      const ticket = multiConfigured && !(e instanceof TdError && e.status === 400) ? takeTicket() : null;
+      if (ticket) {
+        saved = { s: newRun(ticket.seed, options), actions: [], session: ticket.id };
+        enqueue({ kind: 'start', session: ticket.id, options });
+        note = 'Pas de connexion au serveur : la partie est gardée sur cet appareil et sera enregistrée dès son retour.';
+      } else {
+        saved = { s: newRun((Math.random() * 2 ** 32) >>> 0, options), actions: [], session: null };
+        if (msg) note = `⚠ Serveur injoignable (${msg}) : cette partie ne sera pas enregistrée.`;
+      }
     }
     if (disposed) return;
-    runNote = msg ? `⚠ Serveur injoignable (${msg}) : cette partie ne sera pas enregistrée.` : '';
+    runNote = note;
     save(SAVE_KEY, saved);
     show(() => runScreen(saved));
   };
@@ -881,12 +895,13 @@ function mount(ctx: GameContext): () => void {
     const offUpload = onUpload((e) => {
       if (gone || e.session !== session) return;
       if (e.kind === 'sent') {
-        if (note.startsWith('Enregistrement en attente')) note = '';
+        if (note.startsWith('Enregistrement en attente') || note.startsWith('Pas de connexion')) note = '';
       } else if (e.kind === 'refused') {
         note = `⚠ Le serveur a refusé cette partie (${e.message}) : la suite ne sera pas enregistrée.`;
         session = null;
         persist();
-      } else note = `Enregistrement en attente (${e.message}) : nouvel essai dans quelques secondes…`;
+      } else if (!navigator.onLine) note = 'Pas de connexion : la partie est gardée sur cet appareil et sera enregistrée dès son retour.';
+      else note = `Enregistrement en attente (${e.message}) : nouvel essai dans quelques secondes…`;
       render();
     });
     const launch = async () => {

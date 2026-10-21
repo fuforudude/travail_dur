@@ -1,31 +1,44 @@
-// Tower defense : envoi des vagues au serveur, dès qu'elles se terminent. La file est gardée dans le
-// navigateur jusqu'à la confirmation du serveur : un rechargement, une page quittée ou une coupure
-// réseau ne perdent rien (la file repart au retour). Le serveur reconnaît une vague déjà reçue
-// (`step`), un renvoi ne compte donc jamais deux fois.
+// Tower defense : envoi des parties au serveur. Tout passe par une file gardée dans le navigateur
+// jusqu'à la confirmation du serveur : un rechargement, une page quittée ou une coupure réseau ne
+// perdent rien (la file repart au retour). Une partie lancée hors ligne y entre aussi : d'abord son
+// démarrage (ticket réservé d'avance, voir net.ts), puis ses vagues. Le serveur reconnaît un envoi
+// déjà reçu (`step`, ticket déjà démarré) : un renvoi ne compte jamais deux fois.
+//
+// Plusieurs onglets peuvent être ouverts : la file est relue dans le stockage avant chaque
+// modification (jamais de copie qui écraserait les ajouts d'un autre onglet) et un seul onglet
+// l'envoie à la fois (verrou du navigateur).
 
 import { load, save } from '../../core/storage';
 import { getSupabase, functionUrl, publicKey } from '../../net/supabase';
-import { isFinalRefusal, sendWave, TD_PROTOCOL, type WaveResult } from './net';
+import { isFinalRefusal, sendStart, sendWave, TD_PROTOCOL, type WaveResult } from './net';
+import type { RunOptions } from './engine/sim';
 
-interface Upload {
-  session: string;
-  step: number; // vagues déjà envoyées avant celle-ci
-  actions: string;
-}
+type Upload =
+  | { kind?: 'wave'; session: string; step: number; actions: string } // step : vagues envoyées avant celle-ci
+  | { kind: 'start'; session: string; options: RunOptions }; // partie lancée hors ligne (ticket)
 
 export type UploadEvent =
-  | { kind: 'sent'; session: string; step: number; result: WaveResult }
+  | { kind: 'sent'; session: string; result?: WaveResult }
   | { kind: 'refused'; session: string; message: string } // définitif : la partie n'est plus suivie
   | { kind: 'waiting'; session: string; message: string }; // réseau, panne : on réessaie
 
 const KEY = 'uploads:td';
 const RETRY_MS = 5000;
-let queue: Upload[] = load<Upload[]>(KEY, []);
+let memory: Upload[] = []; // stockage indisponible (navigation privée stricte) : la file vit ici
 let flushing = false;
 let retry: number | undefined;
 const listeners = new Set<(e: UploadEvent) => void>();
 
-const store = () => save(KEY, queue);
+const read = (): Upload[] => load<Upload[] | null>(KEY, null) ?? memory;
+const write = (q: Upload[]) => {
+  memory = q;
+  save(KEY, q);
+};
+const same = (a: Upload, b: Upload) => {
+  if (a.session !== b.session) return false;
+  if (a.kind === 'start' || b.kind === 'start') return a.kind === b.kind;
+  return a.step === b.step;
+};
 const emit = (e: UploadEvent) => listeners.forEach((cb) => cb(e));
 
 export function onUpload(cb: (e: UploadEvent) => void): () => void {
@@ -33,42 +46,54 @@ export function onUpload(cb: (e: UploadEvent) => void): () => void {
   return () => listeners.delete(cb);
 }
 
-/** Ajoute une vague terminée à la file et l'envoie tout de suite. */
+/** Envois de cette partie pas encore confirmés : vagues, et démarrage d'une partie lancée hors ligne. */
+export function pendingFor(session: string | null): { waves: number; start: boolean } {
+  const mine = session ? read().filter((u) => u.session === session) : [];
+  return { waves: mine.filter((u) => u.kind !== 'start').length, start: mine.some((u) => u.kind === 'start') };
+}
+
+/** Ajoute un envoi (démarrage hors ligne ou vague terminée) à la file et l'envoie tout de suite. */
 export function enqueue(u: Upload): void {
-  queue.push(u);
-  store();
+  const q = read();
+  if (!q.some((o) => same(o, u))) q.push(u);
+  write(q);
   void flush();
 }
 
-/** Envoie la file, dans l'ordre. */
+/** Envoie la file, dans l'ordre, depuis un seul onglet à la fois. */
 export async function flush(): Promise<void> {
-  if (flushing || !queue.length) return;
+  if (flushing || !read().length) return;
   flushing = true;
   clearTimeout(retry);
   try {
-    while (queue.length) {
-      const u = queue[0];
-      try {
-        const result = await sendWave(u.session, u.actions, u.step);
-        queue.shift();
-        store();
-        emit({ kind: 'sent', session: u.session, step: u.step, result });
-      } catch (e) {
-        const message = (e as Error).message;
-        if (isFinalRefusal(e)) {
-          // Le serveur ne veut plus de cette partie : on l'oublie, on passe aux suivantes.
-          queue = queue.filter((o) => o.session !== u.session);
-          store();
-          emit({ kind: 'refused', session: u.session, message });
-          continue;
-        }
-        emit({ kind: 'waiting', session: u.session, message });
-        retry = window.setTimeout(() => void flush(), RETRY_MS);
-        return;
-      }
-    }
+    if (navigator.locks) await navigator.locks.request('td-uploads', { ifAvailable: true }, (lock) => (lock ? drain() : undefined));
+    else await drain();
   } finally {
     flushing = false;
+  }
+}
+
+async function drain(): Promise<void> {
+  for (let u = read()[0]; u; u = read()[0]) {
+    try {
+      let result: WaveResult | undefined;
+      if (u.kind === 'start') await sendStart(u.session, u.options);
+      else result = await sendWave(u.session, u.actions, u.step);
+      write(read().filter((o) => !same(o, u)));
+      emit({ kind: 'sent', session: u.session, result });
+    } catch (e) {
+      const message = (e as Error).message;
+      if (isFinalRefusal(e)) {
+        // Le serveur ne veut plus de cette partie : on l'oublie, on passe aux suivantes.
+        console.warn(`Tower defense : partie ${u.session} refusée par le serveur (${message})`);
+        write(read().filter((o) => o.session !== u.session));
+        emit({ kind: 'refused', session: u.session, message });
+        continue;
+      }
+      emit({ kind: 'waiting', session: u.session, message });
+      retry = window.setTimeout(() => void flush(), RETRY_MS);
+      return;
+    }
   }
 }
 
@@ -86,9 +111,14 @@ export function startUploads(): void {
     else lastChance();
   });
   window.addEventListener('pagehide', lastChance);
-  // Quitter la page pendant un envoi : le navigateur demande confirmation.
+  // Un autre onglet a ajouté un envoi, ou s'est fermé en laissant la file : on prend le relais.
+  window.addEventListener('storage', (e) => {
+    if (e.key?.endsWith(KEY)) void flush();
+  });
+  // Quitter la page pendant un envoi : le navigateur demande confirmation. Hors ligne, inutile : la
+  // file est gardée et partira à la prochaine visite.
   window.addEventListener('beforeunload', (e) => {
-    if (!queue.length) return;
+    if (!read().length || !navigator.onLine) return;
     e.preventDefault();
     e.returnValue = '';
   });
@@ -102,21 +132,25 @@ async function refreshToken(): Promise<void> {
 }
 
 /**
- * Page cachée ou fermée avec une vague en attente : on l'envoie avec une requête qui survit à la
- * fermeture (keepalive). Seulement la première : les suivantes partiront au prochain passage (le
- * serveur ignore un doublon, la file reste donc valable même si celle-ci arrive).
+ * Page cachée ou fermée avec un envoi en attente : on envoie le premier avec une requête qui survit
+ * à la fermeture (keepalive). Seulement lui : les suivants partiront au prochain passage. Le serveur
+ * reconnaît un doublon (même si l'envoi normal est en route au même moment), la file reste valable.
  */
 function lastChance(): void {
-  const u = queue[0];
+  const u = read()[0];
   const target = functionUrl('td');
   const apikey = publicKey();
-  if (!u || !target || !apikey || !token) return;
+  if (!u || !target || !apikey || !token || !navigator.onLine) return;
+  const body =
+    u.kind === 'start'
+      ? { op: 'start', ticket: u.session, options: u.options, v: TD_PROTOCOL }
+      : { op: 'wave', session: u.session, actions: u.actions, step: u.step, v: TD_PROTOCOL };
   try {
     void fetch(target, {
       method: 'POST',
       keepalive: true,
       headers: { 'Content-Type': 'application/json', apikey, Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ op: 'wave', session: u.session, actions: u.actions, step: u.step, v: TD_PROTOCOL }),
+      body: JSON.stringify(body),
     }).catch(() => {});
   } catch {
     // requête trop grosse pour keepalive (64 ko) : elle partira au prochain passage
