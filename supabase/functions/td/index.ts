@@ -59,12 +59,25 @@ async function start(uid: string, mode: unknown, level: unknown, hero: unknown) 
   return { id: data.id, state };
 }
 
-async function wave(uid: string, session: unknown, actions: unknown) {
+async function wave(uid: string, session: unknown, actions: unknown, step: unknown) {
   if (typeof session !== 'string' || !/^[0-9a-f-]{36}$/.test(session)) throw new Refused('partie inconnue');
   if (typeof actions !== 'string' || actions.length > 20000) throw new Refused('actions invalides');
-  const { data: row, error } = await db.from('td_sessions').select('user_id, rules, over, state, step, last_call_at').eq('id', session).maybeSingle();
+  const { data: row, error } = await db
+    .from('td_sessions')
+    .select('user_id, rules, over, state, step, last_call_at, wave, lives, gold, kills, won, stars')
+    .eq('id', session)
+    .maybeSingle();
   if (error) throw new Error(error.message);
   if (!row || row.user_id !== uid || row.rules !== 3 || !row.state) throw new Refused('partie inconnue');
+  // `step` (nombre de vagues déjà envoyées, selon le site) rend l'envoi rejouable sans risque : une
+  // vague déjà reçue (le site n'a pas eu la réponse, page rechargée…) n'est pas rejouée une 2e fois.
+  if (step !== undefined) {
+    if (!Number.isInteger(step) || (step as number) < 0) throw new Refused('vague inconnue');
+    if ((step as number) < row.step) {
+      return { wave: row.wave, lives: row.lives, gold: row.gold, kills: row.kills, over: row.over, won: row.won, stars: row.stars, already: true };
+    }
+    if ((step as number) > row.step) throw new Refused('vague manquante');
+  }
   if (row.over) throw new Refused('partie terminée');
   const s = row.state as RunState;
   let ticks: number;
@@ -101,7 +114,7 @@ Deno.serve(async (req) => {
   try {
     if (body?.op === 'ping') return reply({ ok: true });
     if (body?.op === 'start') return reply(await start(uid, body.mode, body.level, body.hero ?? null));
-    if (body?.op === 'wave') return reply(await wave(uid, body.session, body.actions));
+    if (body?.op === 'wave') return reply(await wave(uid, body.session, body.actions, body.step));
     return reply({ error: 'opération inconnue' }, 400);
   } catch (e) {
     if (e instanceof Refused) return reply({ error: e.message }, 400);

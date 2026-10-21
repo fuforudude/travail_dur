@@ -2,7 +2,6 @@ import { isTyping, pushKeys } from '../../core/input';
 import { isPanicked } from '../../core/panic';
 import { blip } from '../../core/sound';
 import { load, remove, save, setBest } from '../../core/storage';
-import { getAccount } from '../../net/auth';
 import { GAIN_MULT } from '../../net/points';
 import { multiConfigured } from '../../net/supabase';
 import { navigate } from '../../router';
@@ -18,8 +17,9 @@ import {
   type Enemy, type Fx, type Mode, type Running, type RunState,
 } from './engine/sim';
 import {
-  buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, sendWave, starBalance, startRun, tdServerUp, type Meta,
+  buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, starBalance, startRun, tdServerUp, type Meta,
 } from './net';
+import { enqueue, flush, onUpload, pendingFor } from './uploads';
 import { drawEnemy, drawTower, enemyLook, enemyRadius, previewItem, readPalette, towerLook, type Palette } from './render';
 import { ACTS, actOf, BONUS_ACT, bossName, levelStory, PROLOGUE, type Line } from './story';
 import './td.css';
@@ -319,7 +319,7 @@ function mount(ctx: GameContext): () => void {
       saved = { s: newRun((Math.random() * 2 ** 32) >>> 0, { mode, level: L, cleared: meta.cleared, hero, perks: perksOf(meta) }), actions: [], session: null };
     }
     if (disposed) return;
-    runNote = msg ? `Partie non classée : ${msg}.` : '';
+    runNote = msg ? `⚠ Serveur injoignable (${msg}) : cette partie ne sera pas enregistrée.` : '';
     save(SAVE_KEY, saved);
     show(() => runScreen(saved));
   };
@@ -717,7 +717,7 @@ function mount(ctx: GameContext): () => void {
         h('span', { class: 'stat' }, 'Or ', h('b', { 'data-k': 'gold' }, String(s.gold))),
         h('span', { class: 'stat' }, '×', h('b', {}, String(speed))),
         s.hero ? h('span', { class: 'small muted' }, `${HEROES.find((x) => x.id === s.hero!.id)?.name ?? ''} niv. ${s.hero.level}`) : '',
-        h('span', { class: 'muted small td-rank' }, session ? (campaign ? 'partie enregistrée' : 'partie classée') : 'non classée'),
+        h('span', { class: 'muted small td-rank' }, saveStatus()),
       );
       const shop = s.allowed.map((id, i) => {
         const def = TOWERS.find((t) => t.id === id)!;
@@ -800,7 +800,7 @@ function mount(ctx: GameContext): () => void {
         stars > starsBefore ? h('span', { class: 'small' }, `+${stars - starsBefore} ★ pour la boutique à étoiles`) : h('span', { class: 'small muted' }, `Ton record sur ce niveau : ${starText(starsBefore)}`),
         session ? h('span', { class: 'small' }, `+${levelPoints(s.level, first)} points ◆${first ? '' : ' (niveau rejoué)'}`) : '',
         unlocks.length ? h('span', { class: 'small' }, `Débloqué : ${unlocks.join(', ')}.`) : '',
-        session || !multiConfigured ? '' : h('span', { class: 'small td-unsaved' }, '⚠ Partie non classée : ce niveau et ses étoiles ne sont pas enregistrés sur le serveur.'),
+        multiConfigured ? h('span', { class: `small${session ? '' : ' td-unsaved'}` }, saveStatus()) : '',
         h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('La suite de l’histoire', outro, true)),
         h('span', { class: 'muted small' }, 'Entrée la suite · M carte'),
       ];
@@ -835,7 +835,31 @@ function mount(ctx: GameContext): () => void {
 
     // --- Vagues
     let onEnd: () => void = () => {};
-    let sendQueue: Promise<void> = Promise.resolve();
+    // Résultats attendus (pris à la fin de chaque vague) pour vérifier les réponses du serveur.
+    const expected = new Map<number, { wave: number; lives: number; gold: number; kills: number }>();
+    const offUpload = onUpload((e) => {
+      if (gone || e.session !== session) return;
+      if (e.kind === 'sent') {
+        const want = expected.get(e.step + 1);
+        expected.delete(e.step + 1);
+        const r = e.result;
+        if (want && !r.already && (r.wave !== want.wave || r.lives !== want.lives || r.gold !== want.gold || r.kills !== want.kills)) {
+          console.warn('Tower defense : résultat différent du serveur (le serveur fait foi)', { serveur: r, site: want });
+        }
+        if (note.startsWith('Enregistrement en attente')) note = '';
+      } else if (e.kind === 'refused') {
+        note = `⚠ Le serveur a refusé cette partie (${e.message}) : la suite ne sera pas enregistrée.`;
+        session = null;
+        persist();
+      } else note = `Enregistrement en attente (${e.message}) : nouvel essai dans quelques secondes…`;
+      render();
+    });
+    /** Où en est l'enregistrement de la partie sur le serveur. */
+    const saveStatus = () => {
+      if (!session) return multiConfigured ? '⚠ partie non enregistrée' : 'hors ligne';
+      const n = pendingFor(session);
+      return n ? `enregistrement… (${n} vague${n > 1 ? 's' : ''})` : '✓ enregistré sur le serveur';
+    };
     const launch = async () => {
       if (running || s.over || showVictory) return;
       note = '';
@@ -843,6 +867,7 @@ function mount(ctx: GameContext): () => void {
       choosing = false;
       snapshot = { s: structuredClone(s), actions: actions.slice() };
       running = startWave(s);
+      const number = running.number;
       prev = new Map();
       last = performance.now();
       acc = 0;
@@ -854,32 +879,11 @@ function mount(ctx: GameContext): () => void {
       actions = [];
       snapshot = null;
       if (s.won) recordStars(meta, s.level, starsOf(s));
-      // Résultat attendu, pris à la fin de la vague : pendant que le serveur répond, le joueur peut
-      // déjà construire ou lancer la vague suivante (l'or et le reste changent alors).
-      const expected = { wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills, over: s.over };
-      // Les vagues partent au serveur une par une, dans l'ordre, même si l'on enchaîne vite.
-      const check = sendQueue.then(async () => {
-        if (!session || gone) return;
-        const id = session;
-        const r = await sendWave(id, sent).catch((e: Error) => {
-          note = `Partie non classée désormais : ${e.message}.`;
-          console.warn('Tower defense : vague refusée par le serveur', e.message);
-          if (session === id) session = null;
-          return null;
-        });
-        if (gone || !r) return;
-        if (r.wave !== expected.wave || r.lives !== expected.lives || r.gold !== expected.gold || r.kills !== expected.kills) {
-          note = 'Résultat différent du serveur : partie non classée désormais.';
-          console.warn('Tower defense : résultat différent du serveur', { serveur: r, site: expected });
-          if (session === id) session = null;
-        } else if (expected.over && !campaign) {
-          note = getAccount()?.verified ? `${plural(expected.wave, 'vague')} au classement.` : `${plural(expected.wave, 'vague')} enregistrées. Ajoute un email (Réglages → Compte) pour apparaître au classement.`;
-        }
-      });
-      sendQueue = check;
-      if (s.over) await check; // l'écran de fin dit si la partie est enregistrée
-      else void check.then(() => !gone && render());
-      if (gone) return;
+      // La vague part au serveur tout de suite (file gardée dans le navigateur jusqu'à confirmation).
+      if (session) {
+        expected.set(number, { wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills });
+        enqueue({ session, step: number - 1, actions: sent });
+      }
       if (!campaign && s.wave >= FINAL_WAVE && !victorySeen && !s.over) {
         victorySeen = true;
         showVictory = true;
@@ -1020,6 +1024,7 @@ function mount(ctx: GameContext): () => void {
 
     return () => {
       gone = true;
+      offUpload();
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', onResize);
       offKeys();
@@ -1032,6 +1037,7 @@ function mount(ctx: GameContext): () => void {
     };
   };
 
+  void flush(); // vagues restées en attente (page rechargée, réseau coupé…)
   const resumed = load<Saved | null>(SAVE_KEY, null);
   show(resumed && !resumed.s.over ? () => runScreen(resumed) : menuScreen);
 

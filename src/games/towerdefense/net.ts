@@ -123,6 +123,15 @@ export function equippedFinish(meta: Meta, kind: 'ts' | 'es', subject: string): 
 
 // --- Parties ------------------------------------------------------------------------------------
 
+/** Erreur du serveur du tower defense ; `status` 400 = refus (définitif), sinon réseau ou panne (on réessaie). */
+export class TdError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+/** Refus définitif : inutile de renvoyer. « Trop vite » se règle en attendant un peu. */
+export const isFinalRefusal = (e: unknown) => e instanceof TdError && e.status === 400 && e.message !== 'vague jouée trop vite';
+
 async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   const { supabase } = await client();
   const { data, error } = await supabase.functions.invoke('td', { body });
@@ -131,7 +140,7 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
     let msg = '';
     if (ctx && typeof ctx.json === 'function') msg = ((await ctx.json().catch(() => null)) as { error?: string } | null)?.error ?? '';
     if (!msg && (ctx?.status === 404 || error.name === 'FunctionsFetchError' || error.name === 'FunctionsRelayError')) msg = 'serveur du tower defense indisponible';
-    throw new Error(msg || error.message);
+    throw new TdError(msg || error.message, ctx?.status ?? 0);
   }
   return data as T;
 }
@@ -161,8 +170,10 @@ export interface WaveResult {
   over: boolean;
   won: boolean;
   stars?: number;
+  already?: boolean; // vague déjà reçue (renvoi après un rechargement)
 }
-export const sendWave = (session: string, actions: string) => invoke<WaveResult>({ op: 'wave', session, actions });
+/** Envoie une vague ; `step` = vagues déjà envoyées avant elle (le serveur ignore un doublon). */
+export const sendWave = (session: string, actions: string, step: number) => invoke<WaveResult>({ op: 'wave', session, actions, step });
 
 // --- Caisses ------------------------------------------------------------------------------------
 
