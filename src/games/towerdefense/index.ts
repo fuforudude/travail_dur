@@ -835,17 +835,9 @@ function mount(ctx: GameContext): () => void {
 
     // --- Vagues
     let onEnd: () => void = () => {};
-    // Résultats attendus (pris à la fin de chaque vague) pour vérifier les réponses du serveur.
-    const expected = new Map<number, { wave: number; lives: number; gold: number; kills: number }>();
     const offUpload = onUpload((e) => {
       if (gone || e.session !== session) return;
       if (e.kind === 'sent') {
-        const want = expected.get(e.step + 1);
-        expected.delete(e.step + 1);
-        const r = e.result;
-        if (want && !r.already && (r.wave !== want.wave || r.lives !== want.lives || r.gold !== want.gold || r.kills !== want.kills)) {
-          console.warn('Tower defense : résultat différent du serveur (le serveur fait foi)', { serveur: r, site: want });
-        }
         if (note.startsWith('Enregistrement en attente')) note = '';
       } else if (e.kind === 'refused') {
         note = `⚠ Le serveur a refusé cette partie (${e.message}) : la suite ne sera pas enregistrée.`;
@@ -881,7 +873,6 @@ function mount(ctx: GameContext): () => void {
       if (s.won) recordStars(meta, s.level, starsOf(s));
       // La vague part au serveur tout de suite (file gardée dans le navigateur jusqu'à confirmation).
       if (session) {
-        expected.set(number, { wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills });
         enqueue({ session, step: number - 1, actions: sent });
       }
       if (!campaign && s.wave >= FINAL_WAVE && !victorySeen && !s.over) {

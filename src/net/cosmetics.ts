@@ -1,5 +1,7 @@
 // Apparence des joueurs (public.cosmetics) : couleur et effet du pseudo, titre, skins des jeux.
-// Lue pour tous les joueurs qu'on croise (salon, discussion, partie, classements), avec un cache.
+// Lue pour tous les joueurs qu'on croise (salon, discussion, partie, classements), avec un cache
+// relu au bout d'une minute. Pas d'écoute en direct de toute la table : son coût grandissait avec le
+// carré du nombre de joueurs (AUDIT.md) ; ses propres achats sont relus tout de suite (invalidate).
 
 import { h } from '../ui/dom';
 import { itemById, type SkinGame } from './shop';
@@ -37,7 +39,6 @@ export function cosmeticOf(id: string | null | undefined): Cosmetic {
 /** Les demandes sont regroupées : une seule requête pour tous les pseudos d'une page. */
 function request(id: string): void {
   if (!multiConfigured || inflight.has(id)) return;
-  void watch();
   queue.add(id);
   timer ??= window.setTimeout(flush, 30);
 }
@@ -63,25 +64,6 @@ async function flush(): Promise<void> {
   }
   paintNames();
   listeners.forEach((cb) => cb());
-}
-
-let watching = false;
-
-/** Changements d'apparence en direct (un joueur qui achète ou porte un objet). */
-async function watch(): Promise<void> {
-  if (watching || !multiConfigured) return;
-  watching = true;
-  const supabase = await getSupabase();
-  supabase
-    ?.channel('cosmetics')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'cosmetics' }, (p) => {
-      const row = p.new as (Cosmetic & { user_id: string }) | undefined;
-      if (!row?.user_id) return;
-      cache.set(row.user_id, { value: { name_color: row.name_color, name_effect: row.name_effect, title: row.title, skins: row.skins ?? {} }, at: Date.now() });
-      paintNames();
-      listeners.forEach((cb) => cb());
-    })
-    .subscribe();
 }
 
 /** Après un achat ou un changement d'équipement : on relit son apparence. */

@@ -1,9 +1,11 @@
 import { pushKeys, isTyping } from '../core/input';
-import { ensureAccount, linkEmail, onAccount, refreshAccount, sendLoginLink, signOut, type Account } from '../net/auth';
+import { deleteAccount, ensureAccount, linkEmail, onAccount, refreshAccount, sendLoginLink, signOut, type Account } from '../net/auth';
+import { getSettings } from '../core/settings';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { h, hints } from './dom';
 import { page } from './layout';
+import './account.css';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -41,6 +43,30 @@ export function accountView(root: HTMLElement, [flag]: string[]): () => void {
     const b = h('button', { class: 'field', type: 'button' }, label);
     b.addEventListener('click', action);
     return b;
+  };
+
+  // Suppression du compte : il faut retaper son pseudo.
+  const dangerZone = (): HTMLElement[] => {
+    const input = h('input', { class: 'field', placeholder: getSettings().name, 'aria-label': 'Ton pseudo, pour confirmer', autocomplete: 'off' });
+    const btn = h('button', { class: 'field danger', type: 'submit' }, 'Supprimer définitivement mon compte');
+    const f = h(
+      'form',
+      { class: 'stack' },
+      h('label', { class: 'small muted' }, `Tout sera effacé : scores, points, appart, meubles, amis. C’est irréversible. Tape ton pseudo (${getSettings().name}) pour confirmer.`),
+      input,
+      btn,
+    );
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      btn.disabled = true;
+      const err = await deleteAccount(input.value.trim());
+      if (err) {
+        notice = err;
+        return render();
+      }
+      navigate('/');
+    });
+    return [h('h2', {}, 'Supprimer mon compte'), f];
   };
 
   const render = () => {
@@ -83,6 +109,7 @@ export function accountView(root: HTMLElement, [flag]: string[]): () => void {
         form('Email du compte', 'prenom.nom@exemple.fr', 'Recevoir un lien de connexion', sendLoginLink, 'Si un compte existe pour {email}, un lien de connexion vient d’être envoyé.'),
       );
     }
+    if (account) parts.push(...dangerZone());
     if (notice) parts.push(h('p', { class: 'notice' }, notice));
     parts.push(button('Retour aux réglages', () => navigate('/settings')));
     card.replaceChildren(...parts.filter((x): x is HTMLElement => x !== null));

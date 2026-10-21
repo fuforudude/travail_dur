@@ -19,16 +19,16 @@ Les tarifs et quotas cités sont des ordres de grandeur, à revérifier sur les 
 
 - [ ] **Photos listables par tous.** La politique `photos : lecture` (`0009_appart_admin.sql`) permet de lister tout le bucket `artworks`. On contourne ainsi la caisse souvenirs et le déblocage des photos.
   - Correctif : rendre le bucket privé, et ajouter une fonction qui renvoie des liens signés (temporaires) uniquement pour les photos possédées.
-- [ ] **Discussions de tous les salons lisibles.** La politique `messages lisibles` est en `using (true)` (`0005_chat.sql`). N'importe quel connecté lit toutes les discussions, et le code du salon ne protège rien.
+- [x] **Discussions de tous les salons lisibles.** *Fait (`0037_securite.sql`) : seuls les membres d'un salon lisent sa discussion ; on le rejoint en l'ouvrant (`room_join`, 20 salons par heure au plus).* La politique `messages lisibles` est en `using (true)` (`0005_chat.sql`). N'importe quel connecté lit toutes les discussions, et le code du salon ne protège rien.
   - Correctif : lire via une fonction `room_messages(code)`, ou passer la discussion en Realtime Broadcast, sans stockage.
-- [ ] **Double authentification (TOTP) pour les admins.** Aujourd'hui, le compte admin n'est protégé que par un lien par email.
+- [x] **Double authentification (TOTP) pour les admins.** *Fait (`0037_securite.sql`, `src/net/mfa.ts`) : `admin_check()` exige `aal2` ; la page Administration fait scanner un QR code la première fois, puis demande le code.* Aujourd'hui, le compte admin n'est protégé que par un lien par email.
   - Correctif : exiger `aal2` dans `admin_check()`.
 - [ ] **Sauvegardes de la base.** À ma connaissance, l'offre gratuite n'en a pas.
   - Correctif : un `pg_dump` chiffré et automatique vers un stockage privé, jamais dans le dépôt, qui est public.
 - [ ] **Migrations suivies et automatiques**, au lieu du copier-coller dans l'éditeur SQL.
   - Correctif : `supabase db push` dans GitHub Actions.
-- [ ] **Tests SQL en CI**, avec PGlite comme pour les migrations de l'appart. Ils vérifient en particulier qu'aucune fonction interne n'est exécutable par `anon` ou `authenticated`.
-- [ ] **Suppression de compte par le joueur lui-même.** C'est une obligation RGPD.
+- [x] **Tests SQL en CI** *Fait : `npm run test:sql` (`scripts/sql-test.mjs`, workflow `Tests`) rejoue les migrations dans PGlite, compare les fonctions appelables par les joueurs à `supabase/tests/public-functions.txt` et teste la discussion, la suppression de compte, la double authentification. Il a trouvé l'ancien tower defense SQL (`td_start`, `td_wave`) encore appelable : fermé dans `0037`.*, avec PGlite comme pour les migrations de l'appart. Ils vérifient en particulier qu'aucune fonction interne n'est exécutable par `anon` ou `authenticated`.
+- [x] **Suppression de compte par le joueur lui-même.** *Fait : page Compte, confirmation par le pseudo (`account_delete`, `0037_securite.sql`).* C'est une obligation RGPD.
 
 ### P1 : hébergement et performance
 
@@ -37,10 +37,10 @@ Les tarifs et quotas cités sont des ordres de grandeur, à revérifier sur les 
 - [ ] **Passer le dépôt en privé.** Il expose aujourd'hui l'anti-triche et la touche panique.
 - [ ] **Un domaine à soi** (environ 10 €/an), avec SPF, DKIM et DMARC dans Brevo pour que les emails ne finissent plus en spam. Il est aussi demandé par les régies pub.
   - Attention : un domaine classé « jeux » est bloqué plus vite par les filtres des établissements. On peut garder `github.io` en miroir.
-- [ ] **Temps réel : supprimer l'écoute globale de la table `cosmetics`** (`src/net/cosmetics.ts`). Son coût grandit avec le carré du nombre de joueurs.
+- [x] **Temps réel : supprimer l'écoute globale de la table `cosmetics`** *Fait : relue à la demande (cache d'une minute), retirée de la diffusion temps réel (`0037`).* (`src/net/cosmetics.ts`). Son coût grandit avec le carré du nombre de joueurs.
   - Correctif : passer par Broadcast depuis la base (`realtime.broadcast_changes`), ou relire à la demande.
   - Limite à garder en tête : environ 200 connexions Realtime simultanées en gratuit, soit environ 200 onglets ouverts.
-- [ ] **Récolte automatique de l'appart toutes les 5 minutes** au lieu de chaque minute (`EVERY` dans `src/net/idle.ts`). Le compteur défile déjà en local, donc ça ne se verra pas.
+- [x] **Récolte automatique de l'appart toutes les 5 minutes** *Fait.* au lieu de chaque minute (`EVERY` dans `src/net/idle.ts`). Le compteur défile déjà en local, donc ça ne se verra pas.
 - [ ] **Politiques RLS en `(select auth.uid())`** au lieu de `auth.uid()`, qui est recalculé à chaque ligne.
   - Lancer aussi *Security Advisor* et *Performance Advisor* dans le tableau de bord Supabase.
 - [ ] **Photos compressées avant l'envoi.** Les réduire en WebP (environ 200 ko max) dans le navigateur, côté admin, pour préserver le quota de bande passante.

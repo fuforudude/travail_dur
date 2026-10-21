@@ -1,6 +1,6 @@
 // Tower defense : dessin des tours et des ennemis (avec ou sans skin), partagé par le jeu et les caisses.
 
-import { ENEMY_FINISHES, heroOf, skinOf, TOWER_FINISHES, type Finish } from './catalog';
+import { heroOf, skinOf, type Finish } from './catalog';
 import { ENEMIES, TOWERS } from './engine/data';
 
 export interface Palette {
@@ -411,4 +411,3 @@ export function previewItem(item: string, px = 64, finishOverride?: Finish | nul
   return canvas;
 }
 
-export const finishById = (target: 'tower' | 'enemy', id: string) => (target === 'tower' ? TOWER_FINISHES : ENEMY_FINISHES).find((f) => f.id === id) ?? null;

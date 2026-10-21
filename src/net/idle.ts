@@ -1,10 +1,10 @@
-// Revenus de l'appart en idle : récoltés chaque minute, quelle que soit la page ouverte
+// Revenus de l'appart en idle : récoltés toutes les 5 minutes, quelle que soit la page ouverte
 // (public.apartment_collect regroupe les récoltes d'une heure en une seule ligne d'historique).
 // Hors du site, ils s'accumulent côté serveur (24 h au plus) et tombent au retour.
 
 import { refreshWallet } from './points';
 
-const EVERY = 60_000;
+const EVERY = 5 * 60_000; // le compteur de l'appart défile en local : versé toutes les 5 minutes suffit (AUDIT.md)
 let who = '';
 let timer: number | undefined;
 let tick: () => Promise<void> = async () => {};

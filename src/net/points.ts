@@ -109,9 +109,8 @@ export async function startPoints(me: string): Promise<void> {
   watched = me;
   try {
     setWallet(await rpc<Wallet>('points_wallet'));
-  } catch (e) {
-    console.warn((e as Error).message);
-    return;
+  } catch {
+    return; // points indisponibles (serveur injoignable, migration absente) : le solde reste masqué
   }
   const supabase = await getSupabase();
   if (!supabase || watched !== me) return;

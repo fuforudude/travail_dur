@@ -15,6 +15,7 @@ import {
 } from '../net/admin';
 import { artworks, BASES, FINISHES, itemName } from '../net/apartment';
 import { nameEl } from '../net/cosmetics';
+import { enrollTotp, mfaState, verifyTotp } from '../net/mfa';
 import { formatPoints } from '../net/points';
 import { ITEMS } from '../net/shop';
 import { navigate } from '../router';
@@ -227,12 +228,67 @@ export function adminView(root: HTMLElement): () => void {
     }
   };
 
+  // Double authentification : les actions d'admin l'exigent (admin_check, 0037_securite.sql).
+  const secondFactor = async () => {
+    let st;
+    try {
+      st = await mfaState();
+    } catch (e) {
+      wrap.replaceChildren(h('div', { class: 'card narrow' }, h('h1', {}, 'Administration'), h('p', { class: 'notice' }, (e as Error).message)));
+      return;
+    }
+    if (disposed) return;
+    if (st.verified) return showAdmin();
+    const code = h('input', { class: 'field', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 7, placeholder: '123 456', 'aria-label': 'Code à 6 chiffres' });
+    const btn = h('button', { class: 'field', type: 'submit' }, 'Valider');
+    const status = h('p', { class: 'status' });
+    let factorId = st.factorId;
+    const form = h('form', { class: 'stack' }, code, btn, status);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!factorId) return;
+      btn.disabled = true;
+      try {
+        await verifyTotp(factorId, code.value);
+        if (!disposed) showAdmin();
+      } catch (err) {
+        status.textContent = (err as Error).message;
+        btn.disabled = false;
+        code.select();
+      }
+    });
+    const card = h('div', { class: 'card narrow' }, h('h1', {}, 'Double authentification'));
+    if (factorId) {
+      card.append(h('p', { class: 'muted' }, 'Entre le code à 6 chiffres affiché par ton appli d’authentification.'), form);
+    } else {
+      card.append(h('p', { class: 'muted' }, 'Les actions d’admin demandent maintenant un code en plus de l’email. Scanne ce QR code avec une appli d’authentification (Google Authenticator, Microsoft Authenticator, 2FAS…), puis entre le code affiché.'));
+      try {
+        const t = await enrollTotp();
+        factorId = t.factorId;
+        card.append(
+          h('img', { class: 'admin-qr', src: t.qr, alt: 'QR code à scanner', width: 200, height: 200 }),
+          h('p', { class: 'small muted' }, 'Ou recopie la clé : ', h('code', {}, t.secret)),
+          form,
+        );
+      } catch (err) {
+        card.append(h('p', { class: 'notice' }, (err as Error).message));
+      }
+    }
+    if (disposed) return;
+    wrap.replaceChildren(card);
+    code.focus();
+  };
+
   void isAdmin().then((ok) => {
     if (disposed) return;
     if (!ok) {
       wrap.replaceChildren(h('div', { class: 'card narrow' }, h('h1', {}, 'Accès refusé'), h('p', { class: 'muted' }, 'Cette page est réservée aux admins.')));
       return;
     }
+    void secondFactor();
+  });
+
+  const showAdmin = () => {
     wrap.replaceChildren(
       h('h1', {}, 'Administration'),
       notice,
@@ -244,7 +300,7 @@ export function adminView(root: HTMLElement): () => void {
     void loadPlayers();
     void loadGallery();
     void loadLog();
-  });
+  };
 
   const offKeys = pushKeys((e) => {
     if (e.key === 'Backspace' && !isTyping(e)) {

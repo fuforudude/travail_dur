@@ -1,0 +1,134 @@
+// Tests SQL : rejoue toutes les migrations dans une base Postgres en mémoire (PGlite, sans Docker),
+// puis vérifie les droits et quelques règles de sécurité. Lancé par `npm run test:sql` et en CI.
+//
+// La liste des fonctions appelables par les joueurs (anon, authenticated) est figée dans
+// supabase/tests/public-functions.txt : une fonction de plus fait échouer le test. Après avoir
+// ajouté volontairement une fonction publique : `npm run test:sql -- --update`, puis relire le diff.
+
+import { PGlite } from '@electric-sql/pglite';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const root = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const migrations = join(root, 'supabase', 'migrations');
+const allowFile = join(root, 'supabase', 'tests', 'public-functions.txt');
+const update = process.argv.includes('--update');
+
+const db = new PGlite();
+let failures = 0;
+const fail = (msg) => {
+  failures++;
+  console.error(`ÉCHEC : ${msg}`);
+};
+const ok = (msg) => console.log(`ok : ${msg}`);
+
+// --- Migrations ------------------------------------------------------------------------------
+await db.exec(readFileSync(join(root, 'supabase', 'tests', 'bootstrap.sql'), 'utf8'));
+for (const file of readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort()) {
+  try {
+    await db.exec(readFileSync(join(migrations, file), 'utf8'));
+  } catch (e) {
+    fail(`${file} : ${e.message}`);
+    process.exit(1); // la suite dépend de cette migration
+  }
+}
+ok('toutes les migrations passent, dans l’ordre');
+
+// --- Fonctions appelables par les joueurs ----------------------------------------------------
+const { rows } = await db.query(`
+  select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' as sig,
+         has_function_privilege('anon', p.oid, 'execute') as anon,
+         has_function_privilege('authenticated', p.oid, 'execute') as auth
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.prokind = 'f' and p.prorettype <> 'trigger'::regtype
+   order by 1`);
+const current = rows.filter((r) => r.anon || r.auth).map((r) => `${r.anon ? 'anon+auth' : 'auth     '} ${r.sig}`);
+if (update) {
+  writeFileSync(allowFile, current.join('\n') + '\n');
+  ok(`liste des fonctions publiques mise à jour (${current.length})`);
+} else {
+  const allowed = new Set(readFileSync(allowFile, 'utf8').split('\n').filter(Boolean));
+  const extra = current.filter((l) => !allowed.has(l));
+  const gone = [...allowed].filter((l) => !current.includes(l));
+  for (const l of extra) fail(`fonction appelable par les joueurs, absente de la liste validée : ${l}`);
+  for (const l of gone) fail(`fonction de la liste validée qui n’est plus appelable : ${l}`);
+  if (!extra.length && !gone.length) ok(`${current.length} fonctions appelables par les joueurs, toutes validées`);
+}
+
+// --- Comportements ---------------------------------------------------------------------------
+const as = async (uid, sql, params = []) => {
+  await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${uid}', false);`);
+  try {
+    return await db.query(sql, params);
+  } finally {
+    await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false);`);
+  }
+};
+const throws = async (fn) => {
+  try {
+    await fn();
+    return null;
+  } catch (e) {
+    return e.message;
+  }
+};
+const newUser = async () => (await db.query(`insert into auth.users (is_anonymous) values (true) returning id`)).rows[0].id;
+const a = await newUser();
+const b = await newUser();
+
+// Fonction interne : refusée aux joueurs.
+const denied = await throws(() => as(a, `select public.points_add($1, 1000000, 'triche')`, [a]));
+if (denied?.includes('permission denied')) ok('points_add est refusée aux joueurs');
+else fail(`points_add appelable par un joueur (${denied ?? 'aucune erreur'})`);
+
+// Gains ×3 (0034) : 10 points de jeu en rapportent 30.
+await db.query(`select public.points_add($1, 10, 'test')`, [a]);
+const bal = (await db.query(`select balance from public.wallets where user_id = $1`, [a])).rows[0]?.balance;
+if (Number(bal) === 100 + 30) ok('gains de jeu × 3 (100 de bienvenue + 3 × 10)');
+else fail(`solde inattendu après points_add : ${bal}`);
+
+// Discussion (0037) : seuls les membres d'un salon lisent ses messages.
+await as(a, `select public.room_join('ABCD')`);
+await as(a, `select public.room_say('ABCD', 'salut')`);
+const seenByA = (await as(a, `select count(*)::int as n from public.room_messages where room = 'ABCD'`)).rows[0].n;
+const seenByB = (await as(b, `select count(*)::int as n from public.room_messages`)).rows[0].n;
+if (seenByA === 1 && seenByB === 0) ok('un joueur ne lit pas la discussion d’un salon qu’il n’a pas rejoint');
+else fail(`discussion : A voit ${seenByA} message(s), B (pas membre) en voit ${seenByB}`);
+await as(b, `select public.room_join('ABCD')`);
+if ((await as(b, `select count(*)::int as n from public.room_messages where room = 'ABCD'`)).rows[0].n === 1) ok('après room_join, le membre lit la discussion');
+else fail('après room_join, le membre ne lit toujours pas la discussion');
+
+// Suppression de compte (0037) : confirmation par le pseudo, puis tout disparaît.
+const name = (await db.query(`select username from public.profiles where id = $1`, [b])).rows[0].username;
+const wrong = await throws(() => as(b, `select public.account_delete('pas-mon-pseudo')`));
+if (wrong) ok('account_delete refuse une confirmation incorrecte');
+else fail('account_delete a accepté un mauvais pseudo');
+await as(b, `select public.account_delete($1)`, [name]);
+const left = (await db.query(`select (select count(*) from auth.users where id = $1)::int + (select count(*) from public.profiles where id = $1)::int as n`, [b])).rows[0].n;
+if (left === 0) ok('account_delete efface le compte et le profil');
+else fail('account_delete a laissé des traces du compte');
+
+// Double authentification des admins (0037) : sans code (aal1), les actions d'admin sont refusées.
+const admin = await newUser();
+await db.query(`insert into public.admins (user_id) values ($1)`, [admin]);
+const asAdmin = async (aal, sql, params = []) => {
+  await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${admin}', false); select set_config('request.jwt.claims', '{"aal":"${aal}"}', false);`);
+  try {
+    return await db.query(sql, params);
+  } finally {
+    await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false); select set_config('request.jwt.claims', '', false);`);
+  }
+};
+const noCode = await throws(() => asAdmin('aal1', `select public.admin_points($1, 5, 'test')`, [a]));
+if (noCode?.includes('double authentification')) ok('un admin sans double authentification ne peut rien faire');
+else fail(`admin sans double authentification : ${noCode ?? 'action acceptée'}`);
+const withCode = await throws(() => asAdmin('aal2', `select public.admin_points($1, 5, 'test')`, [a]));
+if (!withCode) ok('un admin avec double authentification peut agir');
+else fail(`admin avec double authentification refusé : ${withCode}`);
+
+await db.close();
+if (failures) {
+  console.error(`\n${failures} échec(s).`);
+  process.exit(1);
+}
+console.log('\nTous les tests SQL passent.');

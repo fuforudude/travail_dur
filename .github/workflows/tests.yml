@@ -1,0 +1,25 @@
+name: Tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Migrations rejouées dans PGlite, droits des fonctions, règles de sécurité (scripts/sql-test.mjs).
+      - run: npm run test:sql
+      # Le moteur du tower defense copié dans la fonction serveur doit être à jour, et le code doit compiler.
+      - run: npm run td:sync && git diff --exit-code supabase/functions/td/engine
+      - run: npx tsc

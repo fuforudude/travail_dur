@@ -73,9 +73,8 @@ export function ensureAccount(): Promise<Account | null> {
     await syncName(a);
     initialized = true;
     return a;
-  })().catch((err) => {
-    console.warn('Connexion impossible :', errorMessage(err));
-    session = null; // nouvel essai au prochain appel
+  })().catch(() => {
+    session = null; // connexion impossible : nouvel essai au prochain appel
     return null;
   });
   return session;
@@ -169,6 +168,23 @@ export async function signOut(): Promise<void> {
   session = null;
   updateSettings({ nameChosen: false });
   await ensureAccount();
+}
+
+/**
+ * Supprime définitivement son compte (public.account_delete, 0037_securite.sql) : profil, scores,
+ * points, appart, amis… `confirm` doit être le pseudo. Un nouveau compte invité prend le relais.
+ * Retourne le message d'erreur, ou null.
+ */
+export async function deleteAccount(confirm: string): Promise<string | null> {
+  const supabase = await getSupabase();
+  if (!supabase) return 'Serveur non configuré';
+  const { error } = await supabase.rpc('account_delete', { confirm });
+  if (error) return errorMessage(error);
+  await supabase.auth.signOut({ scope: 'local' }); // le compte n'existe plus côté serveur
+  session = null;
+  updateSettings({ nameChosen: false });
+  await ensureAccount();
+  return null;
 }
 
 /** Le lien reçu par email ramène ici avec les jetons dans le hash : on laisse Supabase les lire. */

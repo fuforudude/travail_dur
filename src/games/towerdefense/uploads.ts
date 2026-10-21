@@ -61,7 +61,6 @@ export async function flush(): Promise<void> {
           // Le serveur ne veut plus de cette partie : on l'oublie, on passe aux suivantes.
           queue = queue.filter((o) => o.session !== u.session);
           store();
-          console.warn('Tower defense : vague refusée par le serveur', message);
           emit({ kind: 'refused', session: u.session, message });
           continue;
         }

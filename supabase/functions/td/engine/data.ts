@@ -322,8 +322,6 @@ export const TOWERS: TowerDef[] = [
   }),
 ];
 
-export const towerById = (id: string) => TOWERS.find((t) => t.id === id);
-
 /** Niveaux d'une tour : 0 base, 1 et 2 améliorations communes, 3 et 4 dans la voie choisie. */
 export const MAX_LEVEL = 4;
 
@@ -399,7 +397,6 @@ export const ENEMIES: EnemyDef[] = [
   E({ id: 'devourer', name: 'Bagou', tier: 'boss', firstWave: 50, hp: 15000, speed: 0.35, armor: 12, abilities: ['devourer'], bounty: 3000, threat: 0, livesCost: -1, text: 'Fan de Linux : « kill -9 » sur votre meilleure tour, creuse des tunnels pour son escorte, bouclier, puis fonce', counters: 'Singularité, Railgun, Sniper U2' }),
 ];
 
-export const enemyIndex = (id: string) => ENEMIES.findIndex((e) => e.id === id);
 /** Mini-scindeur : n'apparaît qu'à la mort d'un Scindeur. */
 export const MINI = { hp: 50, speed: 1.4, bounty: 4 };
 

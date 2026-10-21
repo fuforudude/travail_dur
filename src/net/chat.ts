@@ -32,6 +32,9 @@ export async function say(room: string, message: string): Promise<void> {
 export async function watchChat(room: string, cb: (messages: ChatMessage[]) => void): Promise<() => void> {
   const supabase = await getSupabase();
   if (!supabase) return () => {};
+  // Seuls les membres d'un salon lisent sa discussion (0037_securite.sql) : on le rejoint d'abord.
+  const joined = await supabase.rpc('room_join', { room_code: room });
+  if (joined.error && !MISSING.includes(joined.error.code ?? '')) throw chatError(joined.error);
   // S'abonner d'abord, puis lire : aucun message ne peut se perdre entre les deux.
   const channel = supabase
     .channel(`chat:${room}`)
