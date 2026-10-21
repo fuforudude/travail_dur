@@ -355,7 +355,6 @@ function mount(ctx: GameContext): () => void {
           {
             class: `td-node${stars ? ' done' : ''}${L === next && !stars ? ' next' : ''}${levelBoss(L) ? ' boss' : ''}`,
             type: 'button',
-            style: `left:${points[i][0]}%;top:${points[i][1]}%`,
             'data-id': `level:${L}`,
             title: levelStory(L).name,
           },
@@ -363,16 +362,20 @@ function mount(ctx: GameContext): () => void {
           stars ? h('span', { class: 'td-node-stars' }, '★'.repeat(stars) + '☆'.repeat(3 - stars)) : '',
           crowns?.size ? h('span', { class: 'td-node-crowns' }, `${crowns.has('heroic') ? '👑' : ''}${crowns.has('iron') ? '⛓' : ''}`) : '',
         );
+        // via le CSSOM : la CSP du site (style-src 'self') bloque les attributs style
+        b.style.left = `${points[i][0]}%`;
+        b.style.top = `${points[i][1]}%`;
         b.addEventListener('click', () => openLevel(L));
         return b;
       });
       const map = h(
         'div',
-        { class: 'td-world-map', style: `--wtone: var(--tone${p.tone})` },
+        { class: 'td-world-map' },
         svg,
         h('div', { class: 'td-world-title' }, h('b', {}, p.title), h('span', {}, p.chapter)),
         ...nodes,
       );
+      map.style.setProperty('--wtone', `var(--tone${p.tone})`);
       const prevBtn = h('button', { class: 'td-arrow', type: 'button', disabled: page === 0, 'aria-label': 'Carte précédente' }, '‹');
       const nextBtn = h('button', { class: 'td-arrow', type: 'button', disabled: page >= list.length - 1, 'aria-label': 'Carte suivante' }, '›');
       prevBtn.addEventListener('click', () => turnPage(-1));

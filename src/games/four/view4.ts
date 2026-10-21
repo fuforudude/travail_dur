@@ -280,6 +280,13 @@ export function createView4(root: HTMLElement, handlers: View4Handlers) {
     return b;
   };
 
+  /** Pastille de couleur (via le CSSOM : la CSP du site bloque les attributs style). */
+  const dot = (color: string) => {
+    const d = h('span', { class: 'f4-dot' });
+    d.style.background = color;
+    return d;
+  };
+
   const renderSide = () => {
     if (!state) return;
     const s = state;
@@ -290,7 +297,7 @@ export function createView4(root: HTMLElement, handlers: View4Handlers) {
         return h(
           'li',
           { class: `f4-player${seat === s.turn ? ' on' : ''}${out ? ' out' : ''}` },
-          h('span', { class: 'f4-dot', style: `background:${COLORS[seat]}` }),
+          dot(COLORS[seat]),
           h('span', { class: 'f4-name' }, p.name, seat === s.me ? ' (toi)' : ''),
           h('span', { class: 'muted small' }, out ? 'éliminé' : s.game === 'quoridor4' ? `${s.board[4 + seat]} murs` : ''),
         );

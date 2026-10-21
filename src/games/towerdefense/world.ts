@@ -47,7 +47,7 @@ export function nodePosition(i: number, n: number, page: number): [number, numbe
   const left = row % 2 === 0; // une rangée sur deux se lit de droite à gauche
   const t = perRow > 1 ? col / (perRow - 1) : 0.5;
   const x = 10 + (left ? t : 1 - t) * 80;
-  const baseY = rows === 1 ? 55 : 28 + (row * 58) / (rows - 1); // le haut est laissé au titre de l'acte
+  const baseY = rows === 1 ? 55 : 28 + (row * 54) / (rows - 1); // le haut est laissé au titre de l'acte
   const wave = Math.sin((col + page) * 1.7) * (rows === 1 ? 18 : 6);
   return [x, baseY + wave];
 }
