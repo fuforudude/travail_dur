@@ -3,11 +3,11 @@
 // étoiles, la boutique à étoiles, les héros, la collection et les caisses). Le serveur fait foi pour tout.
 
 import { load, save } from '../../core/storage';
-import { ensureAccount } from '../../net/auth';
+import { ensureAccount, getAccount } from '../../net/auth';
 import { errorMessage, getSupabase, multiConfigured } from '../../net/supabase';
 import { skinOf, type Finish, type Rarity } from './catalog';
 import { inChapter2, LEVEL_COUNT, PERK_MAX, perkCost, type Perks } from './engine/data';
-import type { Mode, RunState } from './engine/sim';
+import type { RunOptions } from './engine/sim';
 
 export interface Meta {
   owned: Set<string>; // skins
@@ -128,6 +128,8 @@ export function equippedFinish(meta: Meta, kind: 'ts' | 'es', subject: string): 
 }
 
 // --- Parties ------------------------------------------------------------------------------------
+// Le site ne dépend jamais d'une réponse du serveur pour jouer : les parties démarrent sur un ticket
+// réservé d'avance et tout ce qui doit être enregistré passe par la file de uploads.ts.
 
 /**
  * Version du protocole site ↔ fonction td. Le serveur refuse de démarrer une partie avec une version
@@ -135,18 +137,16 @@ export function equippedFinish(meta: Meta, kind: 'ts' | 'es', subject: string): 
  */
 export const TD_PROTOCOL = 2;
 
-/** Erreur du serveur du tower defense ; `status` 400 = refus (définitif), sinon réseau ou panne (on réessaie). */
+/** Erreur du serveur du tower defense ; `status` 400 = refus définitif, sinon réseau, panne ou attente. */
 export class TdError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
   }
 }
-/** Refus définitif : inutile de renvoyer. « Trop vite » se règle en attendant un peu. */
-export const isFinalRefusal = (e: unknown) => e instanceof TdError && e.status === 400 && e.message !== 'vague jouée trop vite';
 
-async function invoke<T>(body: Record<string, unknown>): Promise<T> {
+async function invoke<T>(body: Record<string, unknown>, timeoutMs = 20_000): Promise<T> {
   const { supabase } = await client();
-  const { data, error } = await supabase.functions.invoke('td', { body });
+  const { data, error } = await supabase.functions.invoke('td', { body, timeout: timeoutMs });
   if (error) {
     const ctx = (error as { context?: Response }).context;
     let msg = '';
@@ -157,16 +157,11 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export async function startRun(mode: Mode, level: number, hero: string | null): Promise<{ id: string; state: RunState }> {
-  const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('serveur trop lent')), 8000));
-  return Promise.race([invoke<{ id: string; state: RunState }>({ op: 'start', mode, level, hero, v: TD_PROTOCOL }), timeout]);
-}
-
 /** La fonction serveur `td` répond-elle ? (non déployée : 404, rien n'est enregistré). */
 export async function tdServerUp(): Promise<boolean> {
   if (!multiConfigured) return true; // hors ligne assumé : pas d'alerte
   try {
-    await invoke<unknown>({ op: 'ping' });
+    await invoke<unknown>({ op: 'ping' }, 8000);
     return true;
   } catch (e) {
     const msg = (e as Error).message;
@@ -184,8 +179,21 @@ export interface WaveResult {
   stars?: number;
   already?: boolean; // vague déjà reçue (renvoi après un rechargement)
 }
-/** Envoie une vague ; `step` = vagues déjà envoyées avant elle (le serveur ignore un doublon). */
-export const sendWave = (session: string, actions: string, step: number) => invoke<WaveResult>({ op: 'wave', session, actions, step, v: TD_PROTOCOL });
+
+/** Réserve un ticket (partie réservée, graine tirée par le serveur) que le site n'a pas déjà. */
+export const reserveTicket = (have: string[], timeoutMs?: number) => invoke<{ id: string; seed: number }>({ op: 'reserve', have }, timeoutMs);
+
+export type SyncItem =
+  | { kind: 'start'; session: string; options: RunOptions }
+  | { kind: 'wave'; session: string; step: number; actions: string };
+export type SyncResult = { ok: true; result?: WaveResult } | { ok: false; error: string; final: boolean };
+
+/** Envoie un lot (démarrages et vagues, dans l'ordre) ; le serveur répond pour chacun, dans l'ordre. */
+export const syncItems = (items: SyncItem[]) => invoke<{ results: SyncResult[] }>({ op: 'sync', items, v: TD_PROTOCOL });
+
+/** Compte connecté, s'il est déjà connu (sans appel réseau). */
+export const knownUid = () => getAccount()?.id ?? null;
+export const currentUid = async () => (await client()).uid;
 
 // --- Caisses ------------------------------------------------------------------------------------
 

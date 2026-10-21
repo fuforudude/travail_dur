@@ -18,9 +18,9 @@ import {
   type Enemy, type Fx, type Mode, type Running, type RunState,
 } from './engine/sim';
 import {
-  buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, starBalance, startRun, tdServerUp, type Meta,
+  buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, starBalance, tdServerUp, type Meta,
 } from './net';
-import { enqueue, onUpload, startUploads } from './uploads';
+import { enqueue, keepTicket, onUpload, pendingFor, startUploads, takeTicket, withPending } from './uploads';
 import { drawEnemy, drawTower, enemyLook, enemyRadius, previewItem, readPalette, towerLook, type Palette } from './render';
 import { ACTS, ACTS2, actOf, BONUS_ACT, bossName, levelStory, prologueOf, type Line } from './story';
 import './td.css';
@@ -104,7 +104,8 @@ function mount(ctx: GameContext): () => void {
   let meta: Meta = emptyMeta();
   let leave: () => void = () => {};
   let disposed = false;
-  const metaReady = loadMeta().then((m) => (meta = m));
+  // Progression du serveur + résultats encore en route vers lui (file d'envoi).
+  const metaReady = loadMeta().then((m) => (meta = withPending(m)));
 
   const show = (screen: () => () => void) => {
     leave();
@@ -162,6 +163,7 @@ function mount(ctx: GameContext): () => void {
 
     // Serveur du tower defense joignable ? Sans lui, rien n'est enregistré : on le dit clairement.
     let serverDown = false;
+    void keepTicket(); // la prochaine partie démarre aussitôt, même si le serveur traîne
     void tdServerUp().then((up) => {
       serverDown = !up;
       if (serverDown && !disposed) render();
@@ -243,7 +245,11 @@ function mount(ctx: GameContext): () => void {
       crates.addEventListener('click', () => navigate('/td/caisses'));
 
       wrap.replaceChildren(
-        serverDown
+        serverDown && !navigator.onLine
+          ? h('p', { class: 'notice td-server-down' }, 'Pas de réseau : tes parties sont gardées sur cet appareil et enregistrées dès le retour de la connexion.')
+          : serverDown && pendingFor()
+          ? h('p', { class: 'notice td-server-down' }, 'Le serveur ne répond pas pour l’instant : tes parties sont gardées sur cet appareil et enregistrées dès qu’il répond.')
+          : serverDown
           ? h('p', { class: 'notice td-server-down' }, '⚠ Le serveur du tower defense est injoignable : tes parties ne sont pas enregistrées (niveaux réussis, étoiles, classement). Il faut déployer la fonction serveur « td » sur Supabase.')
           : '',
         h(
@@ -317,7 +323,12 @@ function mount(ctx: GameContext): () => void {
   };
 
 
-  /** Lance une partie : classée si le serveur répond, sinon jouée sur place. */
+  /**
+   * Lance une partie, sans attendre le serveur : elle démarre sur le ticket réservé d'avance, et son
+   * démarrage part dans la file d'envoi (uploads.ts). Sans ticket (toute première partie, serveur
+   * injoignable depuis l'ouverture du jeu), on en demande un, puis la partie est jouée sur place,
+   * non enregistrée.
+   */
   let launching = false;
   const begin = async (mode: Mode, L: number) => {
     if (launching) return;
@@ -329,19 +340,18 @@ function mount(ctx: GameContext): () => void {
     }
   };
   const beginRun = async (mode: Mode, L: number) => {
-    const hero = chosenHero();
-    let saved: Saved;
-    let msg = '';
-    try {
-      if (!multiConfigured) throw new Error('');
-      const r = await startRun(mode, L, hero?.id ?? null);
-      saved = { s: r.state, actions: [], session: r.id };
-    } catch (e) {
-      msg = (e as Error).message;
-      saved = { s: newRun((Math.random() * 2 ** 32) >>> 0, { mode, level: L, cleared: meta.cleared, hero, perks: perksOf(meta) }), actions: [], session: null };
-    }
+    const options = { mode, level: L, cleared: meta.cleared, cleared2: meta.cleared2, hero: chosenHero(), perks: perksOf(meta) };
+    const ticket = takeTicket() ?? (multiConfigured && (await keepTicket(6000)) ? takeTicket() : null);
     if (disposed) return;
-    runNote = msg ? `⚠ Serveur injoignable (${msg}) : cette partie ne sera pas enregistrée.` : '';
+    let saved: Saved;
+    if (ticket) {
+      saved = { s: newRun(ticket.seed, options), actions: [], session: ticket.id };
+      enqueue({ kind: 'start', session: ticket.id, options });
+      runNote = '';
+    } else {
+      saved = { s: newRun((Math.random() * 2 ** 32) >>> 0, options), actions: [], session: null };
+      runNote = multiConfigured ? '⚠ Serveur injoignable : cette partie ne sera pas enregistrée.' : '';
+    }
     save(SAVE_KEY, saved);
     show(() => runScreen(saved));
   };
@@ -863,7 +873,7 @@ function mount(ctx: GameContext): () => void {
         stars > starsBefore ? h('span', { class: 'small' }, `+${stars - starsBefore} ★ pour la boutique à étoiles`) : h('span', { class: 'small muted' }, `Ton record sur ce niveau : ${starText(starsBefore)}`),
         session ? h('span', { class: 'small' }, `+${levelPoints(s.level, first)} points ◆${first ? '' : ' (niveau rejoué)'}`) : '',
         unlocks.length ? h('span', { class: 'small' }, `Débloqué : ${unlocks.join(', ')}.`) : '',
-        multiConfigured && !session ? h('span', { class: 'small td-unsaved' }, '⚠ partie non enregistrée') : '',
+        saveLine(),
         h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('La suite de l’histoire', outro, true)),
         h('span', { class: 'muted small keyboard-only' }, 'Entrée la suite · M carte'),
       ];
@@ -875,6 +885,7 @@ function mount(ctx: GameContext): () => void {
         h('strong', {}, campaign ? `Perdu au niveau ${s.level}, vague ${s.wave + 1}` : `Perdu à la vague ${s.wave + 1}`),
         h('span', {}, `${plural(s.wave, 'vague')} tenue${s.wave > 1 ? 's' : ''} · ${plural(s.kills, 'ennemi')} vaincu${s.kills > 1 ? 's' : ''}${s.bossKills ? ` · ${plural(s.bossKills, 'boss')}` : ''}`),
         session && !campaign ? h('span', { class: 'small' }, `+${GAIN_MULT * s.wave * (s.wave + 1)} points ◆ gagnés`) : '',
+        saveLine(),
         foe ? h('span', { class: 'small muted' }, `Vaincu par : ${foe.tier === 'boss' ? bossName(foe, s.level) : foe.name}. Contre conseillé : ${foe.counters}.`) : '',
         h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('Recommencer', retry, true)),
         h('span', { class: 'muted small keyboard-only' }, 'Entrée recommencer · M carte · C caisses'),
@@ -898,17 +909,24 @@ function mount(ctx: GameContext): () => void {
 
     // --- Vagues
     let onEnd: () => void = () => {};
+    // L'enregistrement se fait tout seul, en arrière-plan : on n'en parle qu'en fin de partie, ou si
+    // le serveur refuse la partie.
     const offUpload = onUpload((e) => {
-      if (gone || e.session !== session) return;
-      if (e.kind === 'sent') {
-        if (note.startsWith('Enregistrement en attente')) note = '';
-      } else if (e.kind === 'refused') {
-        note = `⚠ Le serveur a refusé cette partie (${e.message}) : la suite ne sera pas enregistrée.`;
+      if (gone || e.kind === 'waiting' || e.session !== session) return;
+      if (e.kind === 'refused') {
+        note = `⚠ Le serveur a refusé cette partie (${e.message}) : elle ne sera pas enregistrée.`;
         session = null;
         persist();
-      } else note = `Enregistrement en attente (${e.message}) : nouvel essai dans quelques secondes…`;
-      render();
+        render();
+      } else if (s.over) render();
     });
+    /** Où en est l'enregistrement, en fin de partie. */
+    const saveLine = () => {
+      if (!multiConfigured) return '';
+      if (!session) return h('span', { class: 'small td-unsaved' }, '⚠ partie non enregistrée');
+      if (!pendingFor(session)) return h('span', { class: 'small muted' }, '✓ enregistré');
+      return h('span', { class: 'small muted' }, navigator.onLine ? 'Enregistrement… (tu peux quitter, il se termine tout seul)' : 'Gardé sur cet appareil : enregistré au retour du réseau');
+    };
     const launch = async () => {
       if (running || s.over || showVictory) return;
       note = '';
@@ -928,9 +946,11 @@ function mount(ctx: GameContext): () => void {
       actions = [];
       snapshot = null;
       if (s.won) recordStars(meta, s.level, starsOf(s));
-      // La vague part au serveur tout de suite (file gardée dans le navigateur jusqu'à confirmation).
+      // La vague part au serveur tout de suite (file gardée dans le navigateur jusqu'à confirmation),
+      // avec son résultat attendu : la carte en tient compte en attendant le serveur.
       if (session) {
-        enqueue({ session, step: number - 1, actions: sent });
+        const outcome = { mode: s.mode, level: s.level, wave: s.wave, won: s.won, stars: s.won ? starsOf(s) : 0 };
+        enqueue({ session, step: number - 1, actions: sent, outcome });
       }
       if (!campaign && s.wave >= FINAL_WAVE && !victorySeen && !s.over) {
         victorySeen = true;
