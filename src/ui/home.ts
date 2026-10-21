@@ -1,7 +1,6 @@
 import { pushKeys } from '../core/input';
 import { getSettings, keyLabel, randomName } from '../core/settings';
 import { getBest } from '../core/storage';
-import { isTouch } from '../core/touch';
 import { getAccount, setUsername } from '../net/auth';
 import { games, type GameInfo } from '../games/registry';
 import { isAdmin } from '../net/admin';
@@ -85,7 +84,7 @@ export function homeView(root: HTMLElement): () => void {
       { class: 'tile', type: 'button', 'data-id': id, disabled: opts.disabled },
       h('span', { class: `tile-icon tone${tone}`, 'aria-hidden': 'true' }, icon),
       h('span', { class: 'tile-title' }, title),
-      h('span', { class: 'tile-sub' }, sub),
+      sub ? h('span', { class: 'tile-sub' }, sub) : null,
       opts.record ? h('span', { class: 'tile-record' }, opts.record) : null,
       opts.tags?.length ? h('span', { class: 'tile-tags' }, ...opts.tags.map((t) => h('span', { class: 'tile-tag' }, t))) : null,
     );
@@ -100,7 +99,7 @@ export function homeView(root: HTMLElement): () => void {
     const look = LOOK[g.id] ?? { icon: '▸', tone: 3, tags: [] };
     const rec = RECORD[g.id];
     const best = rec ? getBest(rec[0]) : 0;
-    return card(g.id, g.name, g.description ?? '', look.icon, look.tone, () => navigate(`/game/${g.id}`), { tags: look.tags, record: best > 0 ? rec[1](best) : undefined });
+    return card(g.id, g.name, '', look.icon, look.tone, () => navigate(`/game/${g.id}`), { tags: look.tags, record: best > 0 ? rec[1](best) : undefined });
   };
 
   const solo = games.filter((g) => g.modes.includes('solo') && !g.modes.includes('multi'));
@@ -116,22 +115,21 @@ export function homeView(root: HTMLElement): () => void {
       'div',
       { class: 'home-hello' },
       h('h1', {}, `Salut ${getSettings().name}`),
-      h('p', { class: 'muted' }, isTouch() ? 'Touche un jeu pour y jouer. Le menu ☰ en haut à gauche donne accès aux réglages et au compte ; l’icône de carnet en haut à droite masque l’écran (appui long pour revenir).' : 'Choisis un jeu aux flèches puis Entrée, ou clique. Le menu ☰ en haut à gauche donne accès aux réglages et au compte.'),
     ),
     summary,
     section('Jeux', ...solo.map(gameCard)),
     section(
       'Multijoueur',
       ...duel.map(gameCard),
-      card('room', 'Créer un salon', off ? 'Multijoueur non configuré' : 'Un code à partager', '+', 1, () => navigate(`/room/${generateCode()}`), { disabled: off }),
-      card('join', 'Rejoindre un salon', off ? 'Multijoueur non configuré' : 'Avec le code d’un ami', '→', 1, () => navigate('/join'), { disabled: off }),
+      card('room', 'Créer un salon', off ? 'Multijoueur non configuré' : '', '+', 1, () => navigate(`/room/${generateCode()}`), { disabled: off }),
+      card('join', 'Rejoindre un salon', off ? 'Multijoueur non configuré' : '', '→', 1, () => navigate('/join'), { disabled: off }),
     ),
     section(
       'Points et casino',
-      card('points', 'Mes points', off ? 'Serveur non configuré' : getWallet() ? `◆ ${formatPoints(getWallet()!.balance)}` : 'Chaque partie en rapporte', '◆', 4, () => navigate('/points'), { disabled: off }),
-      card('roulette', 'Roulette', 'Rouge, noir ou vert : mise tes points', '◎', 2, () => navigate('/roulette'), { tags: ['Casino'], disabled: off }),
-      card('shop', 'Boutique', 'Couleurs de pseudo, effets, skins', '✦', 3, () => navigate('/shop'), { disabled: off }),
-      card('slots', 'Machine à sous', 'Trois rouleaux, jusqu’à ×400', '7', 5, () => navigate('/slots'), { tags: ['Casino'], disabled: off }),
+      card('points', 'Mes points', off ? 'Serveur non configuré' : getWallet() ? `◆ ${formatPoints(getWallet()!.balance)}` : '', '◆', 4, () => navigate('/points'), { disabled: off }),
+      card('roulette', 'Roulette', '', '◎', 2, () => navigate('/roulette'), { tags: ['Casino'], disabled: off }),
+      card('shop', 'Boutique', '', '✦', 3, () => navigate('/shop'), { disabled: off }),
+      card('slots', 'Machine à sous', '', '7', 5, () => navigate('/slots'), { tags: ['Casino'], disabled: off }),
     ),
     hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'ouvrir'], ['M', 'menu (réglages, classements, compte)'], [keyLabel(getSettings().panicKey), 'masquer l’écran']),
   );
@@ -142,14 +140,14 @@ export function homeView(root: HTMLElement): () => void {
   wrap.lastElementChild!.before(
     section(
       'Appart',
-      card('appart', 'Mon appart', off ? 'Serveur non configuré' : 'Meubles, cadres, revenus, et ton lien à partager', '⌂', 3, () => navigate('/appart'), { disabled: off }),
-      card('caisses', 'Meubles et caisses', 'Finitions rares et photos à gagner', '▣', 5, () => navigate('/caisses'), { tags: ['Caisses'], disabled: off }),
-      card('amis', 'Amis', off ? 'Serveur non configuré' : 'Ajouter des amis, voir leur appart, les inviter', '♥', 2, () => navigate('/amis'), { disabled: off }),
+      card('appart', 'Mon appart', off ? 'Serveur non configuré' : '', '⌂', 3, () => navigate('/appart'), { disabled: off }),
+      card('caisses', 'Meubles et caisses', '', '▣', 5, () => navigate('/caisses'), { tags: ['Caisses'], disabled: off }),
+      card('amis', 'Amis', off ? 'Serveur non configuré' : '', '♥', 2, () => navigate('/amis'), { disabled: off }),
     ),
   );
   void isAdmin().then((admin) => {
     if (!admin || !wrap.isConnected) return;
-    wrap.lastElementChild!.before(section('Admin', card('admin', 'Administration', 'Joueurs, points, malédictions, photos', '⚑', 2, () => navigate('/admin'))));
+    wrap.lastElementChild!.before(section('Admin', card('admin', 'Administration', '', '⚑', 2, () => navigate('/admin'))));
   });
 
   const start = wrap.querySelector<HTMLElement>(`[data-id="${lastFocus}"]:not(:disabled)`) ?? wrap.querySelector<HTMLElement>('.tile');
@@ -176,7 +174,6 @@ function namePrompt(root: HTMLElement): () => void {
     'form',
     { class: 'card narrow' },
     h('h1', {}, 'Choisis un pseudo'),
-    h('p', { class: 'muted' }, 'Il sera visible des autres joueurs dans les salons.'),
     input,
     hints(['Entrée', 'valider'], ['Tab', 'pseudo au hasard']),
   );

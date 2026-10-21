@@ -80,7 +80,6 @@ export function accountView(root: HTMLElement, [flag]: string[]): () => void {
     } else if (account.verified) {
       parts.push(
         h('p', {}, 'Compte vérifié : ', h('strong', {}, account.email ?? '')),
-        h('p', { class: 'muted small' }, 'Tes scores apparaissent dans les classements. Sur un autre appareil, utilise « Retrouver mon compte » avec cet email.'),
         button('Se déconnecter', async () => {
           await signOut();
           notice = 'Déconnecté. Tu joues maintenant avec un nouveau compte invité.';
@@ -105,7 +104,6 @@ export function accountView(root: HTMLElement, [flag]: string[]): () => void {
         }) : null,
         form('Ajouter mon email', 'prenom.nom@exemple.fr', 'Envoyer l’email de vérification', linkEmail, 'Email envoyé à {email}. Clique sur le lien pour confirmer.'),
         h('h2', {}, 'Retrouver mon compte'),
-        h('p', { class: 'muted small' }, 'Tu as déjà vérifié un email ailleurs ? Reçois un lien de connexion. Le compte invité de ce navigateur sera abandonné.'),
         form('Email du compte', 'prenom.nom@exemple.fr', 'Recevoir un lien de connexion', sendLoginLink, 'Si un compte existe pour {email}, un lien de connexion vient d’être envoyé.'),
       );
     }

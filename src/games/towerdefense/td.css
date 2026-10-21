@@ -99,3 +99,24 @@
 .td-chip { font: inherit; font-size: 0.85rem; cursor: pointer; }
 .touch .td-chip { padding: 0.45rem 0.8rem; font-size: 0.95rem; }
 .touch .td-shop { gap: 0.45rem; }
+
+/* Fiche de la tour sélectionnée */
+.td-card {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 15%, transparent);
+  animation: td-card-in 0.15s ease-out;
+}
+@keyframes td-card-in { from { opacity: 0; transform: translateY(-4px); } }
+.td-card-head { display: flex; align-items: center; gap: 0.5rem; }
+.td-card-head b { font-size: 1.05rem; }
+.td-card-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.4rem 1rem; margin: 0.55rem 0; }
+.td-stat { display: flex; flex-direction: column; }
+.td-stat span { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.td-stat b { font-weight: 600; }
+.td-card-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.td-card-next { margin: 0.35rem 0 0; }
+.td-card .td-paths { margin-top: 0.4rem; }

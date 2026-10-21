@@ -1,5 +1,6 @@
 import './styles.css';
 import './mobile.css';
+import './polish.css';
 import { initPanic } from './core/panic';
 import { initPrank } from './core/prank';
 import { applyTheme } from './core/settings';

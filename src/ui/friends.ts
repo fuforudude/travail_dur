@@ -115,7 +115,7 @@ export function friendsView(root: HTMLElement, [param]: string[]): () => void {
     renderTabs();
     statusEl.textContent = status;
     if (tab === 'add') {
-      body.replaceChildren(h('p', { class: 'muted small' }, 'Cherche un joueur par son pseudo et envoie-lui une demande d’ami.'), search, results);
+      body.replaceChildren(search, results);
       search.focus();
       void renderSearch();
       return;
@@ -174,7 +174,7 @@ export function friendsView(root: HTMLElement, [param]: string[]): () => void {
               return row(f.id, f.username, button('Voir son appart', () => navigate(`/appart/${f.id}`)), remove);
             }),
           )
-        : h('p', { class: 'muted' }, 'Pas encore d’amis. Va dans « Ajouter un ami » pour en chercher par pseudo.'),
+        : h('p', { class: 'muted' }, 'Pas encore d’amis.'),
     );
   };
 

@@ -11,16 +11,16 @@ import { spatialNav } from '../../ui/menu';
 import type { Game, GameContext } from '../types';
 import {
   BONUS, bonusLevel, ENEMIES, FINAL_WAVE, HEROES, LEVEL_COUNT, levelBoss, levelWaves, mapOf, MAX_LEVEL, MAX_STARS, maxTier,
-  PERK_MAX, perkCost, PERKS, TIER_UNLOCK, TOWER_UNLOCK, TOWERS, towersFor, towerStats, type TowerStats,
+  PERK_MAX, perkCost, PERKS, TIER_UNLOCK, TOWERS, towersFor, towerStats, type TowerStats,
 } from './engine/data';
 import {
-  applyAction, isBuildable, newRun, planLevelWave, planWave, priceOf, sellValue, specialPrice, starsOf, startWave, TICK, upgradeOf,
+  applyAction, newRun, planLevelWave, planWave, priceOf, sellValue, specialPrice, starsOf, startWave, TICK, upgradeOf,
   type Enemy, type Fx, type Mode, type Running, type RunState,
 } from './engine/sim';
 import {
   buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, starBalance, startRun, tdServerUp, type Meta,
 } from './net';
-import { enqueue, onUpload, pendingFor, startUploads } from './uploads';
+import { enqueue, onUpload, startUploads } from './uploads';
 import { drawEnemy, drawTower, enemyLook, enemyRadius, previewItem, readPalette, towerLook, type Palette } from './render';
 import { ACTS, actOf, BONUS_ACT, bossName, levelStory, PROLOGUE, type Line } from './story';
 import './td.css';
@@ -58,18 +58,31 @@ function mapTraits(L: number): string[] {
   return out;
 }
 
-function statsLine(st: TowerStats): string {
-  if (st.income) return `+${st.income} or par vague${st.interest ? `, + ${Math.round(st.interest * 100)} % de l’or (${st.interestCap} max)` : ''}${st.aura ? ', aura de cadence et de portée' : ''}`;
-  const parts: string[] = [];
-  if (st.holePct) parts.push(`trou noir ${Math.round(st.holePct * 100)} % PV max/s toutes les ${st.holeEvery} s`);
-  else if (st.beam) parts.push(`rayon ${st.beam}/s ×${st.beams}`);
-  else if (st.dot) parts.push(`poison ${st.dot}/s × ${st.maxStacks} cumuls`);
-  else parts.push(`${st.fireRate ? st.damage : `${st.damage}/s`} ${DAMAGE[st.damageType ?? 'physical']}`);
-  if (st.fireRate) parts.push(`${fmt(st.fireRate)} tir/s`);
-  parts.push(`portée ${st.range >= 50 ? 'carte' : fmt(st.range)}`);
-  if (st.hitsAir) parts.push('air');
-  if (st.detectsCamo) parts.push('détecte');
-  return parts.join(' · ');
+/** Caractéristiques d'une tour, en lignes « libellé : valeur » pour sa fiche. */
+function statRows(st: TowerStats): [string, string][] {
+  const rows: [string, string][] = [];
+  if (st.income) {
+    rows.push(['Revenu', `+${st.income} or / vague`]);
+    if (st.interest) rows.push(['Intérêts', `${Math.round(st.interest * 100)} % (max ${st.interestCap})`]);
+    if (st.aura) rows.push(['Aura', `cadence +${Math.round((st.auraRate ?? 0) * 100)} %, portée +${Math.round((st.auraRange ?? 0) * 100)} %`]);
+    return rows;
+  }
+  if (st.holePct) {
+    rows.push(['Trou noir', `${fmt(st.holePct * 100)} % PV max/s`], ['Fréquence', `toutes les ${fmt(st.holeEvery ?? 6)} s`], ['Rayon', fmt(st.holeRadius ?? 1)]);
+  } else if (st.beam) rows.push(['Rayon', `${st.beam}/s${(st.beams ?? 1) > 1 ? ` × ${st.beams}` : ''}`]);
+  else if (st.dot) rows.push(['Poison', `${st.dot}/s, ${st.maxStacks} cumuls`]);
+  else rows.push(['Dégâts', `${st.fireRate ? st.damage : `${st.damage}/s`} ${DAMAGE[st.damageType ?? 'physical']}`]);
+  if (st.fireRate) rows.push(['Cadence', `${fmt(st.fireRate)} tir/s`]);
+  rows.push(['Portée', st.range >= 50 ? 'toute la carte' : fmt(st.range)]);
+  rows.push(['Cibles', st.hitsAir ? 'sol et air' : 'sol']);
+  if (st.detectsCamo) rows.push(['Camouflés', 'détectés']);
+  if (st.splash) rows.push(['Zone', fmt(st.splash)]);
+  if (st.slow) rows.push(['Ralentit', `${Math.round(st.slow * 100)} %`]);
+  if (st.stun) rows.push(['Étourdit', `${fmt(st.stun)} s`]);
+  if ((st.chain ?? 0) > 1) rows.push(['Chaîne', `${st.chain} cibles`]);
+  if ((st.pierce ?? 1) > 1) rows.push(['Perce', `${st.pierce} ennemis`]);
+  if (st.crit) rows.push(['Critique', `${Math.round(st.crit * 100)} % (×${st.critMult})`]);
+  return rows;
 }
 
 /** Ce que débloque le passage de `from` à `to` niveaux terminés. */
@@ -79,16 +92,6 @@ function unlocksBetween(from: number, to: number): string[] {
   const names = ['', 'la 1re amélioration', 'la 2e amélioration', 'le choix d’une voie (3e amélioration)', 'la dernière amélioration de chaque voie'];
   for (let t = maxTier(from) + 1; t <= maxTier(to); t++) out.push(names[t]);
   return out;
-}
-
-/** Prochain déblocage de la campagne, pour donner envie. */
-function nextUnlock(cleared: number): string | null {
-  let best: { at: number; what: string } | null = null;
-  for (const [id, at] of Object.entries(TOWER_UNLOCK)) if (at > cleared && (!best || at < best.at)) best = { at, what: `la tour ${towerName(id)}` };
-  TIER_UNLOCK.forEach((at, t) => {
-    if (at > cleared && (!best || at < best.at)) best = { at, what: t === 3 ? 'le choix des voies' : `l’amélioration ${t}` };
-  });
-  return best ? `${best.what} après le niveau ${best.at}` : null;
 }
 
 function mount(ctx: GameContext): () => void {
@@ -215,12 +218,11 @@ function mount(ctx: GameContext): () => void {
         { class: 'td-level td-infinite', type: 'button', 'data-id': 'infinite' },
         h('b', {}, '∞'),
         h('span', { class: 'td-level-name' }, 'Mode infini'),
-        h('span', { class: 'small muted' }, `Classé · record : vague ${meta.best} · avec tes ${towersFor(cleared).length} tours`),
+        h('span', { class: 'small muted' }, meta.best ? `Record : vague ${meta.best}` : 'Classé'),
       );
       infinite.addEventListener('click', () => play('infinite', 0));
       const crates = h('button', { class: 'field', type: 'button' }, 'Caisses (héros, skins)');
       crates.addEventListener('click', () => navigate('/td/caisses'));
-      const up = nextUnlock(cleared);
 
       wrap.replaceChildren(
         serverDown
@@ -233,18 +235,17 @@ function mount(ctx: GameContext): () => void {
             'div',
             {},
             h('h2', {}, 'L’expédition'),
-            h('p', { class: 'muted small' }, `${cleared} / ${LEVEL_COUNT} niveaux · ★ ${balance.earned} / ${MAX_STARS} · ${towersFor(cleared).length} tours débloquées${up ? ` · prochain déblocage : ${up}` : ' · tout est débloqué'}`),
+            h('p', { class: 'muted small' }, `${cleared} / ${LEVEL_COUNT} niveaux · ★ ${balance.earned} / ${MAX_STARS}`),
           ),
           h('div', { class: 'td-deck-actions' }, crates),
         ),
         ...acts,
-        h('section', { class: 'td-act' }, h('h3', {}, BONUS_ACT.name), h('p', { class: 'muted small' }, 'Tonton Jean-Mi a préparé des défis. Ils piquent.'), h('div', { class: 'td-levels' }, ...bonusButtons)),
+        h('section', { class: 'td-act' }, h('h3', {}, BONUS_ACT.name), h('div', { class: 'td-levels' }, ...bonusButtons)),
         h('section', { class: 'td-act' }, h('h3', {}, 'Après l’expédition'), h('div', { class: 'td-levels' }, infinite)),
         h(
           'section',
           { class: 'td-act' },
           h('h3', {}, `Boutique à étoiles · ★ ${balance.left} à dépenser`),
-          h('p', { class: 'muted small' }, '1 étoile par niveau réussi, 2 en gardant au moins la moitié de tes vies, 3 sans en perdre une seule. Les améliorations valent pour toutes tes parties.'),
           h('div', { class: 'td-heroes' }, ...perkRows),
           h('div', { class: 'td-deck-actions' }, reset),
           shopNote ? h('p', { class: 'status td-shop-note' }, shopNote) : '',
@@ -254,7 +255,7 @@ function mount(ctx: GameContext): () => void {
           { class: 'td-act' },
           h('h3', {}, 'Héros'),
           h('div', { class: 'td-heroes' }, heroBtn(null), ...owned.map(heroBtn)),
-          owned.length ? '' : h('p', { class: 'muted small' }, 'Pas encore de héros : ils sortent de la caisse de héros (C), et un doublon les fait monter de niveau.'),
+          owned.length ? '' : h('p', { class: 'muted small' }, 'Les héros sortent des caisses (C).'),
         ),
         h('p', { class: 'status' }, starting ? 'Lancement…' : note),
         hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'jouer'], ['I', 'mode infini'], ['C', 'caisses'], ['Retour arrière', 'quitter']),
@@ -447,6 +448,9 @@ function mount(ctx: GameContext): () => void {
     };
 
     let cell = 32;
+    // Ondes des clics sur le plateau (coordonnées en pixels du canvas).
+    const RIPPLE_MS = 450;
+    let ripples: { x: number; y: number; at: number }[] = [];
     const resize = () => {
       const cs = getComputedStyle(ctx.root);
       const inner = ctx.root.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
@@ -578,6 +582,20 @@ function mount(ctx: GameContext): () => void {
       g.strokeStyle = pal.accent;
       g.lineWidth = 2;
       g.strokeRect(cx * cell + 1, cy * cell + 1, cell - 2, cell - 2);
+      // Onde au point cliqué : on voit que le clic a été pris en compte.
+      const t = performance.now();
+      ripples = ripples.filter((rp) => t - rp.at < RIPPLE_MS);
+      for (const rp of ripples) {
+        const k = (t - rp.at) / RIPPLE_MS;
+        g.save();
+        g.globalAlpha = 1 - k;
+        g.strokeStyle = pal.accent;
+        g.lineWidth = 3 * (1 - k) + 1;
+        g.beginPath();
+        g.arc(rp.x, rp.y, cell * (0.15 + 0.6 * k), 0, Math.PI * 2);
+        g.stroke();
+        g.restore();
+      }
     };
 
     const drawFoe = (e: Enemy, x: number, y: number, now: number) => {
@@ -675,41 +693,65 @@ function mount(ctx: GameContext): () => void {
       return t.path >= 0 ? `${def.paths[t.path].name} ${t.level - 2}` : `Niv. ${t.level}`;
     };
 
-    const upgradePanel = (t: RunState['towers'][number]): HTMLElement[] => {
+    const actionButton = (label: string, action: string, opts: { disabled?: boolean; main?: boolean } = {}) => {
+      const b = h('button', { class: `field${opts.main ? ' rl-spin' : ''}`, type: 'button', disabled: opts.disabled }, label);
+      b.addEventListener('click', () => act(action));
+      return b;
+    };
+
+    /** Fiche de la tour sélectionnée : stats lisibles et boutons d'action. */
+    const towerCard = (t: RunState['towers'][number]): HTMLElement => {
       const def = TOWERS[t.kind];
+      const st = towerStats(def, t.level, t.path);
+      const head = h(
+        'div',
+        { class: 'td-card-head' },
+        previewItem(def.as ?? def.id, 36, def.special ? null : towerFinish(t.kind)),
+        h('b', {}, def.name),
+        h('span', { class: 'muted small' }, def.special ? `spéciale · dégâts ×${fmt(t.power ?? 1)}` : levelName(t)),
+      );
+      const grid = h('div', { class: 'td-card-stats' }, ...statRows(st).map(([k, v]) => h('div', { class: 'td-stat' }, h('span', {}, k), h('b', {}, v))));
+      const actions: HTMLElement[] = [];
+      const extra: HTMLElement[] = [];
       if (def.special) {
-        return [h('p', { class: 'small' }, t.locked
-          ? `Tour spéciale de la carte : U pour la débloquer (${specialPrice(s)} or). Dégâts ×${fmt(t.power ?? 1)}, ni améliorable ni vendable.`
-          : `Tour spéciale débloquée · dégâts ×${fmt(t.power ?? 1)}`)];
-      }
-      const sell = `S vendre (+${sellValue(t)}${t.fresh ? ', prix plein' : ''})`;
-      if (t.level >= MAX_LEVEL) return [h('p', { class: 'small muted' }, `Niveau maximum · ${sell}`)];
-      if (t.level + 1 > s.tier) {
-        return [h('p', { class: 'small muted' }, `🔒 Amélioration ${t.level + 1} : débloquée après le niveau ${TIER_UNLOCK[t.level + 1]} de la campagne · ${sell}`)];
-      }
-      if (t.level === 2) {
-        const choices = def.paths.map((p, k) => {
-          const up = p.ups[0];
-          const b = h(
-            'button',
-            { class: `td-path${choosing ? ' on' : ''}`, type: 'button' },
-            h('b', {}, `${choosing ? `${k + 1} · ` : ''}${p.name}`),
-            h('span', { class: 'small' }, ` ${up.name} (${priceOf(s, up.cost)} or) : ${up.text}`),
-            h('span', { class: 'small muted' }, ` puis ${p.ups[1].name} : ${p.ups[1].text}`),
+        const price = specialPrice(s) ?? 0;
+        if (t.locked) actions.push(actionButton(`Débloquer · ${price} or`, `A${t.x}.${t.y}`, { disabled: s.gold < price, main: true }));
+      } else {
+        const sell = actionButton(`Vendre +${sellValue(t)}`, `S${t.x}.${t.y}`);
+        if (t.level >= MAX_LEVEL) actions.push(h('span', { class: 'muted small' }, 'Niveau maximum'));
+        else if (t.level + 1 > s.tier) actions.push(h('span', { class: 'muted small' }, `🔒 après le niveau ${TIER_UNLOCK[t.level + 1]}`));
+        else if (t.level === 2) {
+          // Choix de la voie (définitif) : un bouton par voie.
+          extra.push(
+            h(
+              'div',
+              { class: 'td-paths' },
+              ...def.paths.map((p, k) => {
+                const up = p.ups[0];
+                const cost = priceOf(s, up.cost);
+                const b = h(
+                  'button',
+                  { class: `td-path${choosing ? ' on' : ''}`, type: 'button', disabled: s.gold < cost },
+                  h('b', {}, `${choosing ? `${k + 1} · ` : ''}${p.name} · ${cost} or`),
+                  h('span', { class: 'small' }, up.text),
+                );
+                b.addEventListener('click', () => {
+                  choosing = false;
+                  act(`U${t.x}.${t.y}.${k}`);
+                });
+                return b;
+              }),
+            ),
           );
-          b.addEventListener('click', () => {
-            choosing = false;
-            act(`U${t.x}.${t.y}.${k}`);
-          });
-          return b;
-        });
-        return [
-          h('p', { class: 'small' }, choosing ? (isTouch() ? 'Touche la voie choisie.' : 'Choisis la voie : 1 ou 2 (une autre touche pour annuler).') : `${isTouch() ? 'Touche une voie pour la choisir' : 'U pour choisir sa voie'} (définitif) · ${sell}`),
-          h('div', { class: 'td-paths' }, ...choices),
-        ];
+        } else {
+          const up = upgradeOf(t)!;
+          const cost = priceOf(s, up.cost);
+          actions.push(actionButton(`Améliorer · ${cost} or`, `U${t.x}.${t.y}`, { disabled: s.gold < cost, main: true }));
+          extra.push(h('p', { class: 'small muted td-card-next' }, `${up.name} : ${up.text}`));
+        }
+        actions.push(sell);
       }
-      const up = upgradeOf(t)!;
-      return [h('p', { class: 'small' }, `U ${up.name} (${priceOf(s, up.cost)} or) : ${up.text} · ${sell}`)];
+      return h('div', { class: 'td-card' }, head, grid, actions.length ? h('div', { class: 'td-card-actions' }, ...actions) : '', ...extra);
     };
 
     const render = () => {
@@ -723,7 +765,6 @@ function mount(ctx: GameContext): () => void {
         h('span', { class: 'stat' }, 'Or ', h('b', { 'data-k': 'gold' }, String(s.gold))),
         h('span', { class: 'stat' }, '×', h('b', {}, String(speed))),
         s.hero ? h('span', { class: 'small muted' }, `${HEROES.find((x) => x.id === s.hero!.id)?.name ?? ''} niv. ${s.hero.level}`) : '',
-        h('span', { class: 'muted small td-rank' }, saveStatus()),
       );
       const shop = s.allowed.map((id, i) => {
         const def = TOWERS.find((t) => t.id === id)!;
@@ -737,13 +778,7 @@ function mount(ctx: GameContext): () => void {
       const t = towerAt(cx, cy);
       if (!t || t.level !== 2) choosing = false;
       const detail: (HTMLElement | string)[] = [];
-      if (t) {
-        const def = TOWERS[t.kind];
-        const st = towerStats(def, t.level, t.path);
-        detail.push(h('p', { class: 'small' }, h('b', {}, `${def.name} · ${def.special ? 'spéciale' : levelName(t)}`), ` — ${statsLine(st)}`));
-        detail.push(...upgradePanel(t));
-      } else if (isBuildable(s.map, cx, cy)) detail.push(h('p', { class: 'small muted' }, isTouch() ? 'Case libre : touche une tour ci-dessous pour la construire ici.' : `Case libre : ${KEYS.slice(0, s.allowed.length).join(', ')} pour construire.`));
-      else detail.push(h('p', { class: 'small muted' }, 'Chemin des ennemis.'));
+      if (t) detail.push(towerCard(t));
 
       const blocks: HTMLElement[] = [];
       if (!running && !s.over) {
@@ -808,7 +843,7 @@ function mount(ctx: GameContext): () => void {
         stars > starsBefore ? h('span', { class: 'small' }, `+${stars - starsBefore} ★ pour la boutique à étoiles`) : h('span', { class: 'small muted' }, `Ton record sur ce niveau : ${starText(starsBefore)}`),
         session ? h('span', { class: 'small' }, `+${levelPoints(s.level, first)} points ◆${first ? '' : ' (niveau rejoué)'}`) : '',
         unlocks.length ? h('span', { class: 'small' }, `Débloqué : ${unlocks.join(', ')}.`) : '',
-        multiConfigured ? h('span', { class: `small${session ? '' : ' td-unsaved'}` }, saveStatus()) : '',
+        multiConfigured && !session ? h('span', { class: 'small td-unsaved' }, '⚠ partie non enregistrée') : '',
         h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('La suite de l’histoire', outro, true)),
         h('span', { class: 'muted small keyboard-only' }, 'Entrée la suite · M carte'),
       ];
@@ -854,12 +889,6 @@ function mount(ctx: GameContext): () => void {
       } else note = `Enregistrement en attente (${e.message}) : nouvel essai dans quelques secondes…`;
       render();
     });
-    /** Où en est l'enregistrement de la partie sur le serveur. */
-    const saveStatus = () => {
-      if (!session) return multiConfigured ? '⚠ partie non enregistrée' : 'hors ligne';
-      const n = pendingFor(session);
-      return n ? `enregistrement… (${n} vague${n > 1 ? 's' : ''})` : '✓ enregistré sur le serveur';
-    };
     const launch = async () => {
       if (running || s.over || showVictory) return;
       note = '';
@@ -894,7 +923,10 @@ function mount(ctx: GameContext): () => void {
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
-      if (!running) return;
+      if (!running) {
+        if (ripples.length) draw(1); // l'onde d'un clic s'anime aussi entre les vagues
+        return;
+      }
       const dt = now - last;
       last = now;
       if (paused || isPanicked()) return draw(Math.min(1, acc / TICK_MS));
@@ -951,6 +983,8 @@ function mount(ctx: GameContext): () => void {
       const r = canvas.getBoundingClientRect();
       cx = Math.max(0, Math.min(COLS - 1, Math.floor((e.clientX - r.left) / cell)));
       cy = Math.max(0, Math.min(ROWS - 1, Math.floor((e.clientY - r.top) / cell)));
+      ripples.push({ x: e.clientX - r.left, y: e.clientY - r.top, at: performance.now() });
+      blip(towerAt(cx, cy) ? 620 : 480, 0.02);
       render();
     });
 

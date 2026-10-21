@@ -7,7 +7,6 @@ import {
   baseOf,
   buyRoom,
   CAP_HOURS,
-  CLEAN_RATE,
   CLEAN_TASKS,
   cleanApartment,
   collectIncome,
@@ -742,7 +741,6 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       b.addEventListener('click', () => void doBuyRoom(r.id));
       side.replaceChildren(
         h('h2', {}, `${r.glyph} ${r.name}`),
-        h('p', { class: 'muted small' }, `${r.w} × ${r.d} cases au sol, ${r.w + r.d} emplacements par hauteur de mur.`),
         h(
           'p',
           { class: 'muted small' },
@@ -761,7 +759,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       b.addEventListener('click', () => void doClean());
       side.replaceChildren(
         h('h2', {}, 'Ton entrée est en désordre'),
-        h('p', { class: 'muted small' }, `Il faut la nettoyer avant de pouvoir meubler ou acheter d’autres pièces. Chaque étape rapporte aussi ${CLEAN_RATE} points par heure.`),
+        h('p', { class: 'muted small' }, 'Nettoie-la pour pouvoir meubler.'),
         h('ol', { class: 'ap-tasks' }, ...CLEAN_TASKS.map((t, i) => h('li', { class: i < state.cleanStep ? 'done' : i === state.cleanStep ? 'next' : '' }, t.name, h('span', { class: 'muted small' }, ` ◆ ${formatPoints(t.cost)}`)))),
         b,
       );
@@ -774,15 +772,8 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       const here = layout().floor.length + layout().wall.length;
       side.replaceChildren(
         h('h2', {}, `${roomOf(room).glyph} ${roomOf(room).name}`),
-        h(
-          'p',
-          { class: 'muted small' },
-          `${here} meuble${here > 1 ? 's' : ''} dans cette pièce, ${used.size} dans tout l’appart, ${owned.length - used.size} en réserve. Plus il y a de meubles, et plus ils sont rares, plus l’appart rapporte.`,
-        ),
+        h('p', { class: 'muted small' }, `${here} meuble${here > 1 ? 's' : ''} ici · ${owned.length - used.size} en réserve`),
         edit,
-        state.rooms.length < ROOMS.length
-          ? h('p', { class: 'muted small' }, `Pièce suivante : ◆ ${formatPoints(nextRoomCost())} (choisis-la parmi les pièces 🔒).`)
-          : '',
       );
       return;
     }
@@ -807,10 +798,18 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
           });
           return b;
         })
-      : [h('p', { class: 'muted small' }, 'Tous tes meubles sont placés. Il y en a d’autres dans les caisses.')];
+      : [h('p', { class: 'muted small' }, 'Réserve vide.')];
     const done = h('button', { class: 'field', type: 'button' }, 'Terminer (E)');
     done.addEventListener('click', toggleEdit);
-    const turn = h('button', { class: 'field', type: 'button' }, hand ? `Pivoter (R) · ${handRot * 90}°` : 'Pivoter le meuble visé (R)');
+    const turn = h('button', { class: 'field', type: 'button' }, hand ? `Pivoter (R) · ${handRot * 90}°` : 'Pivoter (R)');
+    const stash = hand ? h('button', { class: 'field rl-spin', type: 'button' }, 'Ranger dans la réserve (Suppr)') : null;
+    stash?.addEventListener('mousedown', (e) => e.preventDefault());
+    stash?.addEventListener('click', () => {
+      hand = null;
+      handArt = undefined;
+      sellArmed = false;
+      render();
+    });
     const sell = hand
       ? h('button', { class: 'field', type: 'button', disabled: busy }, sellArmed ? `Confirmer : vendre ◆ ${formatPoints(sellPrice(hand.item_id))} (V)` : `Vendre ◆ ${formatPoints(sellPrice(hand.item_id))} (V)`)
       : null;
@@ -820,17 +819,13 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     turn.addEventListener('click', rotate);
     side.replaceChildren(
       h('h2', {}, hand ? `En main : ${itemName(hand.item_id)}` : 'Mes meubles'),
-      h(
-        'p',
-        { class: 'muted small' },
-        hand ? 'Clique une case libre (ou Entrée) pour le poser, ou change de pièce pour l’y emmener ; Suppr pour le ranger.' : 'Choisis un meuble, ou clique un meuble posé pour le déplacer.',
-      ),
+      h('p', { class: 'muted small' }, hand ? 'Clique une case libre pour le poser.' : 'Clique un meuble posé pour le prendre.'),
       pickingPhoto
         ? h(
             'div',
             { class: 'ap-photos' },
             h('h3', {}, isFrame(pickingPhoto.i) ? 'Photo du cadre' : 'Photo du papier peint'),
-            pickable().length ? '' : h('p', { class: 'muted small' }, 'Aucune photo débloquée : tente ta chance avec la caisse souvenirs.'),
+            pickable().length ? '' : h('p', { class: 'muted small' }, 'Aucune photo : caisse souvenirs.'),
             ...pickable().map((a) => {
               const b = h('button', { class: 'ap-photo', type: 'button', title: a.title }, h('img', { src: a.url, alt: a.title, loading: 'lazy' }));
               b.addEventListener('click', () => setPhoto(pickingPhoto!, a.id));
@@ -838,8 +833,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
             }),
           )
         : '',
-      turn,
-      sell ?? '',
+      hand ? h('div', { class: 'ap-hand-actions' }, stash!, sell!, turn) : turn,
       h('div', { class: 'ap-inventory' }, ...list),
       done,
     );

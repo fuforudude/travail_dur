@@ -136,7 +136,7 @@ export function cratesView(root: HTMLElement): () => void {
     const toAppart = h('button', { class: 'field', type: 'button' }, 'Mon appart');
     toAppart.addEventListener('click', () => navigate('/appart'));
     wrap.replaceChildren(
-      h('div', { class: 'shop-head' }, h('div', {}, h('h1', {}, 'Meubles et caisses'), h('p', { class: 'muted small' }, 'Les finitions rares ne s’obtiennent que dans les caisses.')), h('div', { class: 'ap-actions' }, balance, toAppart)),
+      h('div', { class: 'shop-head' }, h('div', {}, h('h1', {}, 'Meubles et caisses')), h('div', { class: 'ap-actions' }, balance, toAppart)),
       status,
       h('div', { class: 'cr-crates' }, ...crates),
       h('section', { class: 'home-section' }, h('h2', { class: 'home-h' }, 'Meubles standard'), h('div', { class: 'shop-grid' }, ...shop)),

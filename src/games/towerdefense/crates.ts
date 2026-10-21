@@ -137,7 +137,7 @@ export function tdCratesView(root: HTMLElement): () => void {
       h('p', { class: 'small' }, `${got} / ${c.contents.length} obtenus`),
       c.kind === 'skin' && total
         ? h('ul', { class: 'cr-odds' }, ...ci!.odds.map(([r, w]) => h('li', { class: `rar-${r}` }, h('span', {}, RARITY_NAMES[r]), h('b', {}, percent(w, total)))))
-        : h('p', { class: 'muted small' }, 'Chaque héros a les mêmes chances. Un doublon fait monter le héros d’un niveau.'),
+        : '',
       b,
     );
   };
@@ -206,7 +206,7 @@ export function tdCratesView(root: HTMLElement): () => void {
       h(
         'div',
         { class: 'shop-head' },
-        h('div', {}, h('h1', {}, 'Tower defense'), h('p', { class: 'muted small' }, `Campagne : ${meta.cleared}/20 niveaux · record du mode infini : vague ${meta.best}. Les tours et leurs améliorations se débloquent dans la campagne.`)),
+        h('div', {}, h('h1', {}, 'Tower defense')),
         h('div', { class: 'ap-actions' }, balance, play),
       ),
       status,

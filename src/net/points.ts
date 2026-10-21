@@ -34,10 +34,6 @@ export const SCALE: [string, string][] = [
   ['Record personnel', '+300 (au moins 2 000 au 2048 et à Tetris, 10 tuyaux, vague 5)'],
   ['Record absolu', '+1 500 en battant le meilleur score de tous les joueurs'],
 ];
-export const SCALE_NOTES = [
-  'Les parties trop courtes et, au-delà de 10 parties par jour contre le même adversaire, les parties à deux ne rapportent rien.',
-  'Les points sont attribués par le serveur quand il enregistre la partie : il faut être connecté (compte invité ou email).',
-];
 
 let wallet: Wallet | null = null;
 const listeners = new Set<(w: Wallet | null) => void>();

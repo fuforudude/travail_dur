@@ -45,7 +45,7 @@ export function shopView(root: HTMLElement): () => void {
   const balance = h('span', { class: 'pts-balance' });
   const notice = h('p', { class: 'status' });
   content.append(
-    h('div', { class: 'shop-head' }, h('div', {}, h('h1', {}, 'Boutique'), h('p', { class: 'muted small' }, 'Les skins se voient par ton adversaire, les pseudos par tout le monde.')), balance),
+    h('div', { class: 'shop-head' }, h('div', {}, h('h1', {}, 'Boutique')), balance),
     notice,
     body,
     hints(['← ↑ → ↓', 'objet'], ['Entrée', 'acheter / porter'], ['Retour arrière', 'retour']),

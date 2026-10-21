@@ -33,9 +33,6 @@ export function onUpload(cb: (e: UploadEvent) => void): () => void {
   return () => listeners.delete(cb);
 }
 
-/** Vagues de cette partie pas encore confirmées par le serveur. */
-export const pendingFor = (session: string | null) => (session ? queue.filter((u) => u.session === session).length : 0);
-
 /** Ajoute une vague terminée à la file et l'envoie tout de suite. */
 export function enqueue(u: Upload): void {
   queue.push(u);

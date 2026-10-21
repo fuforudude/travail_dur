@@ -1,5 +1,5 @@
 import { pushKeys } from '../core/input';
-import { formatPoints, getWallet, history, onWallet, SCALE, SCALE_NOTES, type PointEvent } from '../net/points';
+import { formatPoints, getWallet, history, onWallet, SCALE, type PointEvent } from '../net/points';
 import { itemById } from '../net/shop';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
@@ -35,7 +35,6 @@ export function pointsView(root: HTMLElement): () => void {
       multiConfigured ? h('div', { class: 'pts-actions' }, shop, roulette, slots) : h('p', { class: 'notice' }, 'Le serveur n’est pas configuré : pas de points.'),
       h('h2', {}, 'Comment gagner des points'),
       h('table', { class: 'pts-scale' }, h('tbody', {}, ...SCALE.map(([g, rule]) => h('tr', {}, h('td', {}, g), h('td', {}, rule))))),
-      ...SCALE_NOTES.map((n) => h('p', { class: 'muted small' }, n)),
       h('h2', {}, 'Derniers mouvements'),
       list,
     ),

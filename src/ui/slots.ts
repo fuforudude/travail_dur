@@ -15,13 +15,6 @@ export const TRIPLE = [5, 9, 18, 36, 75, 400]; // gain × la mise pour trois sym
 export const TWO_CHERRIES = 2;
 const BETS = [1, 5, 10, 25, 50, 100, 250, 500];
 
-/** Retour moyen au joueur (≈ 95,9 %), calculé à partir des poids et des gains. */
-export function returnToPlayer(): number {
-  const p = WEIGHTS.map((w) => w / 32);
-  const triples = p.reduce((sum, x, i) => sum + x ** 3 * TRIPLE[i], 0);
-  return triples + 3 * p[0] ** 2 * (1 - p[0]) * TWO_CHERRIES;
-}
-
 export function slotsView(root: HTMLElement): () => void {
   const content = page(root, 'Machine à sous');
   if (!multiConfigured) {
@@ -71,7 +64,7 @@ export function slotsView(root: HTMLElement): () => void {
       h('div', { class: 'game-bar' }, balanceEl),
       h('div', { class: 'sl-machine' }, h('div', { class: 'sl-window' }, ...reels), betEl, lever, auto.el),
       status,
-      h('div', { class: 'card sl-paycard' }, h('h2', {}, 'Gains'), table, h('p', { class: 'muted small' }, `Gain = mise × multiplicateur. Retour moyen : ${(returnToPlayer() * 100).toFixed(1)} %.`)),
+      h('div', { class: 'card sl-paycard' }, h('h2', {}, 'Gains'), table),
       hints(['← →', 'mise'], ['Espace', 'jouer'], ['S', 'arrêter l’auto'], ['Retour arrière', 'quitter']),
     ),
   );
