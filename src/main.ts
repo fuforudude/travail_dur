@@ -2,6 +2,7 @@ import './styles.css';
 import { initPanic } from './core/panic';
 import { initPrank } from './core/prank';
 import { applyTheme } from './core/settings';
+import { onStale, startUpdateChecks } from './core/update';
 import { consumeAuthRedirect, ensureAccount, onAccount } from './net/auth';
 import { startNotifications } from './net/friends';
 import { startPoints } from './net/points';
@@ -11,13 +12,15 @@ import { multiConfigured } from './net/supabase';
 import { lazy, prefetchViews, route, startRouter } from './router';
 import { homeView } from './ui/home';
 import { playView } from './ui/play';
-import { initPointsUi, initSocialUi } from './ui/toast';
+import { initPointsUi, initSocialUi, toast } from './ui/toast';
 
 applyTheme();
 initPanic();
 initPrank();
 initPointsUi();
 initSocialUi();
+startUpdateChecks();
+onStale(() => toast('Nouvelle version du site : elle se charge à ton prochain changement de page.', 'info', { label: 'Recharger', run: () => location.reload() }));
 
 // L'accueil et les parties solo sont dans le fichier principal ; les autres pages sont
 // téléchargées à leur première visite (le site s'ouvre plus vite).
@@ -38,6 +41,20 @@ route(/^\/caisses$/, lazy(() => import('./ui/crates').then((m) => m.cratesView))
 route(/^\/amis(?:\/(ajouter|demandes))?$/, lazy(() => import('./ui/friends').then((m) => m.friendsView)));
 route(/^\/td\/caisses$/, lazy(() => import('./games/towerdefense/crates').then((m) => m.tdCratesView)));
 
+/**
+ * Vagues de tower defense en attente (page fermée trop tôt, réseau coupé…) : envoyées dès l'ouverture
+ * du site, sur n'importe quelle page, sans attendre qu'on rouvre le jeu.
+ */
+function flushTdUploads(): void {
+  let pending = false;
+  try {
+    pending = (JSON.parse(localStorage.getItem('td:uploads:td') ?? '[]') as unknown[]).length > 0;
+  } catch {
+    // stockage indisponible
+  }
+  if (pending) void import('./games/towerdefense/uploads').then((m) => m.startUploads());
+}
+
 // Retour d'un lien reçu par email : Supabase lit les jetons avant que le routeur ne touche au hash.
 consumeAuthRedirect().finally(() => {
   startRouter();
@@ -52,6 +69,7 @@ consumeAuthRedirect().finally(() => {
       void syncServerClock(); // heure du serveur : changer l'heure de l'appareil ne change rien
       startIdleIncome(a.id); // revenus de l'appart, sur toutes les pages
       void startNotifications(a.id);
+      flushTdUploads(); // parties de tower defense pas encore arrivées au serveur
     });
   }
 });

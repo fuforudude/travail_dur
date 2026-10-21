@@ -4,7 +4,8 @@
 // (`step`), un renvoi ne compte donc jamais deux fois.
 
 import { load, save } from '../../core/storage';
-import { isFinalRefusal, sendWave, type WaveResult } from './net';
+import { getSupabase, functionUrl, publicKey } from '../../net/supabase';
+import { isFinalRefusal, sendWave, TD_PROTOCOL, type WaveResult } from './net';
 
 interface Upload {
   session: string;
@@ -74,10 +75,53 @@ export async function flush(): Promise<void> {
   }
 }
 
-// Quitter la page pendant un envoi : le navigateur demande confirmation (la file repartira de
-// toute façon au prochain passage sur le tower defense).
-window.addEventListener('beforeunload', (e) => {
-  if (!queue.length) return;
-  e.preventDefault();
-  e.returnValue = '';
-});
+let started = false;
+let token: string | null = null; // jeton de connexion, gardé pour l'envoi de dernière seconde
+
+/** Lance l'envoi de la file et le relance tout seul (retour du réseau, onglet revenu). Une fois suffit. */
+export function startUploads(): void {
+  void flush();
+  if (started) return;
+  started = true;
+  window.addEventListener('online', () => void flush());
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void flush();
+    else lastChance();
+  });
+  window.addEventListener('pagehide', lastChance);
+  // Quitter la page pendant un envoi : le navigateur demande confirmation.
+  window.addEventListener('beforeunload', (e) => {
+    if (!queue.length) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+  void refreshToken();
+  window.setInterval(() => void refreshToken(), 5 * 60_000);
+}
+
+async function refreshToken(): Promise<void> {
+  const supabase = await getSupabase();
+  token = (await supabase?.auth.getSession())?.data.session?.access_token ?? null;
+}
+
+/**
+ * Page cachée ou fermée avec une vague en attente : on l'envoie avec une requête qui survit à la
+ * fermeture (keepalive). Seulement la première : les suivantes partiront au prochain passage (le
+ * serveur ignore un doublon, la file reste donc valable même si celle-ci arrive).
+ */
+function lastChance(): void {
+  const u = queue[0];
+  const target = functionUrl('td');
+  const apikey = publicKey();
+  if (!u || !target || !apikey || !token) return;
+  try {
+    void fetch(target, {
+      method: 'POST',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json', apikey, Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ op: 'wave', session: u.session, actions: u.actions, step: u.step, v: TD_PROTOCOL }),
+    }).catch(() => {});
+  } catch {
+    // requête trop grosse pour keepalive (64 ko) : elle partira au prochain passage
+  }
+}

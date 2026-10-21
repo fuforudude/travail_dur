@@ -47,7 +47,7 @@ if (update) {
   writeFileSync(allowFile, current.join('\n') + '\n');
   ok(`liste des fonctions publiques mise à jour (${current.length})`);
 } else {
-  const allowed = new Set(readFileSync(allowFile, 'utf8').split('\n').filter(Boolean));
+  const allowed = new Set(readFileSync(allowFile, 'utf8').split(/\r?\n/).filter(Boolean)); // \r\n : Git sous Windows
   const extra = current.filter((l) => !allowed.has(l));
   const gone = [...allowed].filter((l) => !current.includes(l));
   for (const l of extra) fail(`fonction appelable par les joueurs, absente de la liste validée : ${l}`);
@@ -107,6 +107,28 @@ await as(b, `select public.account_delete($1)`, [name]);
 const left = (await db.query(`select (select count(*) from auth.users where id = $1)::int + (select count(*) from public.profiles where id = $1)::int as n`, [b])).rows[0].n;
 if (left === 0) ok('account_delete efface le compte et le profil');
 else fail('account_delete a laissé des traces du compte');
+
+// Vente de meubles (0038) : 67 % du prix de base, refusée pour un meuble posé.
+{
+  const seller = await newUser();
+  const base = (await db.query(`select id, price from public.furniture_bases order by id limit 1`)).rows[0];
+  const own = async () => (await db.query(`insert into public.furniture_owned (user_id, item_id) values ($1, $2) returning id`, [seller, `${base.id}:standard`])).rows[0].id;
+  const placed = await own();
+  const free = await own();
+  await db.query(`insert into public.apartments (user_id, layout) values ($1, $2) on conflict (user_id) do update set layout = excluded.layout`, [
+    seller,
+    JSON.stringify({ entree: { floor: [{ o: Number(placed), x: 0, y: 0 }], wall: [] } }),
+  ]);
+  const refused = await throws(() => as(seller, `select public.furniture_sell($1)`, [placed]));
+  if (refused?.includes('posé')) ok('un meuble posé ne se vend pas');
+  else fail(`vente d’un meuble posé : ${refused ?? 'acceptée'}`);
+  const before = Number((await db.query(`select coalesce((select balance from public.wallets where user_id = $1), 100) as b`, [seller])).rows[0].b);
+  await as(seller, `select public.furniture_sell($1)`, [free]);
+  const after = Number((await db.query(`select balance from public.wallets where user_id = $1`, [seller])).rows[0].balance);
+  const gone = (await db.query(`select count(*)::int as n from public.furniture_owned where id = $1`, [free])).rows[0].n;
+  if (after - before === Math.floor((Number(base.price) * 67) / 100) && gone === 0) ok('un meuble de la réserve se vend 67 % du prix de base');
+  else fail(`vente : ${after - before} points reçus (attendu ${Math.floor((Number(base.price) * 67) / 100)}), meuble encore là : ${gone}`);
+}
 
 // Double authentification des admins (0037) : sans code (aal1), les actions d'admin sont refusées.
 const admin = await newUser();

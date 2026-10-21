@@ -2,6 +2,7 @@
 // Le serveur fait foi pour les prix, les tirages et l'aménagement ; catalogue et géométrie : furniture.ts.
 
 import { serverError, rpc } from './admin';
+import { baseOf } from './furniture';
 import { serverNow } from './serverClock';
 import { CAP_HOURS, type Layout, type Rarity } from './furniture';
 import { getSupabase } from './supabase';
@@ -89,6 +90,9 @@ export async function crateInfo(): Promise<{ prices: Map<string, number>; odds: 
   return { prices: new Map((c.data ?? []).map((r: { id: string; price: number }) => [r.id, Number(r.price)])), odds };
 }
 
+/** Revente d'un meuble : 67 % du prix de base de son modèle (public.furniture_sell, 0038_vente_meubles.sql). */
+export const sellPrice = (item: string) => Math.floor(((baseOf(item)?.price ?? 0) * 67) / 100);
+export const sellFurniture = (owned: number) => rpc<{ price: number; balance: number }>('furniture_sell', { owned_id: owned });
 export const buyFurniture = (base: string) => rpc<{ balance: number; owned: number; item: string }>('furniture_buy', { base_id: base });
 /** Résultat d'une caisse : un meuble, ou (caisse souvenirs) une photo débloquée. */
 export type CrateResult =

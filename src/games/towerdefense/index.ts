@@ -19,7 +19,7 @@ import {
 import {
   buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, starBalance, startRun, tdServerUp, type Meta,
 } from './net';
-import { enqueue, flush, onUpload, pendingFor } from './uploads';
+import { enqueue, onUpload, pendingFor, startUploads } from './uploads';
 import { drawEnemy, drawTower, enemyLook, enemyRadius, previewItem, readPalette, towerLook, type Palette } from './render';
 import { ACTS, actOf, BONUS_ACT, bossName, levelStory, PROLOGUE, type Line } from './story';
 import './td.css';
@@ -1028,7 +1028,7 @@ function mount(ctx: GameContext): () => void {
     };
   };
 
-  void flush(); // vagues restées en attente (page rechargée, réseau coupé…)
+  startUploads(); // vagues restées en attente (page rechargée, réseau coupé…)
   const resumed = load<Saved | null>(SAVE_KEY, null);
   show(resumed && !resumed.s.over ? () => runScreen(resumed) : menuScreen);
 

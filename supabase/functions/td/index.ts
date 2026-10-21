@@ -21,6 +21,11 @@ const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body)
 
 class Refused extends Error {}
 
+// Version du protocole du site (TD_PROTOCOL dans src/games/towerdefense/net.ts). Un onglet resté
+// ouvert sur un vieux code ne démarre plus de partie : il est invité à recharger la page.
+const PROTOCOL = 2;
+const OUTDATED = 'nouvelle version du jeu : recharge la page (Ctrl+F5)';
+
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 
 async function start(uid: string, mode: unknown, level: unknown, hero: unknown) {
@@ -113,8 +118,15 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => null);
   try {
     if (body?.op === 'ping') return reply({ ok: true });
-    if (body?.op === 'start') return reply(await start(uid, body.mode, body.level, body.hero ?? null));
-    if (body?.op === 'wave') return reply(await wave(uid, body.session, body.actions, body.step));
+    if (body?.op === 'start') {
+      if (!(Number(body.v) >= PROTOCOL)) throw new Refused(OUTDATED);
+      return reply(await start(uid, body.mode, body.level, body.hero ?? null));
+    }
+    if (body?.op === 'wave') {
+      // Les vagues en attente d'un site un peu ancien (avec `step`) restent acceptées : rien ne se perd.
+      if (body.step === undefined && !(Number(body.v) >= PROTOCOL)) throw new Refused(OUTDATED);
+      return reply(await wave(uid, body.session, body.actions, body.step));
+    }
     return reply({ error: 'opération inconnue' }, 400);
   } catch (e) {
     if (e instanceof Refused) return reply({ error: e.message }, 400);

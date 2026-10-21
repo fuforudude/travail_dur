@@ -5,6 +5,9 @@ const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().re
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 export const multiConfigured = Boolean(url && key);
+/** Adresse d'une fonction serveur et clé publique, pour un envoi `keepalive` à la fermeture de la page. */
+export const functionUrl = (name: string) => (url ? `${url}/functions/v1/${name}` : null);
+export const publicKey = () => key ?? null;
 
 let client: Promise<SupabaseClient | null> | null = null;
 

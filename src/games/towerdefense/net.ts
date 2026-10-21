@@ -123,6 +123,12 @@ export function equippedFinish(meta: Meta, kind: 'ts' | 'es', subject: string): 
 
 // --- Parties ------------------------------------------------------------------------------------
 
+/**
+ * Version du protocole site ↔ fonction td. Le serveur refuse de démarrer une partie avec une version
+ * plus ancienne (site resté ouvert sur un vieux code) et demande de recharger la page.
+ */
+export const TD_PROTOCOL = 2;
+
 /** Erreur du serveur du tower defense ; `status` 400 = refus (définitif), sinon réseau ou panne (on réessaie). */
 export class TdError extends Error {
   constructor(message: string, readonly status: number) {
@@ -147,7 +153,7 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
 
 export async function startRun(mode: Mode, level: number, hero: string | null): Promise<{ id: string; state: RunState }> {
   const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('serveur trop lent')), 8000));
-  return Promise.race([invoke<{ id: string; state: RunState }>({ op: 'start', mode, level, hero }), timeout]);
+  return Promise.race([invoke<{ id: string; state: RunState }>({ op: 'start', mode, level, hero, v: TD_PROTOCOL }), timeout]);
 }
 
 /** La fonction serveur `td` répond-elle ? (non déployée : 404, rien n'est enregistré). */
@@ -173,7 +179,7 @@ export interface WaveResult {
   already?: boolean; // vague déjà reçue (renvoi après un rechargement)
 }
 /** Envoie une vague ; `step` = vagues déjà envoyées avant elle (le serveur ignore un doublon). */
-export const sendWave = (session: string, actions: string, step: number) => invoke<WaveResult>({ op: 'wave', session, actions, step });
+export const sendWave = (session: string, actions: string, step: number) => invoke<WaveResult>({ op: 'wave', session, actions, step, v: TD_PROTOCOL });
 
 // --- Caisses ------------------------------------------------------------------------------------
 

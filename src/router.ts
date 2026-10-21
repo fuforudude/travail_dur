@@ -1,4 +1,6 @@
 // Routage par hash, compatible GitHub Pages sans configuration serveur.
+import { isStale } from './core/update';
+
 export type Cleanup = () => void;
 export type View = (root: HTMLElement, params: string[]) => Cleanup | void;
 
@@ -73,6 +75,7 @@ function render(): void {
 }
 
 export function startRouter(): void {
-  window.addEventListener('hashchange', render);
+  // Nouvelle version en ligne : on la charge au changement de page (jamais au milieu d'une page).
+  window.addEventListener('hashchange', () => (isStale() ? location.reload() : render()));
   render();
 }

@@ -25,6 +25,8 @@ import {
   roomOf,
   ROOMS,
   saveLayout,
+  sellFurniture,
+  sellPrice,
   takesPhoto,
   WALL_ROWS,
   zoneDims,
@@ -526,6 +528,39 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     }, 700);
   };
 
+  // Vente du meuble en main (67 % du prix de base) : un 1er appui arme, le 2e vend.
+  let sellArmed = false;
+  const sellHand = async () => {
+    if (!hand || busy) return;
+    if (!sellArmed) {
+      sellArmed = true;
+      return render();
+    }
+    const o = hand;
+    busy = true;
+    sellArmed = false;
+    try {
+      // Les changements en attente d'abord : le serveur doit voir le meuble rangé.
+      if (unsaved) {
+        clearTimeout(saveTimer);
+        unsaved = false;
+        await saveLayout(state.layout);
+      }
+      const r = await sellFurniture(o.id);
+      owned = owned.filter((x) => x.id !== o.id);
+      hand = null;
+      handArt = undefined;
+      status = `${itemName(o.item_id)} vendu : +${formatPoints(r.price)} points.`;
+      blip(660);
+      void refreshWallet();
+    } catch (e) {
+      status = (e as Error).message;
+    } finally {
+      busy = false;
+      render();
+    }
+  };
+
   const setLayout = (l: RoomLayout) => {
     state = { ...state, layout: { ...state.layout, [room]: l } };
     scheduleSave();
@@ -763,6 +798,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
           b.addEventListener('mousedown', (e) => e.preventDefault());
           b.addEventListener('click', () => {
             hand = o;
+            sellArmed = false;
             handArt = undefined;
             handRot = 0;
             const zone = sizeOf(o.item_id).place;
@@ -775,6 +811,11 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     const done = h('button', { class: 'field', type: 'button' }, 'Terminer (E)');
     done.addEventListener('click', toggleEdit);
     const turn = h('button', { class: 'field', type: 'button' }, hand ? `Pivoter (R) · ${handRot * 90}°` : 'Pivoter le meuble visé (R)');
+    const sell = hand
+      ? h('button', { class: 'field', type: 'button', disabled: busy }, sellArmed ? `Confirmer : vendre ◆ ${formatPoints(sellPrice(hand.item_id))} (V)` : `Vendre ◆ ${formatPoints(sellPrice(hand.item_id))} (V)`)
+      : null;
+    sell?.addEventListener('mousedown', (e) => e.preventDefault());
+    sell?.addEventListener('click', () => void sellHand());
     turn.addEventListener('mousedown', (e) => e.preventDefault());
     turn.addEventListener('click', rotate);
     side.replaceChildren(
@@ -798,6 +839,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
           )
         : '',
       turn,
+      sell ?? '',
       h('div', { class: 'ap-inventory' }, ...list),
       done,
     );
@@ -958,6 +1000,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
           if (p) setLayout({ ...layout(), [cursor.zone]: layout()[cursor.zone].filter((q) => q !== p) });
         }
       } else if (key === 'r') rotate();
+      else if (key === 'v') void sellHand();
       else if (key === 'p') {
         const p = occupant(cursor.zone, cursor.x, cursor.y);
         if (p && takesPhoto(p.i)) {
