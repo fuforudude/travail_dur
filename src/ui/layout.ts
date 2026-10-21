@@ -1,3 +1,4 @@
+import { togglePanic } from '../core/panic';
 import { getSettings } from '../core/settings';
 import { getAccount, onAccount } from '../net/auth';
 import { nameEl } from '../net/cosmetics';
@@ -24,10 +25,21 @@ export function page(root: HTMLElement, title: string): HTMLElement {
       h('span', { class: 'crumb' }, title),
       pointsBadge(),
       whoEl(),
+      panicButton(),
     ),
     content,
   );
   return content;
+}
+
+/** Sur téléphone (pas de touche Échap) : le bouton panique, d'apparence anodine. Un appui long sur l'écran de secours ramène au jeu. */
+function panicButton(): HTMLElement {
+  const b = h('button', { class: 'panic-btn touch-only', type: 'button', 'aria-label': 'Notes' });
+  b.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    togglePanic();
+  });
+  return b;
 }
 
 /** Solde de points dans la barre du haut (mis à jour par ui/toast.ts) ; un clic ouvre la page Points. */

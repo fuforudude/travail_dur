@@ -1,6 +1,7 @@
 import { pushKeys } from '../core/input';
 import { getSettings, keyLabel, randomName } from '../core/settings';
 import { getBest } from '../core/storage';
+import { isTouch } from '../core/touch';
 import { getAccount, setUsername } from '../net/auth';
 import { games, type GameInfo } from '../games/registry';
 import { isAdmin } from '../net/admin';
@@ -115,7 +116,7 @@ export function homeView(root: HTMLElement): () => void {
       'div',
       { class: 'home-hello' },
       h('h1', {}, `Salut ${getSettings().name}`),
-      h('p', { class: 'muted' }, 'Choisis un jeu aux flèches puis Entrée, ou clique. Le menu ☰ en haut à gauche donne accès aux réglages et au compte.'),
+      h('p', { class: 'muted' }, isTouch() ? 'Touche un jeu pour y jouer. Le menu ☰ en haut à gauche donne accès aux réglages et au compte ; l’icône de carnet en haut à droite masque l’écran (appui long pour revenir).' : 'Choisis un jeu aux flèches puis Entrée, ou clique. Le menu ☰ en haut à gauche donne accès aux réglages et au compte.'),
     ),
     summary,
     section('Jeux', ...solo.map(gameCard)),

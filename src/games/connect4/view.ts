@@ -1,5 +1,6 @@
 import { isTyping, pushKeys } from '../../core/input';
 import { applySkins } from '../../net/cosmetics';
+import { touchPad } from '../../core/touch';
 import { h, hints } from '../../ui/dom';
 import { playerName } from '../board';
 import { statusText, type DuelView, type ViewHandlers, type ViewState } from '../duel';
@@ -19,6 +20,7 @@ export function createView(root: HTMLElement, handlers: ViewHandlers, extraHints
     legend,
     h('div', { class: 'c4' }, h('div', { class: 'c4-heads' }, ...heads), h('div', { class: 'c4-board' }, ...cells)),
     status,
+    touchPad([{ label: 'Revanche', key: 'r' }]),
     hints(['← →', 'colonne'], ['Entrée', 'jouer'], ['R', 'revanche'], ...extraHints, ['Retour arrière', 'quitter']),
   );
   root.append(game);

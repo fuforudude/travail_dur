@@ -110,6 +110,23 @@ export function initPanic(): void {
     if (active) scrollPdf(document.getElementById('panic')!, e.key, e.shiftKey);
     return active ? !isEditable(e.target) : false;
   });
+  // Écran tactile : un appui long (sans bouger) sur l'écran de secours ramène au jeu.
+  const screen = document.getElementById('panic')!;
+  let hold = 0;
+  let from: { x: number; y: number } | null = null;
+  const release = () => {
+    clearTimeout(hold);
+    from = null;
+  };
+  screen.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' || !active) return;
+    from = { x: e.clientX, y: e.clientY };
+    hold = window.setTimeout(() => active && from && togglePanic(), 700);
+  });
+  screen.addEventListener('pointermove', (e) => from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 12 && release());
+  screen.addEventListener('pointerup', release);
+  screen.addEventListener('pointercancel', release);
+  screen.addEventListener('contextmenu', (e) => active && e.preventDefault());
   // Le PDF se prépare dès que le navigateur est libre, pour s'afficher instantanément.
   const idle = window.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 1500));
   idle(() => {

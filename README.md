@@ -79,6 +79,18 @@ Le prix et la possession sont vérifiés par le serveur (`shop_buy`, `shop_equip
 - **Caisse souvenirs** (4 000) : 5 % de chances de débloquer une photo encore jamais obtenue, tirée au hasard parmi celles ajoutées par les admins ; sinon un meuble, avec les chances de la caisse classique. Un cadre n’affiche que des photos débloquées (les admins les ont toutes).
 - L’appartement, les meubles et les caisses sont ouverts à tous les joueurs connectés (`public.apartment_allowed()`, migration `0016`).
 
+## Sur téléphone
+
+Le même site s’adapte aux écrans tactiles (détectés automatiquement) : l’aide clavier disparaît et chaque jeu reçoit ses commandes tactiles, qui simulent simplement les touches du clavier (`src/core/touch.ts`).
+
+- **Tetris** : boutons ← ↓ → , tourner, lâcher ; sur le plateau, appui = tourner, glisser = déplacer, glissement rapide vers le bas = lâcher.
+- **2048** : glisser sur le plateau. **Flappy** : toucher l’écran. **Wordle** : clavier à l’écran.
+- **Jeux de plateau** : toucher les cases ; boutons *Règles*, *Revanche* (et *Mur / pion*, *Tourner le mur* au Quoridor).
+- **Tower defense** : toucher une case puis une tour pour la construire ; boutons *Améliorer*, *Vendre*, *▶ Vague*, *Vitesse*, *Pause*.
+- **Panique** : l’icône de carnet en haut à droite masque l’écran ; un appui long sur l’écran de secours ramène au jeu.
+
+**Appli installable (PWA)** : dans Chrome (Android) « Ajouter à l’écran d’accueil » / « Installer l’application », dans Safari (iPhone) Partager → « Sur l’écran d’accueil ». L’appli s’appelle « Notes », avec une icône de carnet, s’ouvre en plein écran et fonctionne hors ligne pour le solo (`public/manifest.webmanifest`, `public/sw.js`).
+
 ## Touche panique
 
 `Échap` (modifiable dans les Réglages) ou `Ctrl+Maj+Espace` masque immédiatement le jeu et affiche **un PDF de cours** dans une visionneuse (titre de l’onglet = nom du fichier), ou à défaut un faux carnet de notes. La même touche ramène au jeu, qui est en pause pendant ce temps. Dans le PDF : molette, flèches, `Page↑` `Page↓`, `Espace`.

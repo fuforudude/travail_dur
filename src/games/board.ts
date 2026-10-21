@@ -4,6 +4,7 @@
 
 import { isPanicked, onPanicChange } from '../core/panic';
 import { blip } from '../core/sound';
+import { touchPad, type PadKey } from '../core/touch';
 import { cosmeticOf, nameEl } from '../net/cosmetics';
 import { getAccount } from '../net/auth';
 import { h, hints } from '../ui/dom';
@@ -117,7 +118,7 @@ export function mountSoloBoard(
  */
 export function boardShell(
   root: HTMLElement,
-  opts: { board: HTMLElement; side?: HTMLElement; keys: [string, string][]; rules: string[] },
+  opts: { board: HTMLElement; side?: HTMLElement; keys: [string, string][]; rules: string[]; pad?: PadKey[] },
 ): { game: HTMLElement; legend: HTMLElement; status: HTMLElement; toggleRules(): void } {
   const legend = h('div', { class: 'game-bar' });
   const status = h('p', { class: 'status' }, 'Chargement…');
@@ -136,6 +137,7 @@ export function boardShell(
     status,
     button,
     rules,
+    touchPad(opts.pad ?? [], [{ label: 'Règles', key: 'i' }, { label: 'Revanche', key: 'r' }]),
     hints(...opts.keys, ['I', 'règles'], ['R', 'revanche'], ['Retour arrière', 'quitter']),
   );
   root.append(game);

@@ -74,7 +74,7 @@ export function toggleDrawer(): void {
       ),
     ),
     list,
-    h('p', { class: 'drawer-foot muted small' }, '↑ ↓ choisir · Entrée ouvrir · M fermer'),
+    h('p', { class: 'drawer-foot muted small keyboard-only' }, '↑ ↓ choisir · Entrée ouvrir · M fermer'),
   );
   const backdrop = h('div', { class: 'drawer-backdrop' });
   // Dans #app (et non body) : la touche panique, qui masque #app, masque aussi le menu.

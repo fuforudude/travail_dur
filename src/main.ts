@@ -1,8 +1,10 @@
 import './styles.css';
+import './mobile.css';
 import { initPanic } from './core/panic';
 import { initPrank } from './core/prank';
 import { applyTheme } from './core/settings';
 import { onStale, startUpdateChecks } from './core/update';
+import { initTouch } from './core/touch';
 import { consumeAuthRedirect, ensureAccount, onAccount } from './net/auth';
 import { startNotifications } from './net/friends';
 import { startPoints } from './net/points';
@@ -15,6 +17,7 @@ import { playView } from './ui/play';
 import { initPointsUi, initSocialUi, toast } from './ui/toast';
 
 applyTheme();
+initTouch();
 initPanic();
 initPrank();
 initPointsUi();
@@ -56,6 +59,11 @@ function flushTdUploads(): void {
 }
 
 // Retour d'un lien reçu par email : Supabase lit les jetons avant que le routeur ne touche au hash.
+// Appli installable (PWA) : le service worker garde le site pour l'ouvrir même sans réseau.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {}));
+}
+
 consumeAuthRedirect().finally(() => {
   startRouter();
   // Une fois l'accueil affiché et le navigateur au repos, on prépare les autres pages.

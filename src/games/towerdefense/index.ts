@@ -1,6 +1,7 @@
 import { isTyping, pushKeys } from '../../core/input';
 import { isPanicked } from '../../core/panic';
 import { blip } from '../../core/sound';
+import { isTouch, pressKey, touchPad } from '../../core/touch';
 import { load, remove, save, setBest } from '../../core/storage';
 import { GAIN_MULT } from '../../net/points';
 import { multiConfigured } from '../../net/supabase';
@@ -343,6 +344,7 @@ function mount(ctx: GameContext): () => void {
       h('p', { class: 'muted small' }, act),
       h('h2', {}, title),
       box,
+      touchPad([{ label: 'Passer', key: 'Tab' }, { label: 'Suite', key: 'Enter', wide: true }]),
       hints(['Entrée', 'suite'], ['Tab', 'passer'], ['Retour arrière', 'carte']),
     );
     ctx.root.append(wrap);
@@ -350,7 +352,7 @@ function mount(ctx: GameContext): () => void {
       const shown = lines.slice(0, i + 1);
       box.replaceChildren(
         ...shown.map((l, k) => h('p', { class: `td-line${k === i ? ' now' : ''}` }, h('b', {}, `${l.who} : `), l.text)),
-        h('p', { class: 'muted small' }, i < lines.length - 1 ? `${i + 1} / ${lines.length}` : 'Entrée pour continuer'),
+        h('p', { class: 'muted small' }, i < lines.length - 1 ? `${i + 1} / ${lines.length}` : isTouch() ? 'Touche l’écran pour continuer' : 'Entrée pour continuer'),
       );
       box.lastElementChild?.scrollIntoView({ block: 'nearest' });
     };
@@ -427,6 +429,10 @@ function mount(ctx: GameContext): () => void {
         h('div', { class: 'overlay-wrap' }, canvas, overlay),
         info,
         noteEl,
+        touchPad(
+          [{ label: map.special ? 'Améliorer / débloquer' : 'Améliorer', key: 'u', wide: true }, { label: 'Vendre', key: 's' }],
+          [{ label: '▶ Vague', key: ' ', wide: true }, { label: 'Vitesse', key: 'f' }, { label: 'Pause', key: 'p' }],
+        ),
         hints(
           ['← ↑ → ↓', 'case'], ['1 – 0', 'construire'], ['U', map.special ? 'améliorer / débloquer' : 'améliorer'], ['S', 'vendre'], ['Espace', 'lancer la vague'],
           ['F', 'vitesse'], ['P', 'pause'], ['R', 'abandonner'], ['Retour arrière', 'quitter'],
@@ -698,7 +704,7 @@ function mount(ctx: GameContext): () => void {
           return b;
         });
         return [
-          h('p', { class: 'small' }, choosing ? 'Choisis la voie : 1 ou 2 (une autre touche pour annuler).' : `U pour choisir sa voie (définitif) · ${sell}`),
+          h('p', { class: 'small' }, choosing ? (isTouch() ? 'Touche la voie choisie.' : 'Choisis la voie : 1 ou 2 (une autre touche pour annuler).') : `${isTouch() ? 'Touche une voie pour la choisir' : 'U pour choisir sa voie'} (définitif) · ${sell}`),
           h('div', { class: 'td-paths' }, ...choices),
         ];
       }
@@ -724,7 +730,9 @@ function mount(ctx: GameContext): () => void {
         const count = s.towers.filter((t) => TOWERS[t.kind].id === id).length;
         const full = def.maxPerMap !== undefined && count >= def.maxPerMap;
         const cost = priceOf(s, def.cost);
-        return h('span', { class: 'chip' + (s.gold >= cost && !full ? '' : ' off') }, h('kbd', {}, KEYS[i]), ` ${def.name} ${cost}`, full ? ' (max)' : '');
+        const chip = h('button', { class: 'chip td-chip' + (s.gold >= cost && !full ? '' : ' off'), type: 'button' }, h('kbd', { class: 'keyboard-only' }, KEYS[i]), ` ${def.name} ${cost}`, full ? ' (max)' : '');
+        chip.addEventListener('click', () => pressKey(KEYS[i]));
+        return chip;
       });
       const t = towerAt(cx, cy);
       if (!t || t.level !== 2) choosing = false;
@@ -734,7 +742,7 @@ function mount(ctx: GameContext): () => void {
         const st = towerStats(def, t.level, t.path);
         detail.push(h('p', { class: 'small' }, h('b', {}, `${def.name} · ${def.special ? 'spéciale' : levelName(t)}`), ` — ${statsLine(st)}`));
         detail.push(...upgradePanel(t));
-      } else if (isBuildable(s.map, cx, cy)) detail.push(h('p', { class: 'small muted' }, `Case libre : ${KEYS.slice(0, s.allowed.length).join(', ')} pour construire.`));
+      } else if (isBuildable(s.map, cx, cy)) detail.push(h('p', { class: 'small muted' }, isTouch() ? 'Case libre : touche une tour ci-dessous pour la construire ici.' : `Case libre : ${KEYS.slice(0, s.allowed.length).join(', ')} pour construire.`));
       else detail.push(h('p', { class: 'small muted' }, 'Chemin des ennemis.'));
 
       const blocks: HTMLElement[] = [];
@@ -744,7 +752,7 @@ function mount(ctx: GameContext): () => void {
         for (const sp of plan.spawns) counts.set(sp.enemy, (counts.get(sp.enemy) ?? 0) + 1);
         const list = [...counts].map(([e, n]) => (ENEMIES[e].tier === 'boss' ? bossName(ENEMIES[e], s.level) : `${n} ${ENEMIES[e].name}`)).join(', ');
         const tag = plan.boss !== null ? ' · BOSS' : plan.theme ? ` · vague thématique « ${plan.theme} »` : '';
-        blocks.push(h('p', { class: 'small' }, h('b', {}, `Vague ${plan.wave}${tag}`), ` : ${list}. Espace pour lancer.`));
+        blocks.push(h('p', { class: 'small' }, h('b', {}, `Vague ${plan.wave}${tag}`), ` : ${list}. ${isTouch() ? '▶ Vague' : 'Espace'} pour lancer.`));
         const intro = plan.intro ?? (plan.boss !== null ? plan.boss : null);
         if (intro !== null) {
           const d = ENEMIES[intro];
@@ -770,11 +778,11 @@ function mount(ctx: GameContext): () => void {
         overlay.replaceChildren(
           h('strong', {}, 'Victoire !'),
           h('span', {}, `Bagou est tombé : ${FINAL_WAVE} vagues tenues.`),
-          h('span', { class: 'muted small' }, 'Entrée pour continuer (les PV montent de 8 % par vague).'),
+          h('span', { class: 'muted small' }, `${isTouch() ? '▶ Vague' : 'Entrée'} pour continuer (les PV montent de 8 % par vague).`),
         );
         overlay.hidden = false;
       } else if (paused) {
-        overlay.replaceChildren(h('strong', {}, 'Pause'), h('span', { class: 'muted small' }, 'P pour reprendre'));
+        overlay.replaceChildren(h('strong', {}, 'Pause'), h('span', { class: 'muted small' }, isTouch() ? 'Pause pour reprendre' : 'P pour reprendre'));
         overlay.hidden = false;
       }
       if (!running) draw(1);
@@ -802,7 +810,7 @@ function mount(ctx: GameContext): () => void {
         unlocks.length ? h('span', { class: 'small' }, `Débloqué : ${unlocks.join(', ')}.`) : '',
         multiConfigured ? h('span', { class: `small${session ? '' : ' td-unsaved'}` }, saveStatus()) : '',
         h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('La suite de l’histoire', outro, true)),
-        h('span', { class: 'muted small' }, 'Entrée la suite · M carte'),
+        h('span', { class: 'muted small keyboard-only' }, 'Entrée la suite · M carte'),
       ];
     };
 
@@ -814,7 +822,7 @@ function mount(ctx: GameContext): () => void {
         session && !campaign ? h('span', { class: 'small' }, `+${GAIN_MULT * s.wave * (s.wave + 1)} points ◆ gagnés`) : '',
         foe ? h('span', { class: 'small muted' }, `Vaincu par : ${foe.tier === 'boss' ? bossName(foe, s.level) : foe.name}. Contre conseillé : ${foe.counters}.`) : '',
         h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('Recommencer', retry, true)),
-        h('span', { class: 'muted small' }, 'Entrée recommencer · M carte · C caisses'),
+        h('span', { class: 'muted small keyboard-only' }, 'Entrée recommencer · M carte · C caisses'),
       ];
     };
 

@@ -4,6 +4,7 @@ import { blip } from '../../core/sound';
 import { getBest, setBest } from '../../core/storage';
 import { flushPending, startRanked, submitMessage, submitRanked } from '../../net/ranked';
 import { multiConfigured } from '../../net/supabase';
+import { isTouch } from '../../core/touch';
 import { h, hints } from '../../ui/dom';
 import { randomSeed } from '../g2048/rng';
 import type { Game, GameContext } from '../types';
@@ -24,6 +25,7 @@ function mount(ctx: GameContext): () => void {
   let raf = 0;
   let disposed = false;
   let prevY = 2500;
+  let diedAt = 0; // un appui juste après la chute ne relance pas la partie par erreur
 
   const canvas = h('canvas', { class: 'fb-canvas' });
   const g = canvas.getContext('2d')!;
@@ -93,11 +95,11 @@ function mount(ctx: GameContext): () => void {
     if (s && started) g.fillText(String(s.score), W / 2, 500);
     g.font = `500 ${Math.round(150)}px system-ui, sans-serif`;
     if (preparing) g.fillText('Préparation…', W / 2, H / 2);
-    else if (s && !started) g.fillText('Espace pour commencer', W / 2, H / 2 + 700);
+    else if (s && !started) g.fillText(isTouch() ? 'Touche pour commencer' : 'Espace pour commencer', W / 2, H / 2 + 700);
     else if (s?.dead) {
       g.fillText('Perdu !', W / 2, H / 2 - 100);
       g.fillStyle = c.muted;
-      g.fillText('R pour rejouer', W / 2, H / 2 + 120);
+      g.fillText(isTouch() ? 'Touche pour rejouer' : 'R pour rejouer', W / 2, H / 2 + 120);
     }
   };
 
@@ -168,6 +170,7 @@ function mount(ctx: GameContext): () => void {
       }
       if (s.dead) {
         blip(160, 0.15);
+        diedAt = performance.now();
         finish();
         return;
       }
@@ -188,6 +191,11 @@ function mount(ctx: GameContext): () => void {
 
   canvas.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    if (s?.dead && e.pointerType !== 'mouse') {
+      if (performance.now() - diedAt < 600) return;
+      note = '';
+      return void start();
+    }
     flap();
   });
 

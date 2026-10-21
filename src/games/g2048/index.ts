@@ -3,6 +3,7 @@ import { blip } from '../../core/sound';
 import { getBest, load, remove, save, setBest } from '../../core/storage';
 import { flushPending, startRanked, submitMessage, submitRanked } from '../../net/ranked';
 import { multiConfigured } from '../../net/supabase';
+import { isTouch, pressKey, touchPad } from '../../core/touch';
 import { h, hints } from '../../ui/dom';
 import type { Game, GameContext } from '../types';
 import { addRandom, canMove, DIR_CODE, move, replay, type Dir, type Grid } from './logic';
@@ -47,6 +48,7 @@ function mount(ctx: GameContext): () => void {
       h('div', { class: 'game-bar' }, h('span', { class: 'stat' }, 'Score ', scoreEl), rankEl, h('span', { class: 'stat' }, 'Record ', bestEl)),
       h('div', { class: 'overlay-wrap' }, board, overlay),
       noteEl,
+      touchPad([{ label: 'Recommencer', key: 'r' }]),
       hints(['← ↑ → ↓', 'jouer'], ['R', 'recommencer'], ['Retour arrière', 'quitter']),
     ),
   );
@@ -75,8 +77,8 @@ function mount(ctx: GameContext): () => void {
     noteEl.textContent = note;
     overlay.hidden = true;
     if (starting) showOverlay('Préparation…', 'Récupération de la partie auprès du serveur');
-    else if (won()) showOverlay('2048 !', 'Entrée pour continuer · R pour recommencer');
-    else if (over()) showOverlay('Plus de coups possibles', `Score : ${score} · R pour recommencer`);
+    else if (won()) showOverlay('2048 !', isTouch() ? 'Touche le plateau pour continuer' : 'Entrée pour continuer · R pour recommencer');
+    else if (over()) showOverlay('Plus de coups possibles', `Score : ${score}${isTouch() ? '' : ' · R pour recommencer'}`);
   };
 
   const persist = () => {
@@ -148,7 +150,7 @@ function mount(ctx: GameContext): () => void {
     const dx = e.clientX - touch.x;
     const dy = e.clientY - touch.y;
     touch = null;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return void (e.pointerType !== 'mouse' && pressKey('Enter')); // appui : « continuer » après 2048
     play(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up');
   });
 

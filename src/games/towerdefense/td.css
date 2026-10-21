@@ -95,3 +95,7 @@
 .td-server-down { margin: 0 0 0.6rem; }
 .td-unsaved { color: var(--tone1, #c0392b); font-weight: 600; }
 .td-shop-note { margin: 0.2rem 0 0; }
+
+.td-chip { font: inherit; font-size: 0.85rem; cursor: pointer; }
+.touch .td-chip { padding: 0.45rem 0.8rem; font-size: 0.95rem; }
+.touch .td-shop { gap: 0.45rem; }
