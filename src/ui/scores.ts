@@ -9,8 +9,8 @@ import { page } from './layout';
 interface Board {
   title: string;
   view: string;
-  order: string;
-  columns: [string, string][]; // [clé, en-tête]
+  order: string | string[]; // plusieurs colonnes : départage dans l'ordre
+  columns: [string, string, ((v: string | number) => string)?][]; // [clé, en-tête, mise en forme]
 }
 
 const BOARDS: Board[] = [
@@ -19,7 +19,12 @@ const BOARDS: Board[] = [
   { title: 'Tetris', view: 'leaderboard_tetris', order: 'best', columns: [['best', 'Record'], ['lines', 'Lignes'], ['games', 'Parties']] },
   { title: 'Wordle', view: 'leaderboard_wordle', order: 'solved', columns: [['solved', 'Trouvés'], ['games', 'Jours'], ['average', 'Moyenne']] },
   { title: 'Flappy', view: 'leaderboard_flappy', order: 'best', columns: [['best', 'Record'], ['games', 'Parties']] },
-  { title: 'Tower defense', view: 'leaderboard_td', order: 'best', columns: [['best', 'Vagues'], ['kills', 'Victimes'], ['games', 'Parties']] },
+  {
+    title: 'Tower defense',
+    view: 'leaderboard_td',
+    order: ['level', 'stars', 'best'],
+    columns: [['level', 'Campagne', (v) => `niv. ${v} / 20`], ['stars', 'Étoiles', (v) => `★ ${v}`], ['best', 'Infini : vague max'], ['games', 'Parties']],
+  },
   { title: 'Puissance 4', view: 'leaderboard_c4', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
   { title: 'Morpion', view: 'leaderboard_ttt', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
   { title: 'Échecs', view: 'leaderboard_chess', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
@@ -55,7 +60,9 @@ export function scoresView(root: HTMLElement): () => void {
     body.replaceChildren(h('h1', {}, 'Classements'), tabs, h('p', { class: 'muted' }, 'Chargement…'));
     const mine = ++seq;
     const supabase = await getSupabase();
-    const { data, error } = (await supabase!.from(b.view).select('*').order(b.order, { ascending: false }).limit(50)) as {
+    let query = supabase!.from(b.view).select('*');
+    for (const key of typeof b.order === 'string' ? [b.order] : b.order) query = query.order(key, { ascending: false });
+    const { data, error } = (await query.limit(50)) as {
       data: Record<string, string | number>[] | null;
       error: unknown;
     };
@@ -74,7 +81,7 @@ export function scoresView(root: HTMLElement): () => void {
             { class: row.user_id === me?.id ? 'me' : '' },
             h('td', {}, String(i + 1)),
             h('td', {}, nameEl(String(row.user_id), String(row.username))),
-            ...b.columns.map(([k]) => h('td', {}, String(row[k] ?? 0))),
+            ...b.columns.map(([k, , fmt]) => h('td', {}, fmt ? fmt(row[k] ?? 0) : String(row[k] ?? 0))),
           ),
         ),
       ),
