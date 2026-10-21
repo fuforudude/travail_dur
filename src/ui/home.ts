@@ -101,7 +101,8 @@ export function homeView(root: HTMLElement): () => void {
     const look = LOOK[g.id] ?? { icon: '▸', tone: 3, tags: [] };
     const rec = RECORD[g.id];
     const best = rec ? getBest(rec[0]) : 0;
-    return card(g.id, g.name, '', look.icon, look.tone, () => navigate(`/game/${g.id}`), { tags: look.tags, record: best > 0 ? rec[1](best) : undefined });
+    const tags = off ? look.tags.filter((t) => t !== 'Classé' && t !== 'Multi').map((t) => t === 'Mot du jour' ? 'Entraînement' : t) : look.tags;
+    return card(g.id, g.name, '', look.icon, look.tone, () => navigate(`/game/${g.id}`), { tags, record: best > 0 ? rec[1](best) : undefined });
   };
 
   const solo = games.filter((g) => g.modes.includes('solo') && !g.modes.includes('multi'));
@@ -119,21 +120,22 @@ export function homeView(root: HTMLElement): () => void {
       h('h1', {}, `Salut ${getSettings().name}`),
     ),
     summary,
+    off ? h('p', { class: 'notice' }, 'Mode local : les jeux solo restent disponibles. Les salons, les classements et les achats sont indisponibles.') : null,
     section('Jeux', ...solo.map(gameCard)),
     section(
-      'Multijoueur',
+      'Solo ou à plusieurs',
       ...duel.map(gameCard),
-      card('room', 'Créer un salon', off ? 'Multijoueur non configuré' : '', '+', 1, () => navigate(`/room/${generateCode()}`), { disabled: off }),
-      card('join', 'Rejoindre un salon', off ? 'Multijoueur non configuré' : '', '→', 1, () => navigate('/join'), { disabled: off }),
+      card('room', 'Créer un salon', '', '+', 1, () => navigate(`/room/${generateCode()}`), { disabled: off }),
+      card('join', 'Rejoindre un salon', '', '→', 1, () => navigate('/join'), { disabled: off }),
     ),
     section(
       'Points et casino',
-      card('points', 'Mes points', off ? 'Serveur non configuré' : getWallet() ? `◆ ${formatPoints(getWallet()!.balance)}` : '', '◆', 4, () => navigate('/points'), { disabled: off }),
-      card('roulette', 'Roulette', '', '◎', 2, () => navigate('/roulette'), { tags: ['Casino'], disabled: off }),
+      card('points', 'Mes points', '', '◆', 4, () => navigate('/points'), { disabled: off }),
+      card('roulette', 'Roulette', '', '◎', 2, () => navigate('/roulette'), { disabled: off }),
       card('shop', 'Boutique', '', '✦', 3, () => navigate('/shop'), { disabled: off }),
-      card('slots', 'Machine à sous', '', '7', 5, () => navigate('/slots'), { tags: ['Casino'], disabled: off }),
+      card('slots', 'Machine à sous', '', '7', 5, () => navigate('/slots'), { disabled: off }),
     ),
-    hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'ouvrir'], ['M', 'menu (réglages, classements, compte)'], [keyLabel(getSettings().panicKey), 'masquer l’écran']),
+    hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'ouvrir'], ['M', 'menu'], [keyLabel(getSettings().panicKey), 'masquer l’écran']),
   );
   content.classList.add('wide');
   content.append(wrap);
@@ -142,9 +144,9 @@ export function homeView(root: HTMLElement): () => void {
   wrap.lastElementChild!.before(
     section(
       'Appart',
-      card('appart', 'Mon appart', off ? 'Serveur non configuré' : '', '⌂', 3, () => navigate('/appart'), { disabled: off }),
-      card('caisses', 'Meubles et caisses', '', '▣', 5, () => navigate('/caisses'), { tags: ['Caisses'], disabled: off }),
-      card('amis', 'Amis', off ? 'Serveur non configuré' : '', '♥', 2, () => navigate('/amis'), { disabled: off }),
+      card('appart', 'Mon appart', '', '⌂', 3, () => navigate('/appart'), { disabled: off }),
+      card('caisses', 'Meubles et caisses', '', '▣', 5, () => navigate('/caisses'), { disabled: off }),
+      card('amis', 'Amis', '', '♥', 2, () => navigate('/amis'), { disabled: off }),
     ),
   );
   void isAdmin().then((admin) => {
@@ -177,6 +179,7 @@ function namePrompt(root: HTMLElement): () => void {
     { class: 'card narrow' },
     h('h1', {}, 'Choisis un pseudo'),
     input,
+    h('button', { class: 'field', type: 'submit' }, 'Jouer'),
     hints(['Entrée', 'valider'], ['Tab', 'pseudo au hasard']),
   );
   const error = h('p', { class: 'muted small' });

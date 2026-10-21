@@ -41,7 +41,7 @@ export function friendsView(root: HTMLElement, [param]: string[]): () => void {
   content.append(h('div', { class: 'card' }, h('h1', {}, 'Amis'), tabsEl, statusEl, body), hints(['← →', 'onglet'], ['Retour arrière', 'accueil (hors du champ)']));
 
   if (!multiConfigured) {
-    body.replaceChildren(h('p', { class: 'muted' }, 'Le serveur n’est pas configuré.'));
+    body.replaceChildren(h('p', { class: 'muted' }, 'Les amis ne sont pas disponibles en mode local.'));
     return () => {};
   }
 
@@ -71,7 +71,7 @@ export function friendsView(root: HTMLElement, [param]: string[]): () => void {
     const pending = friends.filter((f) => f.status === 'received').length + getNotifications().filter((n) => n.kind === 'room_invite' && !n.read).length;
     tabsEl.replaceChildren(
       ...TABS.map(([id, label]) => {
-        const b = h('button', { class: 'tab' + (id === tab ? ' on' : ''), type: 'button' }, label, id === 'requests' && pending ? h('span', { class: 'badge' }, String(pending)) : '');
+        const b = h('button', { class: 'tab' + (id === tab ? ' on' : ''), type: 'button' }, label, id === 'requests' && pending ? h('span', { class: 'badge' }, ` ${pending}`) : '');
         b.addEventListener('click', () => switchTo(id));
         return b;
       }),

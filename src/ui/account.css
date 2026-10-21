@@ -1,3 +1,0 @@
-/* Page Compte : bouton de suppression du compte. */
-.field.danger { color: #c8343c; border-color: color-mix(in srgb, #c8343c 45%, var(--border)); }
-.field.danger:hover:not(:disabled), .field.danger:focus { background: color-mix(in srgb, #c8343c 10%, var(--surface)); }

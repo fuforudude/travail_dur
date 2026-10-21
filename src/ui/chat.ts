@@ -21,7 +21,7 @@ export function chatPanel(room: Room): { el: HTMLElement; destroy(): void } {
 
   const list = h('ol', { class: 'chat-list', 'aria-live': 'polite' });
   const status = h('p', { class: 'muted small chat-status' });
-  const input = h('input', { class: 'field', maxlength: 300, placeholder: 'Écrire un message…  (T)', 'aria-label': 'Message', autocomplete: 'off' });
+  const input = h('input', { class: 'field', maxlength: 300, placeholder: 'Écrire un message…', 'aria-label': 'Message', autocomplete: 'off' });
   const form = h('form', { class: 'chat-form' }, input, h('button', { class: 'field', type: 'submit' }, 'Envoyer'));
   const el = h('section', { class: 'card chat' }, h('h2', {}, 'Discussion'), list, status, form);
 
@@ -35,6 +35,7 @@ export function chatPanel(room: Room): { el: HTMLElement; destroy(): void } {
           'li',
           { class: m.sender === room.myId ? 'mine' : '' },
           h('span', { class: 'chat-time' }, time(m.created_at)),
+          ' ',
           h('b', {}, nameEl(m.sender, room.nameOf(m.sender) ?? m.profiles?.username ?? 'Joueur')),
           ' ',
           m.body,

@@ -83,7 +83,7 @@ function mount(ctx: GameContext): () => void {
     noteEl.textContent = note;
     rankEl.textContent = session ? 'partie classée' : multiConfigured ? 'non classée' : '';
     if (!s) {
-      if (starting) showOverlay('Préparation…', 'Récupération de la partie auprès du serveur');
+      if (starting) showOverlay('Préparation…', 'La partie va commencer.');
       return;
     }
     const view = s.board.slice();

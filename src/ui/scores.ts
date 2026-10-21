@@ -54,7 +54,7 @@ export function scoresView(root: HTMLElement): () => void {
       }),
     );
     if (!multiConfigured) {
-      body.replaceChildren(h('h1', {}, 'Classements'), h('p', { class: 'muted' }, 'Le serveur n’est pas configuré.'));
+      body.replaceChildren(h('h1', {}, 'Classements'), h('p', { class: 'muted' }, 'Les classements ne sont pas disponibles en mode local.'));
       return;
     }
     body.replaceChildren(h('h1', {}, 'Classements'), tabs, h('p', { class: 'muted' }, 'Chargement…'));

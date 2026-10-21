@@ -18,13 +18,13 @@ const BETS = [1, 5, 10, 25, 50, 100, 250, 500];
 export function slotsView(root: HTMLElement): () => void {
   const content = page(root, 'Machine à sous');
   if (!multiConfigured) {
-    content.append(h('div', { class: 'card narrow' }, h('h1', {}, 'Machine à sous'), h('p', { class: 'muted' }, 'Le serveur n’est pas configuré : pas de points à miser.')));
+    content.append(h('div', { class: 'card narrow' }, h('h1', {}, 'Machine à sous'), h('p', { class: 'muted' }, 'La machine à sous n’est pas disponible en mode local.')));
     return pushKeys((e) => e.key === 'Backspace' && navigate('/'));
   }
 
   let bet = 2; // index dans BETS
   let spinning = false;
-  let message = 'Choisis ta mise (← →), puis Espace.';
+  let message = 'Choisis ta mise, puis joue.';
   const timers: number[] = [];
 
   const reels = [0, 1, 2].map((i) => h('div', { class: 'sl-reel' }, h('span', {}, SYMBOLS[[4, 5, 3][i]])));

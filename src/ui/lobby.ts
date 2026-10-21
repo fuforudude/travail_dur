@@ -24,13 +24,14 @@ export function joinView(root: HTMLElement): () => void {
   const content = page(root, 'Rejoindre un salon');
   if (!multiConfigured) return notConfigured(content);
 
-  const input = h('input', { class: 'field code-input', maxlength: 4, placeholder: 'ABCD', 'aria-label': 'Code du salon', autocomplete: 'off' });
+  const input = h('input', { class: 'field code-input', minlength: 4, maxlength: 4, required: true, pattern: '[A-Z]{4}', placeholder: 'ABCD', 'aria-label': 'Code du salon', autocomplete: 'off' });
   const form = h(
     'form',
     { class: 'card narrow' },
     h('h1', {}, 'Rejoindre un salon'),
     h('p', { class: 'muted' }, 'Saisis le code à 4 lettres.'),
     input,
+    h('button', { class: 'field', type: 'submit' }, 'Rejoindre'),
     hints(['Entrée', 'rejoindre'], ['Retour arrière', 'accueil (champ vide)']),
   );
   input.addEventListener('input', () => (input.value = normalizeCode(input.value)));
@@ -53,8 +54,8 @@ function notConfigured(content: HTMLElement): () => void {
     h(
       'div',
       { class: 'card narrow' },
-      h('h1', {}, 'Multijoueur non configuré'),
-      h('p', { class: 'muted' }, 'Renseigne VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY (voir le README). Le solo reste disponible.'),
+      h('h1', {}, 'Multijoueur indisponible'),
+      h('p', { class: 'muted' }, 'Les salons ne sont pas disponibles en mode local. Tu peux jouer en solo depuis l’accueil.'),
       hints(['Retour arrière', 'accueil']),
     ),
   );
@@ -248,13 +249,24 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
       const i = list.indexOf(p);
       const li = h(
         'li',
-        { class: (p.id === me ? 'me' : '') + (i === selected ? ' selected' : '') },
+        {
+          class: (p.id === me ? 'me' : '') + (i === selected ? ' selected' : ''),
+          role: i >= 0 ? 'button' : undefined,
+          tabindex: i >= 0 ? 0 : undefined,
+          'aria-label': i >= 0 ? `Défier ${p.name}` : undefined,
+        },
         h('span', { class: 'dot' + (p.busy ? ' on' : '') }),
         nameEl(p.id, p.name),
         p.id === me ? h('span', { class: 'tag' }, 'toi') : null,
-        h('span', { class: 'muted small push' }, p.busy ? 'en partie' : i === selected ? 'Entrée : défier' : ''),
+        h('span', { class: 'muted small push' }, p.busy ? 'En partie' : i >= 0 ? 'Défier' : ''),
       );
       if (i >= 0) {
+        li.addEventListener('focus', () => { selected = i; });
+        li.addEventListener('keydown', (e) => {
+          if (e.key !== ' ') return;
+          e.preventDefault();
+          li.click();
+        });
         li.addEventListener('click', () => {
           selected = i;
           sendChallenge();
@@ -276,12 +288,14 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
       return b;
     });
 
+    const copy = h('button', { class: 'field small-btn', type: 'button' }, 'Copier le lien');
+    copy.addEventListener('click', copyLink);
     stage.replaceChildren(
       h(
         'div',
         { class: 'card' },
         h('div', { class: 'lobby-head' }, h('h1', {}, 'Salon'), h('span', { class: 'code' }, code)),
-        h('p', { class: 'muted small link' }, link()),
+        h('p', {}, copy),
         h(
           'div',
           { class: 'picker' },
@@ -336,6 +350,14 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
     render();
   };
 
+  const copyLink = () => {
+    if (!navigator.clipboard) return flash(`Copie indisponible : partage le code ${code}.`);
+    void navigator.clipboard.writeText(link()).then(
+      () => flash('Lien copié.'),
+      () => flash(`Copie impossible : partage le code ${code}.`),
+    );
+  };
+
   offs.push(
     pushKeys((e) => {
       if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -354,6 +376,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
         e.preventDefault();
         pickGame(gameIndex + (key === 'arrowright' ? 1 : -1));
       } else if (key === 'enter') {
+        if (document.activeElement instanceof HTMLButtonElement) return;
         e.preventDefault();
         sendChallenge();
       } else if (key === 'o' && incoming) {
@@ -373,10 +396,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
         outgoing = null;
         void act(() => cancelChallenge(m.id));
       } else if (key === 'c') {
-        navigator.clipboard?.writeText(link()).then(
-          () => flash('Lien copié.'),
-          () => flash(`Copie impossible : partage le code ${code}.`),
-        );
+        copyLink();
       }
     }),
   );

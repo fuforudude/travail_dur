@@ -1,12 +1,26 @@
 /* Finitions communes à toute l'appli : boutons plus visibles et retour visuel immédiat au clic. */
 
+:where(button, a[href], summary, [role='button']) {
+  cursor: pointer;
+  -webkit-tap-highlight-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+:where(button, a[href], summary, [role='button']):not(:disabled):not([aria-disabled='true']):active {
+  filter: brightness(0.85);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--text) 35%, transparent);
+}
+:is(button, a[href], summary, [role='button']):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+button:disabled, [role='button'][aria-disabled='true'] { cursor: not-allowed; }
+
 /* Boutons : un léger relief, qui s'enfonce quand on appuie. */
 button.field,
 .tile,
-.shop-item,
+button.shop-item,
 .td-level,
 .td-path,
-.chip,
+button.chip,
 .rl-token,
 .toast-action {
   transition: transform 0.08s ease, box-shadow 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
@@ -15,12 +29,12 @@ button.field:not(:disabled) { box-shadow: 0 1px 0 color-mix(in srgb, var(--borde
 button.field:not(:disabled):hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
 button.field:not(:disabled):active,
 .tile:not(:disabled):active,
-.shop-item:not(:disabled):active,
+button.shop-item:not(:disabled):active,
 .td-level:not(:disabled):active,
 .td-path:not(:disabled):active,
-.chip:active,
-.rl-token:active,
-.toast-action:active {
+button.chip:not(:disabled):active,
+.rl-token:not(:disabled):active,
+.toast-action:not(:disabled):active {
   transform: scale(0.96);
   box-shadow: none;
 }
@@ -33,6 +47,38 @@ button.field:not(:disabled):active,
 
 /* Bouton désactivé : clairement inactif. */
 button.field:disabled { cursor: not-allowed; }
+
+/* Les fiches de collection ressemblent aux cartes d'achat, mais ne sont pas des boutons. */
+.shop-item:not(button) { cursor: default; }
+.players li[role='button']:hover { background: var(--accent-soft); border-color: var(--accent); }
+
+.td-story-box:active { border-color: var(--accent); background: var(--accent-soft); }
+:is(.c4-board, .ttt-cell, .ch-sq, .dm-sq:not(.light), .qd-cell, .qt-cell, .qt-slot, .f4-board):active {
+  box-shadow: inset 0 0 0 3px var(--accent);
+}
+.iso-tile.edit:active { fill: var(--tile-hover); stroke: var(--accent); stroke-width: 2; }
+.iso-slot.edit:active { fill: rgb(255 255 255 / 35%); stroke: var(--accent); }
+.iso-slot.photo:active { fill: color-mix(in srgb, var(--accent) 35%, transparent); }
+.iso-fixture:active { filter: brightness(0.85); }
+.iso-door:not(.locked):active .iso-door-leaf { fill: #a16a40; }
+.qd-hit:active { background: var(--accent-soft); }
+
+.field::file-selector-button {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.2rem 0.5rem;
+  margin-right: 0.5rem;
+  cursor: pointer;
+}
+.field::file-selector-button:hover { background: var(--accent-soft); border-color: var(--accent); }
+.field::file-selector-button:active { background: var(--surface-2); border-color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  :is(button, a[href], summary, [role='button']) { transition: none; }
+}
 
 /* Appart : actions du meuble en main (ranger, vendre, pivoter). */
 .ap-hand-actions { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.4rem; }

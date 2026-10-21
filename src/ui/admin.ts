@@ -58,7 +58,7 @@ export function adminView(root: HTMLElement): () => void {
   };
 
   // --- Joueurs -------------------------------------------------------------
-  const search = h('input', { class: 'field', placeholder: 'Pseudo ou identifiant (vide : les plus riches)', 'aria-label': 'Recherche' });
+  const search = h('input', { class: 'field', placeholder: 'Rechercher par pseudo ou identifiant', 'aria-label': 'Recherche' });
   const results = h('tbody', {});
   const detail = h('div', { class: 'admin-detail card', hidden: true });
   let players: PlayerRow[] = [];
@@ -99,7 +99,7 @@ export function adminView(root: HTMLElement): () => void {
           return h(
             'tr',
             { class: selected?.id === p.id ? 'me' : '' },
-            h('td', {}, nameEl(p.id, p.username), p.is_admin ? h('span', { class: 'tag' }, 'admin') : '', p.verified ? '' : h('span', { class: 'muted small' }, ' invité')),
+            h('td', {}, nameEl(p.id, p.username), p.is_admin ? h('span', { class: 'tag' }, ' admin') : '', p.verified ? '' : h('span', { class: 'muted small' }, ' invité')),
             h('td', {}, formatPoints(p.balance)),
             h('td', {}, p.cursed ? h('span', { class: 'tag danger-tag' }, `maudit · ${p.curse_level}`) : ''),
             h('td', { class: 'admin-actions' }, edit, curse, del),
@@ -220,7 +220,7 @@ export function adminView(root: HTMLElement): () => void {
       const rows = await adminLog();
       log.replaceChildren(
         ...rows.map((r) =>
-          h('li', {}, h('b', {}, ACTIONS[r.action] ?? r.action), h('span', {}, r.detail ?? ''), h('span', { class: 'muted small push' }, new Date(r.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))),
+          h('li', {}, h('b', {}, ACTIONS[r.action] ?? r.action), r.detail ? h('span', {}, ` — ${r.detail}`) : null, h('span', { class: 'muted small push' }, ' ', new Date(r.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))),
         ),
       );
     } catch (e) {

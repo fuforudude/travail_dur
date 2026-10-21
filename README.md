@@ -268,6 +268,13 @@ supabase/migrations/      tables, règles d'accès et fonctions serveur
 - **Base de données** : les migrations définissent à la fois le schéma et une partie importante des
   règles métier. Une migration déjà exécutée ne doit pas être modifiée : ajouter une migration
   ultérieure et l’appliquer une seule fois dans l’ordre indiqué dans « Configurer Supabase ».
+- **Textes et interactions** : les écrans affichent des libellés courts, sans instructions de
+  configuration technique. Conserver des espaces explicites entre les fragments de texte et les
+  éléments en ligne ; ne pas ajouter automatiquement d’espaces dans `h()` (cela casserait la
+  ponctuation). Les états des boutons dangereux sont définis dans `src/styles.css`, et le retour
+  visuel commun au clic ainsi que le focus clavier dans `src/polish.css`. Éviter les styles globaux
+  concurrents dans les CSS des pages chargées à la demande ; vérifier les thèmes clair, sombre et
+  noir et blanc.
 
 Validation : `npm run build` lance la synchronisation Tower Defense, `tsc` en mode strict, puis le
 build Vite. `npm run test:sql` rejoue toutes les migrations dans une base en mémoire (PGlite, sans

@@ -675,8 +675,8 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     const full = p >= Math.max(state.rate, 1) * cap - 0.5;
     rateEl.textContent = `${(state.rate / 3600).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} pt/s`;
     perHourEl.textContent = ` · ${formatPoints(Math.round(state.rate))} par heure`;
-    pendingLabel.textContent = full ? `Coffre plein (${cap} h) : récolte !` : 'Versé tout seul toutes les 5 minutes, où que tu sois sur le site';
-    collectBtn.textContent = `Récolter ${formatPoints(Math.floor(p))} maintenant (C)`;
+    pendingLabel.textContent = full ? `Coffre plein (${cap} h) : récolte tes points.` : 'Versement automatique toutes les 5 minutes.';
+    collectBtn.textContent = `Récolter · ${formatPoints(Math.floor(p))} points (C)`;
     collectBtn.disabled = p < 1 || busy;
     if (!income.firstChild) income.append(h('div', {}, rateEl, perHourEl), mine() ? h('div', { class: 'ap-pending' }, pendingLabel, collectBtn) : '', breakdown);
   };

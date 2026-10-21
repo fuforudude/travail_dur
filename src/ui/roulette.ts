@@ -88,7 +88,7 @@ function wheelSvg(): SVGSVGElement {
 export function rouletteView(root: HTMLElement): () => void {
   const content = page(root, 'Roulette');
   if (!multiConfigured) {
-    content.append(h('div', { class: 'card narrow' }, h('h1', {}, 'Roulette'), h('p', { class: 'muted' }, 'Le serveur n’est pas configuré : pas de points à miser.')));
+    content.append(h('div', { class: 'card narrow' }, h('h1', {}, 'Roulette'), h('p', { class: 'muted' }, 'La roulette n’est pas disponible en mode local.')));
     return pushKeys((e) => e.key === 'Backspace' && navigate('/'));
   }
 
@@ -99,7 +99,7 @@ export function rouletteView(root: HTMLElement): () => void {
   let cursor = spots.findIndex((s) => s.key === 'red');
   let spinning = false;
   let rotation = 0;
-  let message = 'Choisis tes mises, puis Espace pour lancer.';
+  let message = 'Choisis tes mises, puis lance la roue.';
   const recent: number[] = [];
 
   const svg = wheelSvg();

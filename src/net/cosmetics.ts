@@ -80,7 +80,8 @@ function decorate(el: HTMLElement, c: Cosmetic): void {
   const name = el.dataset.name ?? '';
   el.className = 'pseudo' + (c.name_color ? ` ${c.name_color}` : '') + (c.name_effect ? ` ${c.name_effect}` : '');
   const title = itemById(c.title);
-  el.replaceChildren(h('span', { class: 'pseudo-text', 'data-text': name }, name), title ? h('span', { class: 'title-tag' }, title.name) : '');
+  el.replaceChildren(h('span', { class: 'pseudo-text', 'data-text': name }, name));
+  if (title) el.append(' ', h('span', { class: 'title-tag' }, title.name));
 }
 
 /** Pseudo d'un joueur avec sa couleur, son effet et son titre (mis à jour quand ils arrivent). */

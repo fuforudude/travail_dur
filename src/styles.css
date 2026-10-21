@@ -8,10 +8,13 @@
   --surface-2: #eef0f6;
   --border: #e1e4ec;
   --text: #2b2f3a;
-  --muted: #7a8094;
+  --muted: #62697c;
   --accent: #5b6ee1;
   --accent-text: #ffffff;
   --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  --danger: #b32632;
+  --danger-text: #b32632;
+  --danger-hover: #94202a;
   --p1: #ec6a5e; /* corail */
   --p2: #f2b844; /* ambre */
   --p-ring: transparent;
@@ -36,6 +39,7 @@
   --muted: #8d93a6;
   --accent: #8193ff;
   --accent-text: #11131a;
+  --danger-text: #ff9da5;
   --p1: #ff7d71;
   --p2: #f6c55c;
   --tone1: #8193ff;
@@ -54,7 +58,7 @@
   --surface-2: #e8e8e8;
   --border: #d9d9d9;
   --text: #333333;
-  --muted: #8a8a8a;
+  --muted: #666666;
   --accent: #555555;
   --accent-text: #ffffff;
   --p1: #3a3a3a;
@@ -73,7 +77,7 @@
   --surface-2: #2f2f2f;
   --border: #3a3a3a;
   --text: #c8c8c8;
-  --muted: #7e7e7e;
+  --muted: #a0a0a0;
   --accent: #9a9a9a;
   --accent-text: #1f1f1f;
   --p1: #e6e6e6;
@@ -660,7 +664,7 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
   cursor: pointer;
   transition: transform 0.12s, border-color 0.12s, background 0.12s;
 }
-.tile:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); transform: translateY(-1px); }
+.tile:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); transform: translateY(-1px); }
 .tile:focus { outline: none; border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .tile:disabled { opacity: 0.5; cursor: default; transform: none; }
 .tile-icon {
@@ -1334,7 +1338,7 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
   box-shadow: var(--shadow);
   cursor: pointer;
 }
-.shop-item:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+button.shop-item:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .shop-item:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .shop-item.on { border-color: var(--tone3); background: color-mix(in srgb, var(--tone3) 8%, var(--surface)); }
 .shop-item.poor .shop-price { color: var(--muted); }
@@ -1495,16 +1499,21 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .admin .card h2 { margin: 0 0 0.6rem; font-size: 1.05rem; }
 .admin-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; }
 .small-btn { width: auto; padding: 0.2rem 0.6rem; font-size: 0.8rem; }
-.small-btn:disabled { opacity: 0.3; cursor: default; }
+.small-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .admin-players th:last-child { text-align: right; }
-.small-btn.on { border-color: #c8343c; color: #c8343c; }
-.danger-tag { color: #c8343c; background: color-mix(in srgb, #c8343c 12%, transparent); }
+.small-btn.on { border-color: var(--danger-text); color: var(--danger-text); }
+.danger-tag { color: var(--danger-text); background: color-mix(in srgb, var(--danger-text) 12%, var(--surface)); }
 .admin-players .tag { margin-left: 0.4rem; }
 .admin-row { display: grid; grid-template-columns: 7rem 1fr; gap: 0.6rem; align-items: center; margin: 0.5rem 0; }
 .admin-controls { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
 .admin-controls .field { width: auto; }
 .admin-controls input.field { flex: 1 1 8rem; }
-.field.danger { color: #fff; background: #c8343c; border-color: #c8343c; }
+button.field.danger { color: #fff; background: var(--danger); border-color: var(--danger); }
+button.field.danger:is(:hover, :focus, :active):not(:disabled) {
+  color: #fff;
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
 .admin-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.6rem; margin-top: 0.8rem; }
 .admin-photo { margin: 0; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; }
 .admin-photo img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }

@@ -32,7 +32,7 @@ export function pointsView(root: HTMLElement): () => void {
       'div',
       { class: 'card' },
       h('div', { class: 'pts-head' }, h('div', {}, h('h1', {}, 'Mes points'), earned), balance),
-      multiConfigured ? h('div', { class: 'pts-actions' }, shop, roulette, slots) : h('p', { class: 'notice' }, 'Le serveur n’est pas configuré : pas de points.'),
+      multiConfigured ? h('div', { class: 'pts-actions' }, shop, roulette, slots) : h('p', { class: 'notice' }, 'Les points ne sont pas disponibles en mode local.'),
       h('h2', {}, 'Comment gagner des points'),
       h('table', { class: 'pts-scale' }, h('tbody', {}, ...SCALE.map(([g, rule]) => h('tr', {}, h('td', {}, g), h('td', {}, rule))))),
       h('h2', {}, 'Derniers mouvements'),

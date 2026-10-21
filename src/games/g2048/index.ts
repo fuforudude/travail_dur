@@ -76,7 +76,7 @@ function mount(ctx: GameContext): () => void {
     rankEl.textContent = saved?.session ? 'partie classée' : multiConfigured ? 'non classée' : '';
     noteEl.textContent = note;
     overlay.hidden = true;
-    if (starting) showOverlay('Préparation…', 'Récupération de la partie auprès du serveur');
+    if (starting) showOverlay('Préparation…', 'La partie va commencer.');
     else if (won()) showOverlay('2048 !', isTouch() ? 'Touche le plateau pour continuer' : 'Entrée pour continuer · R pour recommencer');
     else if (over()) showOverlay('Plus de coups possibles', `Score : ${score}${isTouch() ? '' : ' · R pour recommencer'}`);
   };

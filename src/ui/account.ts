@@ -5,7 +5,6 @@ import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { h, hints } from './dom';
 import { page } from './layout';
-import './account.css';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -72,7 +71,7 @@ export function accountView(root: HTMLElement, [flag]: string[]): () => void {
   const render = () => {
     const parts: (HTMLElement | null)[] = [h('h1', {}, 'Compte')];
     if (!multiConfigured) {
-      parts.push(h('p', { class: 'muted' }, 'Le serveur n’est pas configuré : les comptes et classements sont désactivés.'));
+      parts.push(h('p', { class: 'muted' }, 'Les comptes et classements ne sont pas disponibles en mode local.'));
     } else if (loading) {
       parts.push(h('p', { class: 'muted' }, 'Connexion…'));
     } else if (!account) {
@@ -92,7 +91,7 @@ export function accountView(root: HTMLElement, [flag]: string[]): () => void {
         h(
           'p',
           { class: 'muted small' },
-          'C’est facultatif : ajoute un email pour apparaître dans les classements et retrouver ton compte sur un autre appareil. Tes scores déjà joués sont conservés.',
+          'Ajoute un email pour apparaître dans les classements et retrouver ton compte sur un autre appareil. Tes scores sont conservés.',
         ),
         account.pendingEmail
           ? h('p', { class: 'notice' }, `Email de vérification envoyé à ${account.pendingEmail}. Clique sur le lien reçu, puis reviens ici.`)

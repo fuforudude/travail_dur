@@ -22,7 +22,7 @@ function equipped(c: Cosmetic, slot: Slot): string | null {
 function preview(item: Item, name: string): HTMLElement {
   if (item.slot === 'name_color' || item.slot === 'name_effect' || item.slot === 'title') {
     const el = h('span', { class: `pseudo ${item.slot === 'title' ? '' : item.id}` }, h('span', { class: 'pseudo-text', 'data-text': name }, name));
-    if (item.slot === 'title') el.append(h('span', { class: 'title-tag' }, item.name));
+    if (item.slot === 'title') el.append(' ', h('span', { class: 'title-tag' }, item.name));
     return h('span', { class: 'shop-preview' }, el);
   }
   const box = h('span', { class: 'shop-preview skin' });
@@ -120,14 +120,14 @@ export function shopView(root: HTMLElement): () => void {
     return cards.length ? h('section', { class: 'home-section' }, h('h2', { class: 'home-h' }, title), h('div', { class: 'shop-grid' }, ...cards)) : null;
   };
 
-  /** Lien vers les caisses du tower defense (tours, améliorations, skins). */
+  /** Lien vers les caisses de héros et de skins du tower defense. */
   const tdCrates = () => {
     const b = h(
       'button',
       { class: 'shop-item', type: 'button', 'data-id': 'td-crates' },
       h('span', { class: 'shop-preview' }, '♜'),
       h('span', { class: 'shop-name' }, 'Caisses tower defense'),
-      h('span', { class: 'muted small' }, 'Tours, améliorations, skins de tours et d’ennemis'),
+      h('span', { class: 'muted small' }, 'Héros et skins de tours et d’ennemis'),
       h('span', { class: 'shop-price' }, 'Voir les caisses'),
     );
     b.addEventListener('click', () => navigate('/td/caisses'));
@@ -152,7 +152,7 @@ export function shopView(root: HTMLElement): () => void {
   };
 
   if (!multiConfigured) {
-    body.replaceChildren(h('p', { class: 'notice' }, 'Le serveur n’est pas configuré : pas de boutique.'));
+    body.replaceChildren(h('p', { class: 'notice' }, 'La boutique n’est pas disponible en mode local.'));
   } else {
     ensureAccount()
       .then((a) => {
