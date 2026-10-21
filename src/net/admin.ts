@@ -33,7 +33,7 @@ export const serverError = (err: { code?: string }) =>
 
 export async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
   const supabase = await getSupabase();
-  if (!supabase) throw new Error('Serveur non configuré');
+  if (!supabase) throw new Error('Indisponible en mode local.');
   const { data, error } = await supabase.rpc(fn, args);
   if (error) throw serverError(error);
   return data as T;
@@ -61,7 +61,7 @@ export const giveItem = (target: string, item: string) => rpc<void>('admin_give'
 /** Envoie une photo dans le stockage « artworks » puis l'ajoute à la liste des photos à accrocher. */
 export async function addArtwork(file: File, title: string): Promise<void> {
   const supabase = await getSupabase();
-  if (!supabase) throw new Error('Serveur non configuré');
+  if (!supabase) throw new Error('Indisponible en mode local.');
   const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
   const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
   const up = await supabase.storage.from('artworks').upload(path, file, { contentType: file.type || undefined, upsert: false });

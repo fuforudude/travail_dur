@@ -50,7 +50,7 @@ export class Room {
 
   static async join(code: string, myId: string): Promise<Room> {
     const supabase = await getSupabase();
-    if (!supabase) throw new Error('Multijoueur non configuré');
+    if (!supabase) throw new Error('Indisponible en mode local.');
     const channel = supabase.channel(`room:${code}`, { config: { presence: { key: myId } } });
     const room = new Room(code, myId, channel);
     channel.on('presence', { event: 'sync' }, () => void room.syncPlayers());

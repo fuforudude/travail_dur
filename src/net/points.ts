@@ -93,7 +93,7 @@ const pointsError = (err: { code?: string }) =>
 
 async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
   const supabase = await getSupabase();
-  if (!supabase) throw new Error('Serveur non configuré');
+  if (!supabase) throw new Error('Indisponible en mode local.');
   const { data, error } = await supabase.rpc(fn, args);
   if (error) throw pointsError(error);
   return data as T;

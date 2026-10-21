@@ -27,7 +27,7 @@ const IDLE_MS = 65_000; // un peu plus que le serveur (60 s), pour ne pas récla
 /** Appel de la fonction serveur board4 ; lève l'erreur renvoyée par le serveur. */
 export async function board4<T = unknown>(body: Record<string, unknown>): Promise<T> {
   const supabase = await getSupabase();
-  if (!supabase) throw new Error('Multijoueur non configuré');
+  if (!supabase) throw new Error('Indisponible en mode local.');
   const { data, error } = await supabase.functions.invoke('board4', { body });
   if (error) {
     const ctx = (error as { context?: Response }).context;

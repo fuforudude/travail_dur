@@ -1671,7 +1671,7 @@ button.field.danger:is(:hover, :focus, :active):not(:disabled) {
 .friend-list { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.6rem 0; }
 .friend-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 8px; }
 .friend-actions { margin-left: auto; display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; }
-.tab .badge, .badge { display: inline-block; min-width: 1.2em; margin-left: 0.35rem; padding: 0 0.3em; border-radius: 999px; background: #c8343c; color: #fff; font-size: 0.72rem; font-weight: 700; text-align: center; }
+.tab .badge, .badge { display: inline-block; min-width: 1.2em; margin-left: 0.35rem; padding: 0 0.3em; border-radius: 999px; background: var(--danger); color: #fff; font-size: 0.72rem; font-weight: 700; text-align: center; }
 .lobby-friends { margin-top: 0.9rem; }
 .lobby-friends .players li { cursor: default; }
 .toast.social { border-left-color: var(--accent); display: flex; align-items: center; gap: 0.7rem; pointer-events: auto; }
@@ -1686,7 +1686,7 @@ button.field.danger:is(:hover, :focus, :active):not(:disabled) {
   height: 16px;
   padding: 0 3px;
   border-radius: 999px;
-  background: #c8343c;
+  background: var(--danger);
   color: #fff;
   font-size: 0.65rem;
   font-weight: 700;

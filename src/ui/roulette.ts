@@ -208,7 +208,7 @@ export function rouletteView(root: HTMLElement): () => void {
     else if (total() + value > balance) message = 'Pas assez de points.';
     else {
       bets = { ...bets, [key]: (bets[key] ?? 0) + value };
-      message = 'Espace pour lancer.';
+      message = 'Lance la roue.';
       blip(700);
     }
     render();
@@ -310,7 +310,7 @@ export function rouletteView(root: HTMLElement): () => void {
     else if (key === 'c') clear();
     else if (key === 'a' && !spinning && Object.keys(lastBets).length) {
       bets = { ...lastBets };
-      message = 'Même mise que le tour précédent : Espace pour lancer.';
+      message = 'Même mise que le tour précédent : lance la roue.';
     } else if (key === 'i') rules.hidden = !rules.hidden;
     else if (key === 'backspace') {
       e.preventDefault();

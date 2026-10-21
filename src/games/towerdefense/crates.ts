@@ -195,7 +195,7 @@ export function tdCratesView(root: HTMLElement): () => void {
   };
 
   (async () => {
-    if (!multiConfigured) throw new Error('Le serveur n’est pas configuré : pas de caisses.');
+    if (!multiConfigured) throw new Error('Les caisses ne sont pas disponibles en mode local.');
     const [m, ci] = await Promise.all([loadMeta(), crateInfo()]);
     if (disposed) return;
     meta = m;

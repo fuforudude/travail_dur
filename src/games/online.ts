@@ -36,7 +36,7 @@ const timeoutMs = (game: DuelGame) => (game === 'connect4' || game === 'tictacto
 
 async function rpc<T = unknown>(fn: string, args: Record<string, unknown>): Promise<T> {
   const supabase = await getSupabase();
-  if (!supabase) throw new Error('Multijoueur non configuré');
+  if (!supabase) throw new Error('Indisponible en mode local.');
   const { data, error } = await supabase.rpc(fn, args);
   if (error) throw new Error(errorMessage(error));
   return data as T;

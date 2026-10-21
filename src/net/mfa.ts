@@ -10,7 +10,7 @@ export interface MfaState {
 
 async function client() {
   const supabase = await getSupabase();
-  if (!supabase) throw new Error('Serveur non configuré');
+  if (!supabase) throw new Error('Indisponible en mode local.');
   return supabase;
 }
 

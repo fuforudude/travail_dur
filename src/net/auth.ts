@@ -177,7 +177,7 @@ export async function signOut(): Promise<void> {
  */
 export async function deleteAccount(confirm: string): Promise<string | null> {
   const supabase = await getSupabase();
-  if (!supabase) return 'Serveur non configuré';
+  if (!supabase) return 'Indisponible en mode local.';
   const { error } = await supabase.rpc('account_delete', { confirm });
   if (error) return errorMessage(error);
   await supabase.auth.signOut({ scope: 'local' }); // le compte n'existe plus côté serveur

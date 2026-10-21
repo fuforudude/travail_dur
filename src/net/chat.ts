@@ -20,7 +20,7 @@ const chatError = (err: { code?: string }) =>
 /** Envoie un message : c'est le serveur qui renseigne l'auteur. */
 export async function say(room: string, message: string): Promise<void> {
   const supabase = await getSupabase();
-  if (!supabase) throw new Error('Multijoueur non configuré');
+  if (!supabase) throw new Error('Indisponible en mode local.');
   const { error } = await supabase.rpc('room_say', { room_code: room, message });
   if (error) throw chatError(error);
 }

@@ -100,7 +100,7 @@ const shopError = (err: { code?: string }) =>
 /** Prix (serveur) des objets en vente, et ceux que je possède. */
 export async function loadShop(): Promise<{ prices: Map<string, number>; owned: Set<string> }> {
   const supabase = await getSupabase();
-  if (!supabase) throw new Error('Serveur non configuré');
+  if (!supabase) throw new Error('Indisponible en mode local.');
   const [items, inv] = await Promise.all([supabase.from('shop_items').select('id, price'), supabase.from('inventory').select('item_id')]);
   if (items.error) throw shopError(items.error);
   if (inv.error) throw shopError(inv.error);
@@ -112,7 +112,7 @@ export async function loadShop(): Promise<{ prices: Map<string, number>; owned: 
 
 async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   const supabase = await getSupabase();
-  if (!supabase) throw new Error('Serveur non configuré');
+  if (!supabase) throw new Error('Indisponible en mode local.');
   const { data, error } = await supabase.rpc(fn, args);
   if (error) throw shopError(error);
   return data as T;
