@@ -3,6 +3,7 @@ import { isPanicked } from '../../core/panic';
 import { blip } from '../../core/sound';
 import { load, remove, save, setBest } from '../../core/storage';
 import { getAccount } from '../../net/auth';
+import { GAIN_MULT } from '../../net/points';
 import { multiConfigured } from '../../net/supabase';
 import { navigate } from '../../router';
 import { h, hints } from '../../ui/dom';
@@ -39,8 +40,8 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 const plural = (n: number, word: string) => `${n} ${word}${n > 1 && !/[sx]$/.test(word) ? 's' : ''}`;
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ','));
 const towerName = (id: string) => TOWERS.find((t) => t.id === id)?.name ?? id;
-/** Points d'un niveau réussi (voir 0032_td_campagne.sql). */
-const levelPoints = (L: number, first: boolean) => (first ? 100 + 40 * L : 5 * L);
+/** Points d'un niveau réussi (voir 0032_td_campagne.sql, gains × GAIN_MULT depuis 0034_gains.sql). */
+const levelPoints = (L: number, first: boolean) => GAIN_MULT * (first ? 100 + 40 * L : 5 * L);
 const starText = (n: number) => '★'.repeat(n) + '☆'.repeat(3 - n);
 
 /** Ce qui rend la carte du niveau L particulière (entrées, sorties, taille, tour spéciale). */
@@ -767,7 +768,7 @@ function mount(ctx: GameContext): () => void {
       return [
         h('strong', {}, campaign ? `Perdu au niveau ${s.level}, vague ${s.wave + 1}` : `Perdu à la vague ${s.wave + 1}`),
         h('span', {}, `${plural(s.wave, 'vague')} tenue${s.wave > 1 ? 's' : ''} · ${plural(s.kills, 'ennemi')} vaincu${s.kills > 1 ? 's' : ''}${s.bossKills ? ` · ${plural(s.bossKills, 'boss')}` : ''}`),
-        session && !campaign ? h('span', { class: 'small' }, `+${s.wave * (s.wave + 1)} points ◆ gagnés`) : '',
+        session && !campaign ? h('span', { class: 'small' }, `+${GAIN_MULT * s.wave * (s.wave + 1)} points ◆ gagnés`) : '',
         foe ? h('span', { class: 'small muted' }, `Vaincu par : ${foe.tier === 'boss' ? bossName(foe, s.level) : foe.name}. Contre conseillé : ${foe.counters}.`) : '',
         h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('Recommencer', retry, true)),
         h('span', { class: 'muted small' }, 'Entrée recommencer · M carte · C caisses'),

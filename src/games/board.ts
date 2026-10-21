@@ -9,13 +9,20 @@ import { getAccount } from '../net/auth';
 import { h, hints } from '../ui/dom';
 import type { CreateView, ViewState } from './duel';
 import type { Ai, Rules, Side } from './engine';
+import { soloReward } from './solo';
 import type { GameContext } from './types';
 
 export type { Ai, Outcome, Rules, Side } from './engine';
 export { negamax, WIN } from './engine';
 
 /** Partie solo contre l'ordinateur, entièrement locale (non classée). */
-export function mountSoloBoard(ctx: GameContext, createView: CreateView, rules: Rules, ai: Ai | ((b: number[], side: Side, history: string[]) => Promise<string>)): () => void {
+export function mountSoloBoard(
+  ctx: GameContext,
+  createView: CreateView,
+  rules: Rules,
+  ai: Ai | ((b: number[], side: Side, history: string[]) => Promise<string>),
+  game = '',
+): () => void {
   let board = rules.initial();
   let history: string[] = [];
   let s: ViewState = {
@@ -52,6 +59,7 @@ export function mountSoloBoard(ctx: GameContext, createView: CreateView, rules: 
         s.scores = s.scores.slice() as [number, number];
         s.scores[o.winner - 1]++;
       }
+      if (game) soloReward(game, s.result === mySide, history.length);
     }
     blip(260);
     view.update(s);

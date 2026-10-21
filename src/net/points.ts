@@ -17,17 +17,22 @@ export interface PointEvent {
   created_at: string;
 }
 
-/** Barème affiché dans la page Points : doit rester identique aux fonctions points_* du serveur. */
+/** Multiplicateur des gains de jeu et de record (public.points_gain_mult, 0034_gains.sql). */
+export const GAIN_MULT = 3;
+
+/** Barème affiché dans la page Points : doit rester identique aux fonctions points_* du serveur (gains × GAIN_MULT compris). */
 export const SCALE: [string, string][] = [
-  ['2048', '√score, + 30 / 150 / 400 pour les tuiles 1024 / 2048 / 4096'],
-  ['Tetris', '√score (10 000 points : 100)'],
-  ['Flappy Bird', 'tuyaux^1,5 ÷ 4 (10 tuyaux : 7 · 40 : 63 · 80 : 178)'],
-  ['Tower defense', '2 × n pour chaque vague n terminée (vague 10 : 110 au total)'],
-  ['Wordle', 'trouvé en n essais : 40 + 15 × (6 − n), soit 115 du premier coup ; raté : 5'],
-  ['À deux, victoire', 'Morpion 15 · Puissance 4 30 · Quarto 40 · Quoridor 60 · Dames 90 · Échecs 100'],
-  ['À deux, sinon', 'nul : un tiers · défaite : 3 · victoire par abandon ou au temps : moitié'],
-  ['Record personnel', '+100 (au moins 2 000 au 2048 et à Tetris, 10 tuyaux, vague 5)'],
-  ['Record absolu', '+500 en battant le meilleur score de tous les joueurs'],
+  ['Partie jouée', `+${10 * GAIN_MULT} pour chaque partie terminée, même sans record (40 par jour au plus)`],
+  ['2048', '3 × √score, + 90 / 450 / 1 200 pour les tuiles 1024 / 2048 / 4096'],
+  ['Tetris', '3 × √score (10 000 points : 300)'],
+  ['Flappy Bird', '3 × tuyaux^1,5 ÷ 4 (10 tuyaux : 21 · 40 : 189 · 80 : 534)'],
+  ['Tower defense', '6 × n pour chaque vague n terminée (vague 10 : 330 au total) ; campagne : 300 + 120 × niveau'],
+  ['Wordle', 'trouvé en n essais : 120 + 45 × (6 − n), soit 345 du premier coup ; raté : 15'],
+  ['À deux, victoire', 'Morpion 45 · Puissance 4 90 · Quarto 120 · Quoridor 180 · Dames 270 · Échecs 300'],
+  ['À deux, sinon', 'nul : un tiers · défaite : 9 · victoire par abandon ou au temps : moitié'],
+  ['Solo contre l’ordinateur', 'gagné : 30 + un dixième de la victoire à deux (Échecs : 60) · sinon 12 (30 parties par jour)'],
+  ['Record personnel', '+300 (au moins 2 000 au 2048 et à Tetris, 10 tuyaux, vague 5)'],
+  ['Record absolu', '+1 500 en battant le meilleur score de tous les joueurs'],
 ];
 export const SCALE_NOTES = [
   'Les parties trop courtes et, au-delà de 10 parties par jour contre le même adversaire, les parties à deux ne rapportent rien.',

@@ -3,6 +3,7 @@ import { blip } from '../../core/sound';
 import { getAccount } from '../../net/auth';
 import type { ViewState } from '../duel';
 import { mountOnline } from '../online';
+import { soloReward } from '../solo';
 import type { Game, GameContext } from '../types';
 import { aiMove, findLine, isFull } from './logic';
 import { createView } from './view';
@@ -36,6 +37,7 @@ function mountSolo(ctx: GameContext): () => void {
       s.scores = s.scores.slice() as [number, number];
       s.scores[s.result]++;
     } else if (isFull(board)) s.result = 'draw';
+    if (s.result !== null) soloReward('tictactoe', s.result === 0, board.filter((v) => v).length);
     blip(300);
     view.update(s);
     scheduleAi();

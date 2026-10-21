@@ -12,5 +12,5 @@ export const quoridor: Game = {
   modes: ['solo', 'multi'],
   minPlayers: 2,
   maxPlayers: 2,
-  mount: (ctx) => (ctx.mode === 'multi' ? mountOnline(ctx, createView) : mountSoloBoard(ctx, createView, rules, workerAi('quoridor'))),
+  mount: (ctx) => (ctx.mode === 'multi' ? mountOnline(ctx, createView) : mountSoloBoard(ctx, createView, rules, workerAi('quoridor'), 'quoridor')),
 };

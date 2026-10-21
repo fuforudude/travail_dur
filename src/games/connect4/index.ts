@@ -5,6 +5,7 @@ import type { Game, GameContext } from '../types';
 import { aiMove, drop, emptyBoard, findWin, isFull, type Board } from './logic';
 import type { ViewState } from '../duel';
 import { mountOnline } from '../online';
+import { soloReward } from '../solo';
 import { createView } from './view';
 
 /** Partie solo contre l'ordinateur, entièrement locale (non classée). */
@@ -35,6 +36,7 @@ function mountSolo(ctx: GameContext): () => void {
       s.scores = s.scores.slice() as [number, number];
       s.scores[s.result]++;
     } else if (isFull(r.board)) s.result = 'draw';
+    if (s.result !== null) soloReward('connect4', s.result === 0, (s.board as Board).filter((v) => v).length);
     blip(260);
     view.update(s);
     scheduleAi();

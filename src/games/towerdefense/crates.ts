@@ -1,9 +1,9 @@
 import { pushKeys } from '../../core/input';
-import { blip } from '../../core/sound';
-import { formatPoints, getWallet, holdWallet, onWallet, refreshWallet } from '../../net/points';
+import { formatPoints, getWallet, onWallet } from '../../net/points';
 import { multiConfigured } from '../../net/supabase';
 import { navigate } from '../../router';
 import { h, hints } from '../../ui/dom';
+import { openCrateStage } from '../../ui/crateOpening';
 import { page } from '../../ui/layout';
 import { spatialNav } from '../../ui/menu';
 import { CRATES, ENEMY_FINISHES, heroOf, itemName, RARITY_NAMES, skinOf, TOWER_FINISHES, type CrateDef, type Rarity } from './catalog';
@@ -12,8 +12,6 @@ import { crateInfo, emptyMeta, equipSkin, loadMeta, openCrate, type CrateInfo, t
 import { previewItem } from './render';
 import './td.css';
 
-const REEL_LENGTH = 48;
-const WIN_INDEX = 42; // case qui s'arrête sous le repère
 const TIER_CLASS: Record<string, string> = { heroes: 'rar-gold' };
 
 /** `#/td/caisses` : caisses du tower defense (héros, skins) et collection. */
@@ -24,9 +22,6 @@ export function tdCratesView(root: HTMLElement): () => void {
   content.append(wrap, hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'ouvrir / porter'], ['Retour arrière', 'boutique']));
   const balance = h('span', { class: 'pts-balance' });
   const status = h('p', { class: 'status' });
-  const reelTrack = h('div', { class: 'cr-track' });
-  const reel = h('div', { class: 'cr-reel', hidden: true }, h('div', { class: 'cr-marker' }), reelTrack);
-  const reveal = h('div', { class: 'cr-reveal', hidden: true });
   const cratesEl = h('div', { class: 'cr-crates' });
   const collection = h('div', {});
   let meta: Meta = emptyMeta();
@@ -66,67 +61,42 @@ export function tdCratesView(root: HTMLElement): () => void {
 
   const cell = (crate: CrateDef, item: string) => h('div', { class: `cr-cell ${rarityClass(crate, item)}` }, previewItem(item, 52), h('span', {}, itemName(item)));
 
-  const open = async (crate: CrateDef) => {
+  const open = (crate: CrateDef) => {
     if (busy) return;
-    busy = true;
-    reveal.hidden = true;
-    const release = holdWallet();
-    status.textContent = 'Ouverture…';
-    try {
-      const r = await openCrate(crate.id);
-      const hero = heroOf(r.item);
-      if (hero) meta.heroes.set(hero.id, r.level ?? heroLevel(r.item) + 1);
-      else meta.owned.add(r.item);
-      const skin = skinOf(r.item);
-      if (skin && !meta.equipped.has(skin.slot)) meta.equipped.set(skin.slot, r.item);
-      const items = Array.from({ length: REEL_LENGTH }, (_, i) => (i === WIN_INDEX ? r.item : randomItem(crate)));
-      reelTrack.replaceChildren(...items.map((it) => cell(crate, it)));
-      reel.hidden = false;
-      reel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      reelTrack.style.transition = 'none';
-      reelTrack.style.transform = 'translateX(0)';
-      void reelTrack.offsetWidth;
-      const cellWidth = (reelTrack.firstElementChild as HTMLElement).offsetWidth + 6;
-      const jitter = (Math.random() - 0.5) * cellWidth * 0.7;
-      const target = WIN_INDEX * cellWidth + cellWidth / 2 - reel.clientWidth / 2 + jitter;
-      reelTrack.style.transition = 'transform 5.5s cubic-bezier(0.08, 0.6, 0.12, 1)';
-      reelTrack.style.transform = `translateX(${-target}px)`;
-      let last = -1;
-      const tick = window.setInterval(() => {
-        const x = -new DOMMatrix(getComputedStyle(reelTrack).transform).m41 + reel.clientWidth / 2;
-        const i = Math.floor(x / cellWidth);
-        if (i !== last) {
-          last = i;
-          blip(900);
-        }
-      }, 30);
-      await new Promise((ok) => setTimeout(ok, 5700));
-      clearInterval(tick);
-      if (disposed) return;
-      reveal.hidden = false;
-      reveal.className = `cr-reveal ${rarityClass(crate, r.item)}`;
-      reveal.replaceChildren(
-        h('span', { class: 'cr-rarity' }, skin ? RARITY_NAMES[skin.finish.rarity] : hero && heroLevel(r.item) > 1 ? `Niveau ${heroLevel(r.item)} !` : 'Nouveau héros !'),
-        previewItem(r.item, 96),
-        h('strong', {}, hero ? `${hero.name}, ${hero.title}` : itemName(r.item)),
-        h(
-          'span',
-          { class: 'muted small' },
-          skin
-            ? meta.equipped.get(skin.slot) === r.item ? 'Ajouté à ta collection et porté.' : 'Ajouté à ta collection.'
-            : hero ? `${hero.text(heroLevel(r.item))}. À choisir avant une partie.` : '',
-        ),
-      );
-      blip(skin && (skin.finish.rarity === 'mythic' || skin.finish.rarity === 'legendary') ? 1320 : 660);
-      void refreshWallet();
-      status.textContent = '';
-      render();
-    } catch (e) {
-      status.textContent = (e as Error).message;
-    } finally {
-      release();
-      busy = false;
-    }
+    openCrateStage({
+      title: crate.name,
+      again: () => `Rouvrir · ◆ ${formatPoints(info.get(crate.id)?.price ?? 0)}`,
+      filler: () => cell(crate, randomItem(crate)),
+      onOpened: render,
+      draw: async () => {
+        const r = await openCrate(crate.id);
+        const hero = heroOf(r.item);
+        if (hero) meta.heroes.set(hero.id, r.level ?? heroLevel(r.item) + 1);
+        else meta.owned.add(r.item);
+        const skin = skinOf(r.item);
+        if (skin && !meta.equipped.has(skin.slot)) meta.equipped.set(skin.slot, r.item);
+        const rarity = rarityClass(crate, r.item);
+        const name = hero ? `${hero.name}, ${hero.title}` : itemName(r.item);
+        return {
+          rarity,
+          cell: cell(crate, r.item),
+          jackpot: Boolean(skin && (skin.finish.rarity === 'mythic' || skin.finish.rarity === 'legendary')),
+          chip: h('span', { class: rarity }, hero ? `${hero.name} niv. ${heroLevel(r.item)}` : itemName(r.item)),
+          reveal: [
+            h('span', { class: 'cr-rarity' }, skin ? RARITY_NAMES[skin.finish.rarity] : hero && heroLevel(r.item) > 1 ? `Niveau ${heroLevel(r.item)} !` : 'Nouveau héros !'),
+            previewItem(r.item, 96),
+            h('strong', {}, name),
+            h(
+              'span',
+              { class: 'muted small' },
+              skin
+                ? meta.equipped.get(skin.slot) === r.item ? 'Ajouté à ta collection et porté.' : 'Ajouté à ta collection.'
+                : hero ? `${hero.text(heroLevel(r.item))}. À choisir avant une partie.` : '',
+            ),
+          ],
+        };
+      },
+    });
   };
 
   const equip = async (slot: string, item: string | null) => {
@@ -157,7 +127,7 @@ export function tdCratesView(root: HTMLElement): () => void {
     const locked = (ci?.minWave ?? 0) > meta.best;
     const label = complete ? 'Complète' : locked ? `🔒 Vague ${ci?.minWave} à atteindre` : `Ouvrir · ◆ ${formatPoints(ci?.price ?? 0)}`;
     const b = h('button', { class: 'field rl-spin', type: 'button', disabled: complete || locked || !ci, 'data-id': c.id }, label);
-    b.addEventListener('click', () => void open(c));
+    b.addEventListener('click', () => open(c));
     const total = ci?.odds.reduce((a, [, w]) => a + w, 0) ?? 0;
     return h(
       'div',
@@ -241,8 +211,6 @@ export function tdCratesView(root: HTMLElement): () => void {
       ),
       status,
       cratesEl,
-      reel,
-      reveal,
       collection,
     );
     render();

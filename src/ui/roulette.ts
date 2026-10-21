@@ -3,6 +3,7 @@ import { blip } from '../core/sound';
 import { formatPoints, getWallet, holdWallet, onWallet, spinRoulette } from '../net/points';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
+import { autoPlay } from './autoplay';
 import { h, hints } from './dom';
 import { page } from './layout';
 
@@ -130,6 +131,32 @@ export function rouletteView(root: HTMLElement): () => void {
   const clearBtn = h('button', { class: 'field', type: 'button' }, 'Effacer (C)');
   clearBtn.addEventListener('mousedown', (e) => e.preventDefault());
   clearBtn.addEventListener('click', () => clear());
+  // Auto : la même mise (celle posée, sinon la précédente), n tours de suite, roue plus rapide.
+  let autoNet = 0;
+  let autoSpins = 0;
+  let autoBets: Record<string, number> = {};
+  const auto = autoPlay([5, 10, 25, 50], async () => {
+    const stake = Object.values(autoBets).reduce((a, b) => a + b, 0);
+    if (!stake) return false;
+    if ((getWallet()?.balance ?? 0) < stake) {
+      message = 'Plus assez de points pour cette mise : auto arrêté.';
+      render();
+      return false;
+    }
+    bets = { ...autoBets };
+    return spin(true);
+  }, () => {
+    if (auto.running()) {
+      autoBets = Object.keys(bets).length ? { ...bets } : { ...lastBets };
+      autoNet = 0;
+      autoSpins = 0;
+      if (!Object.keys(autoBets).length) {
+        message = 'Pose d’abord une mise pour lancer l’auto.';
+        auto.stop();
+      }
+    }
+    render();
+  });
   const rules = h('div', { class: 'rules card', hidden: true }, h('h2', {}, 'Règles'), ...ROULETTE_RULES.map((p) => h('p', {}, p)));
 
   content.classList.add('wide');
@@ -137,11 +164,11 @@ export function rouletteView(root: HTMLElement): () => void {
     h(
       'div',
       { class: 'game' },
-      h('div', { class: 'rl-top' }, wheel, h('div', { class: 'rl-side' }, result, recentEl, stakeEl, chips, h('div', { class: 'rl-buttons' }, spinBtn, clearBtn))),
+      h('div', { class: 'rl-top' }, wheel, h('div', { class: 'rl-side' }, result, recentEl, stakeEl, chips, h('div', { class: 'rl-buttons' }, spinBtn, clearBtn), auto.el)),
       table,
       status,
       rules,
-      hints(['← ↑ → ↓', 'case'], ['Entrée', 'miser'], ['Suppr', 'retirer'], ['+ −', 'jeton'], ['Espace', 'lancer'], ['C', 'effacer'], ['A', 'rejouer la mise'], ['I', 'règles'], ['Retour arrière', 'quitter']),
+      hints(['← ↑ → ↓', 'case'], ['Entrée', 'miser'], ['Suppr', 'retirer'], ['+ −', 'jeton'], ['Espace', 'lancer'], ['C', 'effacer'], ['A', 'rejouer la mise'], ['S', 'arrêter l’auto'], ['I', 'règles'], ['Retour arrière', 'quitter']),
     ),
   );
 
@@ -168,8 +195,9 @@ export function rouletteView(root: HTMLElement): () => void {
     const w = getWallet();
     stakeEl.replaceChildren('Mise ', h('b', {}, formatPoints(total())), ` / ${w ? formatPoints(w.balance) : '…'}`);
     recentEl.replaceChildren(...recent.map((n) => h('span', { class: `rl-ball ${colorOf(n)}` }, String(n))));
-    status.textContent = message;
-    spinBtn.disabled = spinning || total() === 0;
+    status.textContent = autoSpins ? `${message} · Auto : ${autoSpins} tour${autoSpins > 1 ? 's' : ''}, bilan ${autoNet >= 0 ? '+' : ''}${formatPoints(autoNet)}` : message;
+    spinBtn.disabled = spinning || total() === 0 || auto.running();
+    auto.setDisabled(spinning && !auto.running());
   };
 
   const add = (key: string) => {
@@ -201,8 +229,10 @@ export function rouletteView(root: HTMLElement): () => void {
     render();
   };
 
-  const spin = async () => {
-    if (spinning || total() === 0) return;
+  /** Un tour ; `fast` en auto. Retourne false si le tour n'a pas pu être joué. */
+  const spin = async (fast = false): Promise<boolean> => {
+    if (spinning || total() === 0) return false;
+    if (!auto.running()) autoSpins = 0;
     spinning = true;
     message = 'Rien ne va plus…';
     const release = holdWallet();
@@ -214,9 +244,10 @@ export function rouletteView(root: HTMLElement): () => void {
       const target = -(index * 360) / WHEEL.length;
       const current = ((rotation % 360) + 360) % 360;
       rotation += 360 * 5 + ((target - current + 720) % 360);
+      svg.style.transitionDuration = fast ? '1.3s' : '';
       svg.style.transform = `rotate(${rotation}deg)`;
       result.textContent = '…';
-      await new Promise((ok) => setTimeout(ok, 3600));
+      await new Promise((ok) => setTimeout(ok, fast ? 1400 : 3600));
       result.textContent = String(r.number);
       result.className = `rl-result ${colorOf(r.number)}`;
       recent.unshift(r.number);
@@ -226,8 +257,15 @@ export function rouletteView(root: HTMLElement): () => void {
       blip(r.payout ? 880 : 200);
       lastBets = bets;
       bets = {};
+      if (auto.running()) {
+        autoSpins++;
+        autoNet += net;
+        await new Promise((ok) => setTimeout(ok, r.payout ? 900 : 400));
+      }
+      return true;
     } catch (e) {
       message = (e as Error).message;
+      return false;
     } finally {
       release();
       spinning = false;
@@ -266,7 +304,9 @@ export function rouletteView(root: HTMLElement): () => void {
     else if (key === 'delete' || key === 'x') remove(spots[cursor].key);
     else if (key === '+' || key === '=') chip = Math.min(CHIPS.length - 1, chip + 1);
     else if (key === '-') chip = Math.max(0, chip - 1);
-    else if (key === ' ') void spin();
+    else if (key === ' ') {
+      if (!auto.running()) void spin();
+    } else if (key === 's') auto.stop();
     else if (key === 'c') clear();
     else if (key === 'a' && !spinning && Object.keys(lastBets).length) {
       bets = { ...lastBets };
@@ -281,6 +321,7 @@ export function rouletteView(root: HTMLElement): () => void {
   });
   render();
   return () => {
+    auto.stop();
     offWallet();
     offKeys();
   };

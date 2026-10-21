@@ -3,6 +3,7 @@ import { blip } from '../core/sound';
 import { formatPoints, getWallet, holdWallet, onWallet, spinSlots } from '../net/points';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
+import { autoPlay } from './autoplay';
 import { h, hints } from './dom';
 import { page } from './layout';
 
@@ -40,6 +41,16 @@ export function slotsView(root: HTMLElement): () => void {
   const lever = h('button', { class: 'field rl-spin', type: 'button' }, 'Jouer (Espace)');
   lever.addEventListener('mousedown', (e) => e.preventDefault());
   lever.addEventListener('click', () => void spin());
+  // Ouverture auto : la même mise, n fois de suite (rouleaux plus rapides), bilan affiché.
+  let autoNet = 0;
+  let autoSpins = 0;
+  const auto = autoPlay([10, 25, 50, 100], () => spin(true), () => {
+    if (auto.running()) {
+      autoNet = 0;
+      autoSpins = 0;
+    }
+    render();
+  });
   const table = h(
     'table',
     { class: 'pts-scale sl-pay' },
@@ -58,10 +69,10 @@ export function slotsView(root: HTMLElement): () => void {
       'div',
       { class: 'game' },
       h('div', { class: 'game-bar' }, balanceEl),
-      h('div', { class: 'sl-machine' }, h('div', { class: 'sl-window' }, ...reels), betEl, lever),
+      h('div', { class: 'sl-machine' }, h('div', { class: 'sl-window' }, ...reels), betEl, lever, auto.el),
       status,
       h('div', { class: 'card sl-paycard' }, h('h2', {}, 'Gains'), table, h('p', { class: 'muted small' }, `Gain = mise × multiplicateur. Retour moyen : ${(returnToPlayer() * 100).toFixed(1)} %.`)),
-      hints(['← →', 'mise'], ['Espace', 'jouer'], ['Retour arrière', 'quitter']),
+      hints(['← →', 'mise'], ['Espace', 'jouer'], ['S', 'arrêter l’auto'], ['Retour arrière', 'quitter']),
     ),
   );
 
@@ -79,17 +90,21 @@ export function slotsView(root: HTMLElement): () => void {
         return b;
       }),
     );
-    lever.disabled = spinning;
-    status.textContent = message;
+    lever.disabled = spinning || auto.running();
+    auto.setDisabled(spinning && !auto.running());
+    status.textContent = autoSpins ? `${message} · Auto : ${autoSpins} tour${autoSpins > 1 ? 's' : ''}, bilan ${autoNet >= 0 ? '+' : ''}${formatPoints(autoNet)}` : message;
   };
 
-  const spin = async () => {
-    if (spinning) return;
+  /** Un tour ; `fast` en auto. Retourne false si le tour n'a pas pu être joué. */
+  const spin = async (fast = false): Promise<boolean> => {
+    if (spinning) return false;
     const stake = BETS[bet];
     if ((getWallet()?.balance ?? 0) < stake) {
       message = 'Pas assez de points pour cette mise.';
-      return render();
+      render();
+      return false;
     }
+    if (!auto.running()) autoSpins = 0;
     spinning = true;
     message = '…';
     const release = holdWallet();
@@ -104,7 +119,7 @@ export function slotsView(root: HTMLElement): () => void {
     try {
       const r = await spinSlots(stake);
       for (let i = 0; i < 3; i++) {
-        await new Promise((ok) => timers.push(window.setTimeout(ok, i === 0 ? 700 : 450)));
+        await new Promise((ok) => timers.push(window.setTimeout(ok, fast ? (i === 0 ? 250 : 150) : i === 0 ? 700 : 450)));
         clearInterval(rolling[i]);
         reels[i].classList.remove('spin');
         reels[i].firstElementChild!.textContent = SYMBOLS[r.reels[i]];
@@ -114,8 +129,16 @@ export function slotsView(root: HTMLElement): () => void {
       reels.forEach((el) => el.classList.toggle('win', won));
       message = won ? `Gagné : ${formatPoints(r.payout)} points (×${r.payout / r.stake}) !` : `Perdu : ${NAMES[r.reels[0]]}, ${NAMES[r.reels[1]]}, ${NAMES[r.reels[2]]}.`;
       if (won) blip(r.payout / r.stake >= 36 ? 1200 : 880);
+      if (auto.running()) {
+        autoSpins++;
+        autoNet += r.payout - r.stake;
+        // un petit temps pour voir le résultat avant le tour suivant
+        await new Promise((ok) => timers.push(window.setTimeout(ok, won ? 900 : 350)));
+      }
+      return true;
     } catch (e) {
       message = (e as Error).message;
+      return false;
     } finally {
       rolling.forEach(clearInterval);
       reels.forEach((el) => el.classList.remove('spin'));
@@ -131,7 +154,9 @@ export function slotsView(root: HTMLElement): () => void {
     const key = e.key.toLowerCase();
     if (key === 'arrowleft') bet = Math.max(0, bet - 1);
     else if (key === 'arrowright') bet = Math.min(BETS.length - 1, bet + 1);
-    else if (key === ' ' || key === 'enter') void spin();
+    else if (key === ' ' || key === 'enter') {
+      if (!auto.running()) void spin();
+    } else if (key === 's') auto.stop();
     else if (key === 'backspace') {
       e.preventDefault();
       return navigate('/points');
@@ -141,6 +166,7 @@ export function slotsView(root: HTMLElement): () => void {
   });
   render();
   return () => {
+    auto.stop();
     timers.forEach((t) => (clearInterval(t), clearTimeout(t)));
     offWallet();
     offKeys();
