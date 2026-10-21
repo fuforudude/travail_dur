@@ -682,7 +682,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   };
 
   // Gains par pièce : ce que rapportent les meubles de chaque pièce, bonus des équipements compris.
-  const breakdown = h('details', { class: 'ap-breakdown' }, h('summary', {}, 'Gains par pièce'));
+  const breakdown = h('details', { class: 'ap-breakdown', open: true }, h('summary', {}, 'Revenus par pièce'));
   const breakdownBody = h('div', {});
   breakdown.append(breakdownBody);
   const bar = (pct: number) => {
@@ -690,12 +690,16 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     b.style.width = `${pct.toFixed(1)}%`; // propriété CSSOM : autorisée par la CSP, contrairement à un attribut style
     return b;
   };
+  /** Revenus par heure des meubles d'une pièce, bonus des équipements compris. */
+  const roomIncome = (id: string) => {
+    const l = state.layout[id] ?? { floor: [], wall: [] };
+    return [...l.floor, ...l.wall].reduce((t, p) => t + itemIncome(p.i), 0) * incomeMult(state.specials);
+  };
   const renderBreakdown = () => {
     const mult = incomeMult(state.specials);
     const lines = state.rooms.map((id) => {
       const l = state.layout[id] ?? { floor: [], wall: [] };
-      const items = [...l.floor, ...l.wall];
-      return { label: `${roomOf(id).glyph} ${roomOf(id).name}`, n: items.length, perHour: items.reduce((t, p) => t + itemIncome(p.i), 0) * mult };
+      return { label: `${roomOf(id).glyph} ${roomOf(id).name}`, n: l.floor.length + l.wall.length, perHour: roomIncome(id) };
     });
     if (state.cleanStep) lines.push({ label: '🧹 Ménage', n: -1, perHour: state.cleanStep * CLEAN_RATE * mult });
     const total = lines.reduce((t, l) => t + l.perHour, 0) || 1;
@@ -797,6 +801,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
           { class: `ap-room${r.id === room ? ' on' : ''}${open ? '' : ' locked'}`, type: 'button', role: 'tab', 'aria-selected': String(r.id === room), title: `${r.name} (${i + 1})` },
           h('span', { 'aria-hidden': 'true' }, open ? r.glyph : '🔒'),
           ` ${r.name}`,
+          open ? h('span', { class: 'ap-room-rate' }, ` ${formatPoints(Math.round(roomIncome(r.id)))}/h`) : '',
         );
         b.addEventListener('mousedown', (e) => e.preventDefault());
         b.addEventListener('click', () => selectRoom(r.id));
@@ -872,6 +877,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       const here = layout().floor.length + layout().wall.length;
       side.replaceChildren(
         h('h2', {}, `${roomOf(room).glyph} ${roomOf(room).name}`),
+        h('p', { class: 'ap-room-income' }, 'Cette pièce rapporte ', h('b', {}, `${formatPoints(Math.round(roomIncome(room)))} par heure`)),
         h('p', { class: 'muted small' }, `${here} meuble${here > 1 ? 's' : ''} ici · ${owned.length - used.size} en réserve`),
         edit,
         specialCard(),

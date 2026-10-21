@@ -1,8 +1,8 @@
-name: Supabase (migrations et fonction td)
+name: Supabase (migrations et fonctions serveur)
 
 # À chaque push sur main qui touche supabase/ : tests SQL, puis nouvelles migrations appliquées
 # (supabase db push : seules celles absentes de l'historique du serveur), puis la fonction serveur du
-# tower defense redéployée. Fini le copier-coller dans l'éditeur SQL.
+# tower defense et celle des jeux à 4 redéployées. Fini le copier-coller dans l'éditeur SQL.
 # Secret nécessaire : SUPABASE_ACCESS_TOKEN (Settings → Secrets and variables → Actions).
 
 on:
@@ -11,6 +11,7 @@ on:
     paths:
       - 'supabase/**'
       - 'src/games/towerdefense/engine/**'
+      - 'src/games/four/engine/**'
       - '.github/workflows/supabase.yml'
   workflow_dispatch:
 
@@ -45,7 +46,8 @@ jobs:
       # de l'appart peut donc arriver après une plus récente des jeux ; sans ce drapeau, db push la refuse.
       - name: Migrations
         run: supabase db push --linked --include-all
-      - name: Fonction serveur td
+      - name: Fonctions serveur (td, board4)
         run: |
           npm run td:sync
           supabase functions deploy td --project-ref "$PROJECT_REF"
+          supabase functions deploy board4 --project-ref "$PROJECT_REF"

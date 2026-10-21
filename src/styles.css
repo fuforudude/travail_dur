@@ -1543,6 +1543,9 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .ap-room:hover { border-color: var(--accent); }
 .ap-room.on { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 .ap-room.locked { color: var(--muted); border-style: dashed; }
+.ap-room-rate { color: var(--tone3); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.ap-room-income { margin: 0 0 0.3rem; font-size: 0.9rem; }
+.ap-room-income b { color: var(--tone3); }
 .iso-slot.photo { cursor: zoom-in; }
 .iso-door { cursor: pointer; }
 .wp { mix-blend-mode: multiply; pointer-events: none; } /* papier peint des meubles personnalisables */
