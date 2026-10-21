@@ -296,7 +296,17 @@ function mount(ctx: GameContext): () => void {
   const levelTitle = (L: number) => (L > LEVEL_COUNT ? `Défi ${L - LEVEL_COUNT}` : `Niveau ${L}`);
 
   /** Lance une partie : classée si le serveur répond, sinon jouée sur place. */
+  let launching = false;
   const begin = async (mode: Mode, L: number) => {
+    if (launching) return;
+    launching = true;
+    try {
+      await beginRun(mode, L);
+    } finally {
+      launching = false;
+    }
+  };
+  const beginRun = async (mode: Mode, L: number) => {
     const hero = chosenHero();
     let saved: Saved;
     let msg = '';
@@ -317,7 +327,14 @@ function mount(ctx: GameContext): () => void {
   // =============================================================================================
   // Dialogues de l'histoire
   // =============================================================================================
-  const storyScreen = (title: string, act: string, lines: Line[], done: () => void, back: () => void) => {
+  const storyScreen = (title: string, act: string, lines: Line[], onDone: () => void, back: () => void) => {
+    // Une seule fois : Entrée et clic peuvent arriver ensemble (sinon deux parties lancées).
+    let finished = false;
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      onDone();
+    };
     let i = 0;
     const box = h('div', { class: 'td-story-box' });
     const wrap = h(
@@ -839,12 +856,14 @@ function mount(ctx: GameContext): () => void {
       if (session) {
         const r = await sendWave(session, sent).catch((e: Error) => {
           note = `Partie non classée désormais : ${e.message}.`;
+          console.warn('Tower defense : vague refusée par le serveur', e.message);
           session = null;
           return null;
         });
         if (gone) return;
         if (r && (r.wave !== s.wave || r.lives !== s.lives || r.gold !== s.gold || r.kills !== s.kills)) {
           note = 'Résultat différent du serveur : partie non classée désormais.';
+          console.warn('Tower defense : résultat différent du serveur', { serveur: r, site: { wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills } });
           session = null;
         } else if (r && s.over && !campaign) {
           note = getAccount()?.verified ? `${plural(s.wave, 'vague')} au classement.` : `${plural(s.wave, 'vague')} enregistrées. Ajoute un email (Réglages → Compte) pour apparaître au classement.`;
