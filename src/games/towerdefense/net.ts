@@ -141,6 +141,18 @@ export async function startRun(mode: Mode, level: number, hero: string | null): 
   return Promise.race([invoke<{ id: string; state: RunState }>({ op: 'start', mode, level, hero }), timeout]);
 }
 
+/** La fonction serveur `td` répond-elle ? (non déployée : 404, rien n'est enregistré). */
+export async function tdServerUp(): Promise<boolean> {
+  if (!multiConfigured) return true; // hors ligne assumé : pas d'alerte
+  try {
+    await invoke<unknown>({ op: 'ping' });
+    return true;
+  } catch (e) {
+    const msg = (e as Error).message;
+    return msg !== 'serveur du tower defense indisponible' && msg !== 'hors ligne';
+  }
+}
+
 export interface WaveResult {
   wave: number;
   lives: number;

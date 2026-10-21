@@ -99,6 +99,7 @@ Deno.serve(async (req) => {
   if (!uid) return reply({ error: 'non connecté' }, 401);
   const body = await req.json().catch(() => null);
   try {
+    if (body?.op === 'ping') return reply({ ok: true });
     if (body?.op === 'start') return reply(await start(uid, body.mode, body.level, body.hero ?? null));
     if (body?.op === 'wave') return reply(await wave(uid, body.session, body.actions));
     return reply({ error: 'opération inconnue' }, 400);

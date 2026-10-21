@@ -18,7 +18,7 @@ import {
   type Enemy, type Fx, type Mode, type Running, type RunState,
 } from './engine/sim';
 import {
-  buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, sendWave, starBalance, startRun, type Meta,
+  buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, sendWave, starBalance, startRun, tdServerUp, type Meta,
 } from './net';
 import { drawEnemy, drawTower, enemyLook, enemyRadius, previewItem, readPalette, towerLook, type Palette } from './render';
 import { ACTS, actOf, BONUS_ACT, bossName, levelStory, PROLOGUE, type Line } from './story';
@@ -136,18 +136,31 @@ function mount(ctx: GameContext): () => void {
       return b;
     };
 
+    // Message de la boutique à étoiles, affiché juste sous elle (la page est longue).
+    let shopNote = '';
     const shopAction = async (run: () => Promise<void>, ok: string) => {
       try {
         await run();
-        note = ok;
+        shopNote = ok;
         blip(660);
       } catch (e) {
-        note = (e as Error).message;
+        const msg = (e as Error).message;
+        shopNote = msg.includes('étoiles') && serverDown ? `${msg} : le serveur du tower defense est injoignable, tes niveaux réussis n’ont pas été enregistrés.` : msg;
       }
       if (!disposed) render();
     };
 
+    // Serveur du tower defense joignable ? Sans lui, rien n'est enregistré : on le dit clairement.
+    let serverDown = false;
+    void tdServerUp().then((up) => {
+      serverDown = !up;
+      if (serverDown && !disposed) render();
+    });
+
     const render = () => {
+      // Garde le bouton cliqué et la position dans la page (choisir un héros ne remonte plus en haut).
+      const kept = (document.activeElement as HTMLElement | null)?.dataset?.id;
+      const scrollY = window.scrollY;
       const cleared = meta.cleared;
       const hero = chosenHero();
       const heroBtn = (id: string | null) => {
@@ -162,6 +175,7 @@ function mount(ctx: GameContext): () => void {
         );
         b.addEventListener('click', () => {
           save(HERO_KEY, id);
+          blip(520);
           render();
         });
         return b;
@@ -208,6 +222,9 @@ function mount(ctx: GameContext): () => void {
       const up = nextUnlock(cleared);
 
       wrap.replaceChildren(
+        serverDown
+          ? h('p', { class: 'notice td-server-down' }, '⚠ Le serveur du tower defense est injoignable : tes parties ne sont pas enregistrées (niveaux réussis, étoiles, classement). Il faut déployer la fonction serveur « td » sur Supabase.')
+          : '',
         h(
           'div',
           { class: 'td-deck-head' },
@@ -229,6 +246,7 @@ function mount(ctx: GameContext): () => void {
           h('p', { class: 'muted small' }, '1 étoile par niveau réussi, 2 en gardant au moins la moitié de tes vies, 3 sans en perdre une seule. Les améliorations valent pour toutes tes parties.'),
           h('div', { class: 'td-heroes' }, ...perkRows),
           h('div', { class: 'td-deck-actions' }, reset),
+          shopNote ? h('p', { class: 'status td-shop-note' }, shopNote) : '',
         ),
         h(
           'section',
@@ -240,6 +258,13 @@ function mount(ctx: GameContext): () => void {
         h('p', { class: 'status' }, starting ? 'Lancement…' : note),
         hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'jouer'], ['I', 'mode infini'], ['C', 'caisses'], ['Retour arrière', 'quitter']),
       );
+      const again = kept ? wrap.querySelector<HTMLElement>(`[data-id="${kept}"]`) : null;
+      if (again && !(again as HTMLButtonElement).disabled) {
+        again.focus({ preventScroll: true });
+        window.scrollTo(0, scrollY);
+        return;
+      }
+      if (kept) return window.scrollTo(0, scrollY);
       const target = focusLevel ? `level:${focusLevel}` : `level:${Math.min(LEVEL_COUNT, cleared + 1)}`;
       (wrap.querySelector<HTMLElement>(`[data-id="${target}"]`) ?? wrap.querySelector<HTMLElement>('.td-level'))?.focus();
     };
@@ -758,6 +783,7 @@ function mount(ctx: GameContext): () => void {
         stars > starsBefore ? h('span', { class: 'small' }, `+${stars - starsBefore} ★ pour la boutique à étoiles`) : h('span', { class: 'small muted' }, `Ton record sur ce niveau : ${starText(starsBefore)}`),
         session ? h('span', { class: 'small' }, `+${levelPoints(s.level, first)} points ◆${first ? '' : ' (niveau rejoué)'}`) : '',
         unlocks.length ? h('span', { class: 'small' }, `Débloqué : ${unlocks.join(', ')}.`) : '',
+        session || !multiConfigured ? '' : h('span', { class: 'small td-unsaved' }, '⚠ Partie non classée : ce niveau et ses étoiles ne sont pas enregistrés sur le serveur.'),
         h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('La suite de l’histoire', outro, true)),
         h('span', { class: 'muted small' }, 'Entrée la suite · M carte'),
       ];

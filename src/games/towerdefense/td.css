@@ -92,3 +92,6 @@
   .td-infinite { grid-column: auto; }
   .td-skin-row { flex-direction: column; align-items: flex-start; gap: 0.3rem; }
 }
+.td-server-down { margin: 0 0 0.6rem; }
+.td-unsaved { color: var(--tone1, #c0392b); font-weight: 600; }
+.td-shop-note { margin: 0.2rem 0 0; }
