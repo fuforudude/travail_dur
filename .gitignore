@@ -10,3 +10,5 @@ dist
 .claude/worktrees/
 # Fichiers locaux de la CLI Supabase (projet lié)
 supabase/.temp/
+server/dist
+server/.env

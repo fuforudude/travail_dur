@@ -4,9 +4,10 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
  * Content-Security-Policy en balise meta (GitHub Pages ne permet pas d'en-têtes HTTP).
  * Seulement au build : en dev, le client Vite a besoin de son websocket et de styles injectés.
  */
-function csp(supabaseUrl: string | undefined): Plugin {
+function csp(supabaseUrl: string | undefined, apiUrl: string | undefined): Plugin {
   const origin = supabaseUrl ? new URL(supabaseUrl).host : '';
-  const connect = ["'self'", origin && `https://${origin}`, origin && `wss://${origin}`].filter(Boolean).join(' ');
+  const api = apiUrl ? new URL(apiUrl).origin : ''; // l'API du VPS (server/)
+  const connect = ["'self'", origin && `https://${origin}`, origin && `wss://${origin}`, api].filter(Boolean).join(' ');
   const policy = [
     "default-src 'self'",
     "script-src 'self'",
@@ -45,7 +46,7 @@ export default defineConfig(({ mode, command }) => {
   const build = (loadEnv(mode, '.', '').GITHUB_SHA ?? '').slice(0, 12) || `local-${Date.now()}`;
   return {
     base: '/travail_dur/',
-    plugins: [csp(env.VITE_SUPABASE_URL), version(build)],
+    plugins: [csp(env.VITE_SUPABASE_URL, env.VITE_API_URL?.trim() || undefined), version(build)],
     define: { __BUILD__: JSON.stringify(command === 'build' ? build : 'dev') },
     // Le worker de l'ordinateur charge le code de chaque jeu à la demande : format module requis.
     worker: { format: 'es' as const },

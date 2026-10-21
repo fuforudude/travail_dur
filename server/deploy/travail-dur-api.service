@@ -1,0 +1,21 @@
+# Service systemd de l'API : /etc/systemd/system/travail-dur-api.service (voir server/README.md).
+[Unit]
+Description=API travail_dur
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=api
+WorkingDirectory=/opt/travail-dur-api
+EnvironmentFile=/opt/travail-dur-api/.env
+ExecStart=/usr/bin/node /opt/travail-dur-api/server.mjs
+Restart=always
+RestartSec=2
+# Durcissement : l'API n'écrit nulle part et n'a besoin d'aucun droit particulier.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+name: API (VPS)
+
+# À chaque push sur main qui touche l'API ou le code partagé : tests, construction de server.mjs,
+# puis copie sur le VPS et redémarrage du service. Sans les secrets VPS_*, le déploiement est sauté.
+# Secrets : VPS_HOST (adresse), VPS_USER (compte de déploiement), VPS_SSH_KEY (clé privée).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'shared/**'
+      - 'supabase/migrations/**'
+      - '.github/workflows/api.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: api
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc -p server
+      - run: npm run test:server
+      - run: npm run server:build
+      - name: Copie sur le VPS et redémarrage
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$VPS_HOST" ]; then echo "Secrets VPS_* absents : déploiement sauté."; exit 0; fi
+          mkdir -p ~/.ssh && echo "$VPS_SSH_KEY" > ~/.ssh/id && chmod 600 ~/.ssh/id
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          scp -i ~/.ssh/id server/dist/server.mjs "$VPS_USER@$VPS_HOST:/opt/travail-dur-api/server.mjs.new"
+          ssh -i ~/.ssh/id "$VPS_USER@$VPS_HOST" 'mv /opt/travail-dur-api/server.mjs.new /opt/travail-dur-api/server.mjs && sudo systemctl restart travail-dur-api && sleep 2 && curl -fsS http://127.0.0.1:8787/health'

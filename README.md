@@ -69,6 +69,10 @@ Valeurs d’équilibrage (tours, cartes, difficulté des niveaux, déblocages, h
 
 Le prix et la possession sont vérifiés par le serveur (`shop_buy`, `shop_equip`) ; un objet acheté est porté tout de suite, et peut être retiré ou remis à tout moment.
 
+## Architecture
+
+Le site (GitHub Pages) parle à **Supabase** pour la connexion, le temps réel et la plupart des données, et à une **API à nous** hébergée sur un VPS (`server/`, Node + Hono) pour les domaines déjà migrés : pour l'instant l'**appart** et les meubles. L'API suit un découpage contrôleur → service → dépôt → Postgres, et les règles partagées avec le site sont dans `shared/` : un seul code pour l'aperçu dans le navigateur et pour la décision côté serveur. Installation du VPS, configuration et déploiement : [server/README.md](server/README.md).
+
 ## Administration et appartement
 
 - **Admins** : la table `public.admins` (le compte `8d86e772-…` est admin). Pour en ajouter un : `insert into public.admins (user_id) values ('<id>');` dans *SQL Editor*. Les admins n’apparaissent dans aucun classement.

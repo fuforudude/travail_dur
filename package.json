@@ -8,15 +8,26 @@
     "build": "node scripts/td-sync.mjs && tsc && vite build",
     "preview": "vite preview",
     "td:sync": "node scripts/td-sync.mjs",
-    "test:sql": "node scripts/sql-test.mjs"
+    "test:sql": "node scripts/sql-test.mjs",
+    "server:dev": "node --env-file=server/.env --import tsx --watch server/src/main.ts",
+    "server:build": "esbuild server/src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=server/dist/server.mjs --external:pg-native --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "test:server": "node --import tsx --test server/test/*.test.ts"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.2.17",
+    "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^6.4.4"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.5",
     "@supabase/supabase-js": "^2.118.0",
-    "pdfjs-dist": "^4.10.38"
+    "hono": "^4.13.13",
+    "jose": "^6.2.13",
+    "pdfjs-dist": "^4.10.38",
+    "pg": "^8.23.1"
   }
 }

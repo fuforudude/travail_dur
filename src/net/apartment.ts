@@ -1,10 +1,11 @@
-// Appartement, meubles et caisses (supabase/migrations/0009_appart_admin.sql).
-// Le serveur fait foi pour les prix, les tirages et l'aménagement ; catalogue et géométrie : furniture.ts.
+// Appartement, meubles et caisses. L'appart et les meubles passent par l'API (server/), qui décide
+// de tout ; les caisses et les photos (admin) sont encore lues et tirées par Supabase directement.
+// Catalogue, géométrie et calculs partagés avec le serveur : shared/furniture.ts.
 
 import { serverError, rpc } from './admin';
-import { baseOf } from './furniture';
+import { api } from './api';
+import { accrue, type Layout, type Rarity } from './furniture';
 import { serverNow } from './serverClock';
-import { capHours, type Layout, type Rarity } from './furniture';
 import { getSupabase } from './supabase';
 
 export * from './furniture';
@@ -36,44 +37,31 @@ export interface ApartmentState {
   cleanStep: number;
   rate: number; // points par heure
   banked: number;
-  lastTick: number; // ms
+  lastTick: number; // ms, heure du serveur
 }
 
-export async function loadApartment(uid: string): Promise<ApartmentState> {
-  const { data, error } = await (await client())
-    .from('apartments')
-    .select('layout, rooms, specials, clean_step, rate, banked, last_tick')
-    .eq('user_id', uid)
-    .maybeSingle();
-  if (error) throw serverError(error);
-  const rooms = (data?.rooms as string[] | undefined) ?? ['entree'];
-  const l = (data?.layout as Partial<Layout> | undefined) ?? {};
-  return {
-    layout: Object.fromEntries(rooms.map((r) => [r, { floor: l[r]?.floor ?? [], wall: l[r]?.wall ?? [] }])),
-    rooms,
-    specials: (data?.specials as string[] | undefined) ?? [],
-    cleanStep: Number(data?.clean_step ?? 0),
-    rate: Number(data?.rate ?? 0),
-    banked: Number(data?.banked ?? 0),
-    lastTick: data?.last_tick ? Date.parse(data.last_tick as string) : serverNow(),
-  };
+/** Un appart tel que l'API le renvoie (server/src/appart/appart.service.ts) ; chez soi, avec ses meubles et photos. */
+export interface AppartView {
+  owner: { id: string; name: string };
+  apartment: ApartmentState;
+  artworks: Artwork[];
+  furniture?: Owned[];
+  photos?: number[];
+  admin?: boolean;
 }
 
-/** Revenus accumulés à l'instant t (même calcul que public.apartment_settle), à l'heure du serveur. */
-export function pending(a: ApartmentState, t = serverNow()): number {
-  return Math.min(a.banked + (a.rate * (t - a.lastTick)) / 3_600_000, Math.max(a.rate, 1) * capHours(a.specials));
-}
+/** L'appart de `owner` (« me » pour le sien). Erreur 403 (ApiError) si ce n'est pas un ami. */
+export const loadAppart = (owner: string) => api<AppartView>('GET', `/appart/${owner}`);
+export const loadApartment = async (uid: string) => (await loadAppart(uid)).apartment;
 
-export const cleanApartment = () => rpc<{ balance: number; clean_step: number }>('apartment_clean');
-export const collectIncome = () => rpc<{ gain: number }>('apartment_collect');
-export const buyRoom = (room: string) => rpc<{ balance: number; rooms: string[] }>('apartment_room_buy', { room });
-export const buySpecial = (special: string) => rpc<{ balance: number; specials: string[] }>('apartment_special_buy', { special });
+/** Revenus accumulés à l'instant t, pour le compteur (le serveur refait le calcul à chaque récolte). */
+export const pending = (a: ApartmentState, t = serverNow()) => accrue(a.banked, a.rate, a.specials, t - a.lastTick);
 
-export async function myFurniture(uid: string): Promise<Owned[]> {
-  const { data, error } = await (await client()).from('furniture_owned').select('id, item_id').eq('user_id', uid).order('id');
-  if (error) throw serverError(error);
-  return ((data as Owned[] | null) ?? []).map((o) => ({ ...o, id: Number(o.id) }));
-}
+type Changed<T = object> = { apartment: ApartmentState } & T;
+export const cleanApartment = () => api<Changed<{ balance: number }>>('POST', '/appart/clean');
+export const collectIncome = () => api<Changed<{ gain: number }>>('POST', '/appart/collect');
+export const buyRoom = (room: string) => api<Changed<{ balance: number }>>('POST', '/appart/rooms', { room });
+export const buySpecial = (special: string) => api<Changed<{ balance: number }>>('POST', '/appart/specials', { special });
 
 export async function artworks(): Promise<Artwork[]> {
   const { data, error } = await (await client()).from('artworks').select('id, title, url').order('id');
@@ -93,10 +81,8 @@ export async function crateInfo(): Promise<{ prices: Map<string, number>; odds: 
   return { prices: new Map((c.data ?? []).map((r: { id: string; price: number }) => [r.id, Number(r.price)])), odds };
 }
 
-/** Revente d'un meuble : 67 % du prix de base de son modèle (public.furniture_sell, 0038_vente_meubles.sql). */
-export const sellPrice = (item: string) => Math.floor(((baseOf(item)?.price ?? 0) * 67) / 100);
-export const sellFurniture = (owned: number) => rpc<{ price: number; balance: number }>('furniture_sell', { owned_id: owned });
-export const buyFurniture = (base: string) => rpc<{ balance: number; owned: number; item: string }>('furniture_buy', { base_id: base });
+export const sellFurniture = (owned: number) => api<{ price: number; balance: number }>('DELETE', `/furniture/${owned}`);
+export const buyFurniture = (base: string) => api<{ balance: number; owned: Owned }>('POST', '/furniture', { base });
 /** Résultat d'une caisse : un meuble, ou (caisse souvenirs) une photo débloquée. */
 export type CrateResult =
   | { balance: number; owned: number; item: string; rarity: Rarity; photo?: undefined }
@@ -104,20 +90,21 @@ export type CrateResult =
 export const openCrate = (crate: string) => rpc<CrateResult>('crate_open', { crate });
 
 /** Photos débloquées par ce joueur (caisse souvenirs). */
-export async function ownedPhotos(uid: string): Promise<Set<number>> {
-  const { data, error } = await (await client()).from('artwork_owned').select('artwork_id').eq('user_id', uid);
-  if (error) throw serverError(error);
-  return new Set(((data as { artwork_id: number }[] | null) ?? []).map((r) => Number(r.artwork_id)));
-}
-export const saveLayout = (layout: Layout) =>
-  rpc<Layout>('apartment_save', {
-    layout: Object.fromEntries(
-      Object.entries(layout).map(([room, l]) => [
-        room,
-        {
-          floor: l.floor.map(({ o, x, y, r, art }) => ({ o, x, y, ...(r ? { r } : {}), ...(art ? { art } : {}) })),
-          wall: l.wall.map(({ o, x, y, r, art }) => ({ o, x, y, ...(r ? { r } : {}), ...(art ? { art } : {}) })),
-        },
-      ]),
-    ),
-  });
+/** Enregistre l'aménagement (le serveur vérifie chaque meuble et renvoie l'appart à jour). */
+export const saveLayout = (layout: Layout, opts: { keepalive?: boolean } = {}) =>
+  api<Changed>(
+    'PUT',
+    '/appart/layout',
+    {
+      layout: Object.fromEntries(
+        Object.entries(layout).map(([room, l]) => [
+          room,
+          {
+            floor: l.floor.map(({ o, x, y, r, art }) => ({ o, x, y, ...(r ? { r } : {}), ...(art ? { art } : {}) })),
+            wall: l.wall.map(({ o, x, y, r, art }) => ({ o, x, y, ...(r ? { r } : {}), ...(art ? { art } : {}) })),
+          },
+        ]),
+      ),
+    },
+    opts,
+  );

@@ -86,7 +86,7 @@ export function cratesView(root: HTMLElement): () => void {
     busy = true;
     try {
       const r = await buyFurniture(base);
-      status.textContent = `${itemName(r.item)} acheté : il t’attend dans ton appart.`;
+      status.textContent = `${itemName(r.owned.item_id)} acheté : il t’attend dans ton appart.`;
       void refreshWallet();
     } catch (e) {
       status.textContent = (e as Error).message;

@@ -1,0 +1,6 @@
+# /etc/caddy/Caddyfile : HTTPS automatique (certificat Let's Encrypt) devant l'API, qui écoute en local.
+# Remplacer api.exemple.fr par le nom de domaine qui pointe sur le VPS.
+api.exemple.fr {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8787
+}

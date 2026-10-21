@@ -1,9 +1,8 @@
 import { isTyping, pushKeys } from '../core/input';
 import { blip } from '../core/sound';
-import { isAdmin } from '../net/admin';
+import { ApiError } from '../net/api';
 import { serverNow } from '../net/serverClock';
 import {
-  artworks,
   baseOf,
   buyRoom,
   buySpecial,
@@ -19,9 +18,7 @@ import {
   incomeMult,
   itemIncome,
   itemName,
-  loadApartment,
-  myFurniture,
-  ownedPhotos,
+  loadAppart,
   pending,
   ROOM_COSTS,
   roomCost,
@@ -536,11 +533,11 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   // Aménagement
   // -------------------------------------------------------------------------
 
-  const reloadState = async () => {
-    const fresh = await loadApartment(owner);
-    // Garde l'aménagement affiché s'il reste des changements à envoyer.
+  /** L'appart renvoyé par le serveur ; garde l'aménagement affiché s'il reste des changements à envoyer. */
+  const apply = (fresh: ApartmentState) => {
     state = unsaved ? { ...fresh, layout: { ...fresh.layout, ...state.layout } } : fresh;
   };
+  const reloadState = async () => apply((await loadAppart(owner)).apartment);
 
   const scheduleSave = () => {
     clearTimeout(saveTimer);
@@ -549,8 +546,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     saveTimer = window.setTimeout(async () => {
       unsaved = false;
       try {
-        await saveLayout(state.layout);
-        await reloadState();
+        apply((await saveLayout(state.layout)).apartment);
         status = 'Enregistré.';
       } catch (e) {
         status = (e as Error).message;
@@ -738,13 +734,12 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     );
   };
 
-  /** Appel au serveur qui dépense ou rapporte des points, puis rechargement. */
+  /** Appel au serveur qui dépense ou rapporte des points ; il renvoie l'appart à jour. */
   const act = async (f: () => Promise<string>) => {
     if (busy) return;
     busy = true;
     try {
       status = await f();
-      await reloadState();
       void refreshWallet();
     } catch (e) {
       status = (e as Error).message;
@@ -758,6 +753,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     mine() &&
     act(async () => {
       const r = await collectIncome();
+      apply(r.apartment);
       if (r.gain) blip(880);
       return r.gain ? `+${formatPoints(r.gain)} points récoltés.` : 'Rien à récolter pour l’instant.';
     });
@@ -765,14 +761,14 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   const doClean = () =>
     act(async () => {
       const task = CLEAN_TASKS[state.cleanStep];
-      await cleanApartment();
+      apply((await cleanApartment()).apartment);
       blip(700);
       return `${task.name} : fait !`;
     });
 
   const doBuyRoom = (id: string) =>
     act(async () => {
-      await buyRoom(id);
+      apply((await buyRoom(id)).apartment);
       blip(990);
       return `${roomOf(id).name} débloquée !`;
     });
@@ -781,7 +777,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     const sp = specialOf(room);
     if (!sp || !mine() || state.specials.includes(sp.id)) return;
     return act(async () => {
-      await buySpecial(sp.id);
+      apply((await buySpecial(sp.id)).apartment);
       blip(1180);
       return `${sp.name} installé : ${sp.effect.toLowerCase()} !`;
     });
@@ -1026,27 +1022,26 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     me = account.id;
     // Le routeur transmet « undefined » quand l'identifiant est absent (#/appart).
     owner = /^[0-9a-f-]{36}$/.test(ownerParam ?? '') ? ownerParam : me;
-    const supabase = await getSupabase();
-    // L'appart d'un autre n'est visible que par ses amis (et les admins) : le serveur ne renverrait rien.
-    if (owner !== me) {
-      const [friend, isAdm] = await Promise.all([supabase!.rpc('are_friends', { x: me, y: owner }), isAdmin()]);
+    // Un seul appel : l'appart, ses photos, et chez soi ses meubles. Chez un non-ami, le serveur refuse (403).
+    let view;
+    try {
+      view = await loadAppart(owner === me ? 'me' : owner);
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 403) throw e;
       if (disposed) return;
-      if (!friend.data && !isAdm) {
-        const go = h('button', { class: 'field', type: 'button' }, 'Mes amis');
-        go.addEventListener('click', () => navigate('/amis'));
-        wrap.replaceChildren(h('div', { class: 'card narrow' }, h('h1', {}, 'Appart privé'), h('p', { class: 'muted' }, 'Seuls ses amis peuvent visiter cet appart.'), go));
-        return;
-      }
-    }
-    const [a, p, prof] = await Promise.all([loadApartment(owner), artworks(), supabase!.from('profiles').select('username').eq('id', owner).maybeSingle()]);
-    if (disposed) return;
-    state = a;
-    photos = p;
-    ownerName = (prof.data?.username as string | undefined) ?? 'Inconnu';
-    if (mine()) {
-      [owned, unlockedPhotos, admin] = await Promise.all([myFurniture(me), ownedPhotos(me), isAdmin()]);
+      const go = h('button', { class: 'field', type: 'button' }, 'Mes amis');
+      go.addEventListener('click', () => navigate('/amis'));
+      wrap.replaceChildren(h('div', { class: 'card narrow' }, h('h1', {}, 'Appart privé'), h('p', { class: 'muted' }, e.message), go));
+      return;
     }
     if (disposed) return;
+    state = view.apartment;
+    photos = view.artworks;
+    ownerName = view.owner.name;
+    owned = view.furniture ?? [];
+    unlockedPhotos = new Set(view.photos ?? []);
+    admin = view.admin ?? false;
+    const supabase = await getSupabase();
     wrap.replaceChildren(header, income, tabs, h('div', { class: 'ap-main' }, h('div', { class: 'ap-stage' }, svg, zoomBar), side), statusEl);
     resetView();
     renderHeader();
@@ -1155,7 +1150,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   return () => {
     disposed = true;
     clearTimeout(saveTimer);
-    if (unsaved) void saveLayout(state.layout).catch(() => {}); // on quitte la page juste après un changement
+    if (unsaved) void saveLayout(state.layout, { keepalive: true }).catch(() => {}); // on quitte la page juste après un changement
     offs.forEach((off) => off());
   };
 }

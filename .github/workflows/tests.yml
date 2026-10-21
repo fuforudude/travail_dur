@@ -23,3 +23,6 @@ jobs:
       # Le moteur du tower defense copié dans la fonction serveur doit être à jour, et le code doit compiler.
       - run: npm run td:sync && git diff --exit-code supabase/functions
       - run: npx tsc
+      # API (server/) : types, puis tests de bout en bout sur PGlite (catalogue partagé = base compris).
+      - run: npx tsc -p server
+      - run: npm run test:server
