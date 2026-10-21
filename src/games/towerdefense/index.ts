@@ -317,8 +317,8 @@ function mount(ctx: GameContext): () => void {
       const done = [...meta.stars.keys()].filter((L) => !bonusLevel(L)).length;
       const crownsCount = [...meta.crowns.values()].reduce((a, s) => a + s.size, 0);
 
-      const button = (label: string, run: () => void, cls = 'field') => {
-        const b = h('button', { class: cls, type: 'button' }, label);
+      const button = (label: string, run: () => void, key = '') => {
+        const b = h('button', { class: 'field', type: 'button' }, label, key ? h('span', { class: 'keyboard-only' }, ` (${key})`) : '');
         b.addEventListener('click', run);
         return b;
       };
@@ -332,8 +332,8 @@ function mount(ctx: GameContext): () => void {
           'span',
           { class: 'push' },
           button(meta.best ? `∞ Infini · vague ${meta.best}` : '∞ Mode infini', () => play('infinite', 0)),
-          button('🎒 Inventaire (V)', openInventory),
-          button('Caisses (C)', () => navigate('/td/caisses')),
+          button('🎒 Inventaire', openInventory, 'V'),
+          button('Caisses', () => navigate('/td/caisses'), 'C'),
         ),
       );
 
