@@ -1526,6 +1526,12 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .iso-room.room-sdb { --wall-l: #dff2f4; --wall-r: #c2e1e5; --tile-a: #e9f6f8; --tile-b: #bfe0e6; --tile-hover: #a5d4dc; --board: #7fb3bd; }
 .iso-room.room-bureau { --wall-l: #e4ddd3; --wall-r: #cbc1b2; --tile-a: #7a5236; --tile-b: #6e4a30; --tile-hover: #8d6444; --board: #3b2a1c; }
 .iso-room.room-jeux { --wall-l: #3e3566; --wall-r: #302953; --tile-a: #6b3fa0; --tile-b: #5e3590; --tile-hover: #8250c0; --board: #22c3e6; }
+.iso-room.room-bar { --wall-l: #4a2e22; --wall-r: #3a231a; --tile-a: #2a2a2e; --tile-b: #1f1f23; --tile-hover: #3d3d44; --board: #f07a1a; }
+.iso-room.room-coffres { --wall-l: #8d96a3; --wall-r: #737c89; --tile-a: #b9bfc8; --tile-b: #a9b0ba; --tile-hover: #ccd2da; --board: #e8b82e; }
+.iso-room.room-toit { --wall-l: #bfe6f5; --wall-r: #9fd2e8; --tile-a: #c9a57a; --tile-b: #bb966b; --tile-hover: #d8b88f; --board: #3fb56a; }
+.iso-fixture { cursor: pointer; }
+.iso-fixture.locked .iso-model { filter: grayscale(1) brightness(1.15); opacity: 0.5; }
+.iso-fixture-lock { text-anchor: middle; font-size: 26px; }
 .iso-room.locked { filter: grayscale(0.7) brightness(0.85); }
 .iso-room.zoomed { cursor: grab; touch-action: none; }
 .iso-room.zoomed:active { cursor: grabbing; }
@@ -1634,6 +1640,18 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 .ap-tasks li.done { color: var(--muted); text-decoration: line-through; }
 .ap-tasks li.next { font-weight: 600; }
 .ap-side .rl-spin { width: 100%; margin-top: 0.4rem; }
+.ap-special { margin-top: 0.8rem; padding: 0.6rem 0.7rem; border: 1px dashed var(--tone3); border-radius: 8px; }
+.ap-special.on { border-style: solid; background: var(--accent-soft); }
+.ap-special h3 { margin: 0 0 0.3rem; font-size: 0.95rem; }
+.ap-special p { margin: 0; }
+.ap-special-info { margin: 0.4rem 0; }
+.ap-breakdown { flex-basis: 100%; font-size: 0.88rem; }
+.ap-breakdown summary { cursor: pointer; color: var(--muted); }
+.ap-gains { width: 100%; border-collapse: collapse; margin-top: 0.4rem; }
+.ap-gains td { padding: 0.15rem 0.4rem; white-space: nowrap; }
+.ap-gains td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.ap-gains-bar { width: 40%; }
+.ap-gains-bar span { display: block; height: 0.5rem; min-width: 2px; border-radius: 999px; background: var(--tone3); }
 
 /* ---------------------------------------------------------------------------
    Amis et notifications

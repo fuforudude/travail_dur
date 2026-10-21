@@ -4,7 +4,7 @@
 import { serverError, rpc } from './admin';
 import { baseOf } from './furniture';
 import { serverNow } from './serverClock';
-import { CAP_HOURS, type Layout, type Rarity } from './furniture';
+import { capHours, type Layout, type Rarity } from './furniture';
 import { getSupabase } from './supabase';
 
 export * from './furniture';
@@ -32,6 +32,7 @@ async function client() {
 export interface ApartmentState {
   layout: Layout;
   rooms: string[]; // pièces débloquées, dans l'ordre d'achat
+  specials: string[]; // équipements spéciaux achetés (SPECIALS)
   cleanStep: number;
   rate: number; // points par heure
   banked: number;
@@ -41,7 +42,7 @@ export interface ApartmentState {
 export async function loadApartment(uid: string): Promise<ApartmentState> {
   const { data, error } = await (await client())
     .from('apartments')
-    .select('layout, rooms, clean_step, rate, banked, last_tick')
+    .select('layout, rooms, specials, clean_step, rate, banked, last_tick')
     .eq('user_id', uid)
     .maybeSingle();
   if (error) throw serverError(error);
@@ -50,6 +51,7 @@ export async function loadApartment(uid: string): Promise<ApartmentState> {
   return {
     layout: Object.fromEntries(rooms.map((r) => [r, { floor: l[r]?.floor ?? [], wall: l[r]?.wall ?? [] }])),
     rooms,
+    specials: (data?.specials as string[] | undefined) ?? [],
     cleanStep: Number(data?.clean_step ?? 0),
     rate: Number(data?.rate ?? 0),
     banked: Number(data?.banked ?? 0),
@@ -59,12 +61,13 @@ export async function loadApartment(uid: string): Promise<ApartmentState> {
 
 /** Revenus accumulés à l'instant t (même calcul que public.apartment_settle), à l'heure du serveur. */
 export function pending(a: ApartmentState, t = serverNow()): number {
-  return Math.min(a.banked + (a.rate * (t - a.lastTick)) / 3_600_000, Math.max(a.rate, 1) * CAP_HOURS);
+  return Math.min(a.banked + (a.rate * (t - a.lastTick)) / 3_600_000, Math.max(a.rate, 1) * capHours(a.specials));
 }
 
 export const cleanApartment = () => rpc<{ balance: number; clean_step: number }>('apartment_clean');
 export const collectIncome = () => rpc<{ gain: number }>('apartment_collect');
 export const buyRoom = (room: string) => rpc<{ balance: number; rooms: string[] }>('apartment_room_buy', { room });
+export const buySpecial = (special: string) => rpc<{ balance: number; specials: string[] }>('apartment_special_buy', { special });
 
 export async function myFurniture(uid: string): Promise<Owned[]> {
   const { data, error } = await (await client()).from('furniture_owned').select('id, item_id').eq('user_id', uid).order('id');

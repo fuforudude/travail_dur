@@ -6,14 +6,17 @@ import {
   artworks,
   baseOf,
   buyRoom,
-  CAP_HOURS,
+  buySpecial,
+  capHours,
   CLEAN_TASKS,
   cleanApartment,
   collectIncome,
   covers,
+  CLEAN_RATE,
   finishOf,
   fitsIn,
   footprint,
+  incomeMult,
   itemIncome,
   itemName,
   loadApartment,
@@ -21,11 +24,13 @@ import {
   ownedPhotos,
   pending,
   ROOM_COSTS,
+  roomCost,
   roomOf,
   ROOMS,
   saveLayout,
   sellFurniture,
   sellPrice,
+  specialOf,
   takesPhoto,
   WALL_ROWS,
   zoneDims,
@@ -44,7 +49,7 @@ import { formatPoints, refreshWallet } from '../net/points';
 import { getSupabase } from '../net/supabase';
 import { navigate } from '../router';
 import { h, hints } from './dom';
-import { floorModel, iso, modelIcon, MOTIF_GLYPH, TH, TW, wallDecor, wallModel, wallpaper } from './furnitureArt';
+import { fixtureModel, floorModel, iso, modelIcon, MOTIF_GLYPH, TH, TW, wallDecor, wallModel, wallpaper } from './furnitureArt';
 import { page } from './layout';
 
 /** Un meuble en HTML (inventaire, caisses) : son modèle et sa finition, ou la photo pour un cadre. */
@@ -138,6 +143,8 @@ interface Scene {
   photos: Artwork[];
   editing: boolean;
   isOpen(room: string): boolean; // pièce débloquée : sa porte s'ouvre
+  fixture: { id: string; name: string; x: number; y: number; w: number; h: number; owned: boolean } | null; // équipement spécial
+  onFixture(): void;
   onDoor(room: string): void;
   onCell(zone: Zone, x: number, y: number): void;
   onHover(zone: Zone, x: number, y: number): void;
@@ -284,6 +291,23 @@ function drawScene(svg: SVGSVGElement, g: Geom, s: Scene): Overlay {
     return node;
   };
   for (const p of s.layout.floor) floorItem(p.i, p.x, p.y, p.r ?? 0, false, p.art);
+  // Équipement spécial de la pièce : grisé et cadenassé tant qu'il n'est pas acheté.
+  if (s.fixture) {
+    const fx = s.fixture;
+    const node = el('g', { class: `iso-item iso-fixture${fx.owned ? '' : ' locked'}` }, el('title', {}, fx.owned ? fx.name : `${fx.name} : à débloquer`));
+    const model = fixtureModel(fx.id, fx.x, fx.y, fx.w, fx.h);
+    model.setAttribute('transform', `translate(${g.ox} ${g.oy}) ${model.getAttribute('transform')}`);
+    node.append(model);
+    if (!fx.owned) {
+      const [cx, cy] = P(fx.x + fx.w / 2, fx.y + fx.h / 2, 150);
+      node.append(el('text', { x: cx, y: cy, class: 'iso-fixture-lock' }, '🔒'));
+    }
+    node.addEventListener('click', (e) => {
+      e.stopPropagation();
+      s.onFixture();
+    });
+    sprites.push({ depth: fx.x + fx.w + fx.y + fx.h, node });
+  }
   if (clean < 1) for (const [x, y] of BOXES) floorItem('box', x, y);
   if (clean < 2) for (const [x, y] of TRASH) floorItem('trash', x, y);
   sprites.sort((a, b) => a.depth - b.depth).forEach((sp) => parts.push(sp.node));
@@ -330,7 +354,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   let me = '';
   let owner = '';
   let ownerName = '';
-  let state: ApartmentState = { layout: {}, rooms: ['entree'], cleanStep: 0, rate: 0, banked: 0, lastTick: serverNow() };
+  let state: ApartmentState = { layout: {}, rooms: ['entree'], specials: [], cleanStep: 0, rate: 0, banked: 0, lastTick: serverNow() };
   let owned: Owned[] = [];
   let photos: Artwork[] = [];
   let unlockedPhotos = new Set<number>(); // photos débloquées (caisse souvenirs)
@@ -647,13 +671,54 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   collectBtn.addEventListener('click', () => void doCollect());
   const renderIncome = () => {
     const p = pending(state);
-    const full = p >= Math.max(state.rate, 1) * CAP_HOURS - 0.5;
+    const cap = capHours(state.specials);
+    const full = p >= Math.max(state.rate, 1) * cap - 0.5;
     rateEl.textContent = `${(state.rate / 3600).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} pt/s`;
     perHourEl.textContent = ` · ${formatPoints(Math.round(state.rate))} par heure`;
-    pendingLabel.textContent = full ? `Coffre plein (${CAP_HOURS} h) : récolte !` : 'Versé tout seul chaque minute, où que tu sois sur le site';
+    pendingLabel.textContent = full ? `Coffre plein (${cap} h) : récolte !` : 'Versé tout seul toutes les 5 minutes, où que tu sois sur le site';
     collectBtn.textContent = `Récolter ${formatPoints(Math.floor(p))} maintenant (C)`;
     collectBtn.disabled = p < 1 || busy;
-    if (!income.firstChild) income.append(h('div', {}, rateEl, perHourEl), mine() ? h('div', { class: 'ap-pending' }, pendingLabel, collectBtn) : '');
+    if (!income.firstChild) income.append(h('div', {}, rateEl, perHourEl), mine() ? h('div', { class: 'ap-pending' }, pendingLabel, collectBtn) : '', breakdown);
+  };
+
+  // Gains par pièce : ce que rapportent les meubles de chaque pièce, bonus des équipements compris.
+  const breakdown = h('details', { class: 'ap-breakdown' }, h('summary', {}, 'Gains par pièce'));
+  const breakdownBody = h('div', {});
+  breakdown.append(breakdownBody);
+  const bar = (pct: number) => {
+    const b = h('span', {});
+    b.style.width = `${pct.toFixed(1)}%`; // propriété CSSOM : autorisée par la CSP, contrairement à un attribut style
+    return b;
+  };
+  const renderBreakdown = () => {
+    const mult = incomeMult(state.specials);
+    const lines = state.rooms.map((id) => {
+      const l = state.layout[id] ?? { floor: [], wall: [] };
+      const items = [...l.floor, ...l.wall];
+      return { label: `${roomOf(id).glyph} ${roomOf(id).name}`, n: items.length, perHour: items.reduce((t, p) => t + itemIncome(p.i), 0) * mult };
+    });
+    if (state.cleanStep) lines.push({ label: '🧹 Ménage', n: -1, perHour: state.cleanStep * CLEAN_RATE * mult });
+    const total = lines.reduce((t, l) => t + l.perHour, 0) || 1;
+    const best = Math.max(...lines.map((l) => l.perHour), 1);
+    breakdownBody.replaceChildren(
+      h(
+        'table',
+        { class: 'ap-gains' },
+        ...lines
+          .sort((a, b) => b.perHour - a.perHour)
+          .map((l) =>
+            h(
+              'tr',
+              {},
+              h('td', {}, l.label, l.n >= 0 ? h('span', { class: 'muted small' }, ` · ${l.n} meuble${l.n > 1 ? 's' : ''}`) : ''),
+              h('td', { class: 'ap-gains-bar' }, bar((100 * l.perHour) / best)),
+              h('td', { class: 'num' }, `${formatPoints(Math.round(l.perHour))}/h`),
+              h('td', { class: 'num muted small' }, `${Math.round((100 * l.perHour) / total)} %`),
+            ),
+          ),
+      ),
+      mult > 1 ? h('p', { class: 'muted small' }, `Bonus des équipements compris : × ${mult.toLocaleString('fr-FR')}`) : '',
+    );
   };
 
   /** Appel au serveur qui dépense ou rapporte des points, puis rechargement. */
@@ -695,6 +760,16 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       return `${roomOf(id).name} débloquée !`;
     });
 
+  const doBuySpecial = () => {
+    const sp = specialOf(room);
+    if (!sp || !mine() || state.specials.includes(sp.id)) return;
+    return act(async () => {
+      await buySpecial(sp.id);
+      blip(1180);
+      return `${sp.name} installé : ${sp.effect.toLowerCase()} !`;
+    });
+  };
+
   const toggleEdit = () => {
     if (!mine() || state.cleanStep < CLEAN_TASKS.length || !unlocked()) return;
     editing = !editing;
@@ -704,7 +779,11 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     render();
   };
 
-  const nextRoomCost = () => ROOM_COSTS[state.rooms.length - 1];
+  /** Pourquoi la pièce `id` ne peut pas encore s'acheter (pièce de luxe : il faut d'abord sa voisine). */
+  const roomBlocked = (id: string) => {
+    const req = roomOf(id).requires;
+    return req && !unlocked(req) ? `Débloque d’abord : ${roomOf(req).name}.` : '';
+  };
 
   const renderTabs = () => {
     const list = mine() ? ROOMS : ROOMS.filter((r) => unlocked(r.id));
@@ -726,6 +805,22 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     );
   };
 
+  /** Carte de l'équipement spécial de la pièce : son effet, et le bouton pour l'installer. */
+  const specialCard = () => {
+    const sp = specialOf(room);
+    if (!sp) return '';
+    const has = state.specials.includes(sp.id);
+    const b = has ? null : h('button', { class: 'field rl-spin', type: 'button', disabled: busy }, `Installer · ◆ ${formatPoints(sp.cost)}`);
+    b?.addEventListener('click', () => void doBuySpecial());
+    return h(
+      'div',
+      { class: `ap-special${has ? ' on' : ''}` },
+      h('h3', {}, `${sp.glyph} ${sp.name}`),
+      h('p', { class: 'small' }, has ? `✓ Installé : ${sp.effect.toLowerCase()}.` : sp.effect),
+      b ?? '',
+    );
+  };
+
   const renderSide = () => {
     if (!mine()) {
       side.hidden = true;
@@ -735,19 +830,24 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     // Pièce pas encore achetée : on la voit vide, avec son prix.
     if (!unlocked()) {
       const r = roomOf(room);
-      const cost = nextRoomCost();
+      const cost = roomCost(r.id, state.rooms);
       const ready = state.cleanStep >= CLEAN_TASKS.length;
-      const b = h('button', { class: 'field rl-spin', type: 'button', disabled: busy || !ready || cost === undefined }, `Débloquer · ◆ ${formatPoints(cost ?? 0)}`);
+      const blocked = roomBlocked(r.id);
+      const sp = specialOf(r.id);
+      const b = h('button', { class: 'field rl-spin', type: 'button', disabled: busy || !ready || !!blocked || cost === undefined }, `Débloquer · ◆ ${formatPoints(cost ?? 0)}`);
       b.addEventListener('click', () => void doBuyRoom(r.id));
       side.replaceChildren(
         h('h2', {}, `${r.glyph} ${r.name}`),
         h(
           'p',
           { class: 'muted small' },
-          ready
-            ? `Chaque pièce achetée rend la suivante plus chère (${ROOM_COSTS.map((c) => formatPoints(c)).join(' → ')}).`
-            : 'Nettoie d’abord ton entrée.',
+          !ready
+            ? 'Nettoie d’abord ton entrée.'
+            : r.price
+              ? `Pièce de luxe, à prix fixe.${blocked ? ` ${blocked}` : ''}`
+              : `Chaque pièce achetée rend la suivante plus chère (${ROOM_COSTS.map((c) => formatPoints(c)).join(' → ')}).`,
         ),
+        sp ? h('p', { class: 'ap-special-info small' }, `${sp.glyph} À installer ensuite : ${sp.name} (◆ ${formatPoints(sp.cost)}), ${sp.effect.toLowerCase()}.`) : '',
         b,
       );
       return;
@@ -774,6 +874,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
         h('h2', {}, `${roomOf(room).glyph} ${roomOf(room).name}`),
         h('p', { class: 'muted small' }, `${here} meuble${here > 1 ? 's' : ''} ici · ${owned.length - used.size} en réserve`),
         edit,
+        specialCard(),
       );
       return;
     }
@@ -846,7 +947,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
 
   const render = () => {
     // La pièce (des centaines de formes) n'est redessinée que si son contenu a changé.
-    const key = JSON.stringify([room, state.rooms, layout(), state.cleanStep, editing, photos.length]);
+    const key = JSON.stringify([room, state.rooms, state.specials, layout(), state.cleanStep, editing, photos.length]);
     if (key !== sceneKey || !overlay) {
       sceneKey = key;
       svg.setAttribute('class', `iso-room room-${room}${unlocked() ? '' : ' locked'}${view.z > 1 ? ' zoomed' : ''}`);
@@ -856,10 +957,20 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
         photos,
         editing,
         isOpen: (id) => unlocked(id),
+        fixture: (() => {
+          const sp = specialOf(room);
+          return sp && unlocked() ? { ...sp, owned: state.specials.includes(sp.id) } : null;
+        })(),
+        onFixture: () => {
+          const sp = specialOf(room)!;
+          const has = state.specials.includes(sp.id);
+          status = `${sp.name} : ${sp.effect.toLowerCase()}.${!has && mine() ? ` À installer pour ◆ ${formatPoints(sp.cost)}.` : ''}`;
+          statusEl.textContent = status;
+        },
         onDoor: (id) => {
-          if (unlocked(id)) return selectRoom(id);
-          const cost = nextRoomCost();
-          status = `${roomOf(id).name} : porte fermée.${mine() && cost !== undefined ? ` Débloque la pièce (◆ ${formatPoints(cost)}) avec son onglet 🔒.` : ''}`;
+          // Chez soi, une porte fermée mène quand même à la pièce : on y voit son prix.
+          if (unlocked(id) || mine()) return selectRoom(id);
+          status = `${roomOf(id).name} : porte fermée.`;
           statusEl.textContent = status;
         },
         onCell: activate,
@@ -874,6 +985,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     svg.classList.toggle('editing', editing);
     statusEl.textContent = status;
     renderIncome();
+    renderBreakdown();
     renderTabs();
     renderSide();
   };
@@ -1020,7 +1132,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     hints(
       ['E', 'aménager'],
       ['C', 'récolter'],
-      ['1 – 7', 'pièce'],
+      ['1 – 9', 'pièce'],
       ['+ − 0', 'zoom'],
       ['← ↑ → ↓', 'case'],
       ['Tab', 'meuble suivant'],

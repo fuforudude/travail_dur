@@ -130,6 +130,50 @@ else fail('account_delete a laissé des traces du compte');
   else fail(`vente : ${after - before} points reçus (attendu ${Math.floor((Number(base.price) * 67) / 100)}), meuble encore là : ${gone}`);
 }
 
+// Pièces de luxe et équipements spéciaux (0022).
+{
+  const rich = await newUser();
+  await db.query(`select public.points_add($1, 20000000, 'test', 'appart')`, [rich]);
+  await db.query(`insert into public.apartments (user_id, clean_step, rooms) values ($1, 6, '{entree}') on conflict (user_id) do update set clean_step = 6`, [rich]);
+  const bal = async () => Number((await db.query(`select balance from public.wallets where user_id = $1`, [rich])).rows[0].balance);
+  const tooEarly = await throws(() => as(rich, `select public.apartment_room_buy('bar')`));
+  if (tooEarly?.includes('Salle de jeux')) ok('le bar demande d’avoir la salle de jeux');
+  else fail(`bar sans salle de jeux : ${tooEarly ?? 'acheté'}`);
+  await as(rich, `select public.apartment_room_buy('jeux')`); // 1re pièce normale : 3 000
+  let b0 = await bal();
+  await as(rich, `select public.apartment_room_buy('bar')`);
+  const barCost = b0 - (await bal());
+  b0 = await bal();
+  await as(rich, `select public.apartment_room_buy('salon')`);
+  const salonCost = b0 - (await bal());
+  if (barCost === 1000000 && salonCost === 8000) ok('bar à prix fixe (1 000 000), sans compter dans la suite des pièces normales');
+  else fail(`prix : bar ${barCost} (attendu 1000000), salon ensuite ${salonCost} (attendu 8000)`);
+  const rate = async () => Number((await db.query(`select rate from public.apartments where user_id = $1`, [rich])).rows[0].rate);
+  const r0 = await rate();
+  await as(rich, `select public.apartment_special_buy('jager')`);
+  if ((await rate()) === 2 * r0 && r0 > 0) ok('la tireuse à Jäger double les revenus');
+  else fail(`revenus avec la tireuse : ${await rate()} (avant : ${r0})`);
+  const twice = await throws(() => as(rich, `select public.apartment_special_buy('jager')`));
+  if (twice?.includes('déjà')) ok('un équipement ne s’achète qu’une fois');
+  else fail(`tireuse achetée deux fois : ${twice ?? 'acceptée'}`);
+  const locked = await throws(() => as(rich, `select public.apartment_special_buy('jacuzzi')`));
+  if (locked?.includes('pièce')) ok('le jacuzzi demande le toit-terrasse');
+  else fail(`jacuzzi sans toit : ${locked ?? 'acheté'}`);
+  const chair = (await db.query(`insert into public.furniture_owned (user_id, item_id) values ($1, 'chair:standard') returning id`, [rich])).rows[0].id;
+  const onTap = await throws(() => as(rich, `select public.apartment_save($1)`, [JSON.stringify({ bar: { floor: [{ o: Number(chair), x: 2, y: 0 }], wall: [] } })]));
+  if (onTap?.includes('réservée')) ok('rien ne se pose à la place de la tireuse');
+  else fail(`meuble sur la tireuse : ${onTap ?? 'accepté'}`);
+  await as(rich, `select public.apartment_save($1)`, [JSON.stringify({ bar: { floor: [{ o: Number(chair), x: 0, y: 3 }], wall: [] } })]);
+  const withChair = await rate();
+  if (withChair === 2 * (r0 + 150 * 0.8)) ok('un meuble posé au bar compte aussi double');
+  else fail(`revenus avec une chaise : ${withChair} (attendu ${2 * (r0 + 120)})`);
+  // Coffre-fort : 72 h de revenus accumulés au lieu de 24.
+  await db.query(`update public.apartments set specials = specials || '{coffre}', banked = 0, last_tick = now() - interval '100 hours' where user_id = $1`, [rich]);
+  const banked = Number((await db.query(`select (public.apartment_settle($1)).banked as b`, [rich])).rows[0].b);
+  if (Math.abs(banked - withChair * 72) < 1) ok('avec le coffre-fort, les revenus s’accumulent 72 h');
+  else fail(`coffre-fort : ${banked} accumulés en 100 h (attendu ${withChair * 72})`);
+}
+
 // Double authentification des admins (0037) : sans code (aal1), les actions d'admin sont refusées.
 const admin = await newUser();
 await db.query(`insert into public.admins (user_id) values ($1)`, [admin]);
