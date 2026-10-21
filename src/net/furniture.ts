@@ -41,7 +41,7 @@ export const CLEAN_TASKS: { name: string; cost: number }[] = [
   { name: 'Réparer le parquet', cost: 600 },
   { name: 'Repeindre les murs', cost: 1000 },
 ];
-export const CLEAN_RATE = 50; // points par heure pour chaque tâche faite (comme public.apartment_rate)
+export const CLEAN_RATE = 200; // points par heure pour chaque tâche faite (comme public.apartment_rate)
 export const CAP_HOURS = 24;
 const RARITY_MULT: Record<string, number> = { standard: 1, common: 1.5, rare: 2.5, epic: 4, legendary: 8, mythic: 20 };
 
@@ -49,7 +49,7 @@ const RARITY_MULT: Record<string, number> = { standard: 1, common: 1.5, rare: 2.
 export function itemIncome(item: string): number {
   const base = BASES.find((b) => b.id === item.split(':')[0]);
   const fin = FINISHES.find((f) => f.id === item.split(':')[1]);
-  return ((base?.price ?? 0) / 5) * (RARITY_MULT[fin?.rarity ?? 'standard'] ?? 1);
+  return (base?.price ?? 0) * 0.8 * (RARITY_MULT[fin?.rarity ?? 'standard'] ?? 1);
 }
 
 export interface Base {
@@ -88,7 +88,7 @@ export const BASES: Base[] = [
 export type Rarity = 'standard' | 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
 /** Finitions (classe CSS fin-<id>) : mêmes identifiants et raretés que public.furniture_finishes. */
-export const FINISHES: { id: string; name: string; rarity: Rarity }[] = [
+export const FINISHES: { id: string; name: string; rarity: Rarity; motif?: boolean }[] = [
   { id: 'standard', name: 'Standard', rarity: 'standard' },
   { id: 'ruby', name: 'Rubis', rarity: 'common' },
   { id: 'ocean', name: 'Océan', rarity: 'common' },
@@ -101,6 +101,15 @@ export const FINISHES: { id: string; name: string; rarity: Rarity }[] = [
   { id: 'obsidian', name: 'Obsidienne', rarity: 'legendary' },
   { id: 'rainbow', name: 'Arc-en-ciel', rarity: 'mythic' },
   { id: 'ghost', name: 'Spectre', rarity: 'mythic' },
+  // Versions décorées : le meuble garde sa couleur, avec des motifs en plus (dessinés dans furnitureArt.ts).
+  { id: 'fleurs', name: 'à fleurs', rarity: 'common', motif: true },
+  { id: 'coeurs', name: 'à cœurs', rarity: 'common', motif: true },
+  { id: 'etoiles', name: 'à étoiles', rarity: 'rare', motif: true },
+  { id: 'nounours', name: 'à nounours', rarity: 'rare', motif: true },
+  { id: 'pics', name: 'à pics', rarity: 'epic', motif: true },
+  { id: 'arcs', name: 'à arcs-en-ciel', rarity: 'epic', motif: true },
+  { id: 'flammes', name: 'en flammes', rarity: 'legendary', motif: true },
+  { id: 'couronne', name: 'à couronne', rarity: 'mythic', motif: true },
 ];
 
 export const RARITY_NAMES: Record<Rarity, string> = {

@@ -40,7 +40,7 @@ import { formatPoints, refreshWallet } from '../net/points';
 import { getSupabase } from '../net/supabase';
 import { navigate } from '../router';
 import { h, hints } from './dom';
-import { floorModel, iso, modelIcon, TH, TW, wallModel } from './furnitureArt';
+import { floorModel, iso, modelIcon, MOTIF_GLYPH, TH, TW, wallDecor, wallModel } from './furnitureArt';
 import { page } from './layout';
 
 /** Un meuble en HTML (inventaire, caisses) : son modèle et sa finition, ou la photo pour un cadre. */
@@ -52,6 +52,7 @@ export function furnitureEl(item: string, art?: Artwork): HTMLElement {
       'span',
       { class: `ap-frame fin-${fin.id}`, title: art?.title ?? itemName(item) },
       art ? h('img', { src: art.url, alt: art.title, loading: 'lazy', draggable: 'false' }) : h('span', { class: 'ap-frame-empty' }, '🖼️'),
+      fin.motif ? h('span', { class: 'ap-motif', 'aria-hidden': 'true' }, MOTIF_GLYPH[fin.id] ?? '') : '',
     );
   }
   return h('span', { class: 'ap-glyph ap-model', title: itemName(item) }, modelIcon(item));
@@ -224,6 +225,8 @@ function drawScene(svg: SVGSVGElement, g: Geom, s: Scene): Overlay {
       const inner = { x: -fw / 2 + 5, y: -fh / 2 + 5, width: fw - 10, height: fh - 10 };
       if (art) box.append(el('image', { href: art.url, ...inner, preserveAspectRatio: 'xMidYMid slice' }));
       else box.append(el('rect', { ...inner, class: 'iso-frame-empty' }));
+      const decor = wallDecor(p.i, fw / 2, fh / 2);
+      if (decor) box.append(decor);
       node.append(box);
     } else {
       node.append(wallModel(p.i));

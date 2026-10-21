@@ -89,6 +89,14 @@ class Sketch {
     if (this.r === 3) return [h - v, u];
     return [u, v];
   }
+  /** Grille → repère du meuble (inverse de at). */
+  local(x: number, y: number): Pt {
+    const { w, h } = this;
+    if (this.r === 1) return [w - y, x];
+    if (this.r === 2) return [w - x, h - y];
+    if (this.r === 3) return [y, h - x];
+    return [x, y];
+  }
   /** Une face dont la normale locale est (nu, nv) est-elle tournée vers nous ? */
   sees(nu: number, nv: number): boolean {
     const [a, b] = this.at(nu, nv);
@@ -591,6 +599,210 @@ const WALL: Record<string, { main: string; draw: (g: SVGGElement, main: string) 
   },
 };
 
+// ---------------------------------------------------------------------------
+// Versions décorées (finitions « motif ») : le meuble garde sa couleur ; des décorations sont posées
+// sur sa plus grande surface (pics, nounours, fleurs, flammes) ou flottent au-dessus (étoiles, cœurs,
+// arc-en-ciel, couronne). Les petites formes sont dessinées de face, à plat sur l'écran.
+// ---------------------------------------------------------------------------
+
+const RAINBOW = ['#e0504a', '#f59e0b', '#f6d743', '#3fb56a', '#3b82f6', '#8b5cf6'];
+const BEAR = '#b07a4a';
+const GOLD = '#e8b82e';
+/** Symbole des versions décorées (inventaire des cadres, où le modèle n'est pas dessiné). */
+export const MOTIF_GLYPH: Record<string, string> = { fleurs: '🌸', coeurs: '💗', etoiles: '⭐', nounours: '🧸', pics: '🔺', arcs: '🌈', flammes: '🔥', couronne: '👑' };
+
+const f1 = (n: number) => n.toFixed(1);
+function starPoints(r: number): string {
+  return Array.from({ length: 10 }, (_, i) => {
+    const a = (i * Math.PI) / 5;
+    const k = i % 2 ? r * 0.45 : r;
+    return `${f1(Math.sin(a) * k)},${f1(-Math.cos(a) * k)}`;
+  }).join(' ');
+}
+/** Petites formes centrées en (0, 0), la base vers le bas pour celles qui se posent. */
+const SHAPES = {
+  heart: (sz: number) => el('path', { d: `M0,${f1(sz * 0.4)} C${f1(-sz)},${f1(-sz * 0.25)} ${f1(-sz * 0.5)},${f1(-sz)} 0,${f1(-sz * 0.45)} C${f1(sz * 0.5)},${f1(-sz)} ${f1(sz)},${f1(-sz * 0.25)} 0,${f1(sz * 0.4)} Z`, fill: '#ff4f8b', class: 'm' }),
+  star: (sz: number) => el('polygon', { points: starPoints(sz), fill: '#ffd23f', class: 'm' }),
+  flower(sz: number, color: string) {
+    const g = el('g', {});
+    for (let i = 0; i < 5; i++) {
+      const a = (i * 2 * Math.PI) / 5;
+      g.append(el('circle', { cx: f1(Math.sin(a) * sz * 0.55), cy: f1(-Math.cos(a) * sz * 0.55), r: f1(sz * 0.45), fill: color }));
+    }
+    g.append(el('circle', { r: f1(sz * 0.35), fill: '#ffd23f' }));
+    return g;
+  },
+  flame(sz: number) {
+    const k = sz / 10;
+    const path = (s: number) => `M0,0 C${f1(-6 * s)},${f1(-3 * s)} ${f1(-6 * s)},${f1(-12 * s)} 0,${f1(-20 * s)} C${f1(1 * s)},${f1(-14 * s)} ${f1(7 * s)},${f1(-11 * s)} ${f1(5 * s)},${f1(-5 * s)} C${f1(4 * s)},${f1(-2 * s)} ${f1(2 * s)},0 0,0 Z`;
+    const g = el('g', {});
+    g.append(el('path', { d: path(k), fill: '#ff6a1a' }), el('path', { d: path(k * 0.55), fill: '#ffd23f' }));
+    return g;
+  },
+  crown(sz: number) {
+    const k = sz / 10;
+    const g = el('g', {});
+    g.append(
+      el('polygon', { points: [[-10, 0], [10, 0], [11, -11], [5, -5], [0, -13], [-5, -5], [-11, -11]].map(([x, y]) => `${f1(x * k)},${f1(y * k)}`).join(' '), fill: GOLD, class: 'm' }),
+      el('circle', { cx: 0, cy: f1(-3 * k), r: f1(1.8 * k), fill: '#e0504a' }),
+      el('circle', { cx: f1(-6 * k), cy: f1(-2.5 * k), r: f1(1.3 * k), fill: '#3b82f6' }),
+      el('circle', { cx: f1(6 * k), cy: f1(-2.5 * k), r: f1(1.3 * k), fill: '#3fb56a' }),
+    );
+    return g;
+  },
+  /** Arc-en-ciel de rayon extérieur r, posé sur deux petits nuages. */
+  rainbow(r: number) {
+    const g = el('g', {});
+    const band = r / 9;
+    RAINBOW.forEach((c, i) => {
+      const rr = r - i * band;
+      g.append(el('path', { d: `M${f1(-rr)},0 A${f1(rr)} ${f1(rr)} 0 0 1 ${f1(rr)},0`, fill: 'none', stroke: c, 'stroke-width': f1(band + 0.3) }));
+    });
+    for (const sx of [-1, 1])
+      for (const [dx, dy, cr] of [[-3, 0, 3.4], [2, -1, 4], [5.5, 0.5, 3]])
+        g.append(el('circle', { cx: f1(sx * (r - band * 2.5) + dx), cy: f1(dy), r: f1(cr), fill: '#ffffff', class: 'm' }));
+    return g;
+  },
+};
+
+/** Forme posée au point (x, y, z) de la grille, dessinée après tout ce qui est sous elle. */
+function sprite(s: Sketch, x: number, y: number, z: number, node: SVGElement, size: number) {
+  const [sx, sy] = iso(x, y, z);
+  const g = el('g', { transform: `translate(${f1(sx)} ${f1(sy)})` });
+  g.append(node);
+  s.grow(sx - size, sy - size * 2);
+  s.grow(sx + size, sy + size);
+  s.add({ x0: x - 0.02, x1: x + 0.02, y0: y - 0.02, y1: y + 0.02, z0: z, z1: z + size }, 0.5, g);
+}
+
+function decorate(s: Sketch, motif: string) {
+  if (!s.parts.length) return;
+  const top = Math.max(...s.parts.map((p) => p.b.z1));
+  // Plus grande surface du dessus (siège, matelas, plateau…), où se posent les décorations.
+  const area = (b: Box) => (b.x1 - b.x0) * (b.y1 - b.y0);
+  const seat = s.parts.reduce((a, p) => (area(p.b) > area(a.b) + 0.01 || (Math.abs(area(p.b) - area(a.b)) <= 0.01 && p.b.z1 > a.b.z1) ? p : a)).b;
+  const [cx, cy] = [(seat.x0 + seat.x1) / 2, (seat.y0 + seat.y1) / 2];
+  const [dx, dy] = [seat.x1 - seat.x0, seat.y1 - seat.y0];
+  const along = (n: number) => Array.from({ length: n }, (_, i) => (i + 0.5) / n);
+  const big = dx * dy > 0.9; // meuble de 2 cases
+  switch (motif) {
+    case 'pics': {
+      const nx = Math.max(2, Math.round(dx / 0.2));
+      const ny = Math.max(2, Math.round(dy / 0.2));
+      for (const a of along(nx))
+        for (const b of along(ny)) {
+          const [u, v] = s.local(seat.x0 + a * dx, seat.y0 + b * dy);
+          s.cyl(u, v, seat.z1, 0.045, 0, 15, METAL, METAL, 0.3);
+        }
+      break;
+    }
+    case 'nounours': {
+      const spots = big ? [[cx - dx * 0.22, cy - dy * 0.1], [cx + dx * 0.2, cy + dy * 0.12]] : [[cx, cy]];
+      for (const [gx, gy] of spots) {
+        const [u, v] = s.local(gx, gy);
+        const R = 0.11 * RX;
+        s.ball(u, v, seat.z1 + R, 0.11, BEAR, 0.4);
+        const [hu, hv] = s.local(gx + 0.02, gy + 0.02);
+        const head = s.ball(hu, hv, seat.z1 + 2 * R + 5, 0.085, BEAR, 0.6);
+        const [hx, hy] = iso(gx + 0.02, gy + 0.02, seat.z1 + 2 * R + 5);
+        const hr = 0.085 * RX;
+        head.nodes.unshift(el('circle', { cx: f1(hx - hr * 0.75), cy: f1(hy - hr * 0.8), r: f1(hr * 0.42), fill: BEAR, class: 'm' }), el('circle', { cx: f1(hx + hr * 0.75), cy: f1(hy - hr * 0.8), r: f1(hr * 0.42), fill: BEAR, class: 'm' }));
+        head.nodes.push(
+          el('ellipse', { cx: f1(hx), cy: f1(hy + hr * 0.3), rx: f1(hr * 0.42), ry: f1(hr * 0.3), fill: '#e7c9a3' }),
+          el('circle', { cx: f1(hx - hr * 0.35), cy: f1(hy - hr * 0.15), r: 1.1, fill: DARK }),
+          el('circle', { cx: f1(hx + hr * 0.35), cy: f1(hy - hr * 0.15), r: 1.1, fill: DARK }),
+          el('circle', { cx: f1(hx), cy: f1(hy + hr * 0.2), r: 1, fill: DARK }),
+        );
+      }
+      break;
+    }
+    case 'fleurs':
+    case 'flammes': {
+      const pts: [number, number][] = big
+        ? [[0.2, 0.3], [0.5, 0.7], [0.8, 0.35], [0.35, 0.8], [0.7, 0.15]]
+        : [[0.3, 0.3], [0.7, 0.45], [0.4, 0.75]];
+      const colors = ['#ff7eb6', '#ffffff', '#b58cff', '#ff9f43', '#7ec8ff'];
+      pts.forEach(([a, b], i) =>
+        motif === 'fleurs'
+          ? sprite(s, seat.x0 + a * dx, seat.y0 + b * dy, seat.z1 + 1, SHAPES.flower(4.5, colors[i % colors.length]), 6)
+          : sprite(s, seat.x0 + a * dx, seat.y0 + b * dy, seat.z1, SHAPES.flame(9 + (i % 2) * 3), 12),
+      );
+      break;
+    }
+    case 'etoiles':
+    case 'coeurs': {
+      const pts: [number, number, number][] = [[-0.25, -0.1, 14], [0.2, 0.15, 26], [0.05, -0.3, 34], [0.3, -0.25, 12]];
+      for (const [ox, oy, oz] of pts.slice(0, big ? 4 : 3)) {
+        const node = motif === 'etoiles' ? SHAPES.star(6) : SHAPES.heart(6);
+        sprite(s, cx + ox * dx, cy + oy * dy, top + oz, node, 7);
+      }
+      break;
+    }
+    case 'arcs':
+      sprite(s, cx, cy, top + 6, SHAPES.rainbow(big ? 34 : 24), big ? 36 : 26);
+      break;
+    case 'couronne':
+      sprite(s, cx, cy, top + 8, SHAPES.crown(11), 14);
+      break;
+  }
+}
+
+/** Décorations d'un objet mural (ou d'un cadre) de demi-largeur hw et demi-hauteur hh, centré en (0, 0). */
+export function wallDecor(item: string, hw: number, hh: number): SVGGElement | null {
+  const motif = finishOf(item);
+  if (!motif.motif) return null;
+  const g = el('g', { class: 'iso-deco' });
+  const put = (x: number, y: number, node: SVGElement) => {
+    const t = el('g', { transform: `translate(${f1(x)} ${f1(y)})` });
+    t.append(node);
+    g.append(t);
+  };
+  switch (motif.id) {
+    case 'pics': {
+      const n = Math.max(3, Math.round((2 * hw) / 7));
+      const step = (2 * hw) / n;
+      for (let i = 0; i < n; i++)
+        for (const side of [-1, 1]) {
+          const x = -hw + step * (i + 0.5);
+          const y = side * hh;
+          g.append(el('polygon', { points: `${f1(x - step * 0.4)},${f1(y)} ${f1(x + step * 0.4)},${f1(y)} ${f1(x)},${f1(y + side * 6)}`, fill: METAL, class: 'm' }));
+        }
+      break;
+    }
+    case 'nounours': {
+      const bx = hw * 0.62;
+      const by = hh - 1;
+      g.append(
+        el('circle', { cx: f1(bx), cy: f1(by - 4), r: 4.6, fill: BEAR, class: 'm' }),
+        el('circle', { cx: f1(bx - 3.2), cy: f1(by - 12.6), r: 1.8, fill: BEAR, class: 'm' }),
+        el('circle', { cx: f1(bx + 3.2), cy: f1(by - 12.6), r: 1.8, fill: BEAR, class: 'm' }),
+        el('circle', { cx: f1(bx), cy: f1(by - 10.5), r: 3.6, fill: BEAR, class: 'm' }),
+        el('ellipse', { cx: f1(bx), cy: f1(by - 9.4), rx: 1.6, ry: 1.1, fill: '#e7c9a3' }),
+        el('circle', { cx: f1(bx - 1.3), cy: f1(by - 11.4), r: 0.6, fill: DARK }),
+        el('circle', { cx: f1(bx + 1.3), cy: f1(by - 11.4), r: 0.6, fill: DARK }),
+      );
+      break;
+    }
+    case 'fleurs':
+      for (const [sx, sy, c] of [[-1, -1, '#ff7eb6'], [1, 1, '#b58cff'], [1, -1, '#ffffff']] as const) put(sx * hw, sy * hh, SHAPES.flower(3.6, c));
+      break;
+    case 'coeurs':
+    case 'etoiles':
+      for (const [sx, sy] of [[-1, -1], [1, -0.4], [-0.7, 1]]) put(sx * hw, sy * hh, motif.id === 'coeurs' ? SHAPES.heart(4.5) : SHAPES.star(4.5));
+      break;
+    case 'flammes':
+      for (const x of [-hw * 0.6, 0, hw * 0.6]) put(x, -hh, SHAPES.flame(7));
+      break;
+    case 'arcs':
+      put(0, -hh + 2, SHAPES.rainbow(Math.min(hw * 0.8, 18)));
+      break;
+    case 'couronne':
+      put(0, -hh + 1, SHAPES.crown(8));
+      break;
+  }
+  return g;
+}
+
 const mainOf = (item: string, fallback: string) => FINISH_MAIN[finishOf(item).id] ?? fallback;
 const modelClass = (item: string) => `iso-model fin-${finishOf(item).id}`;
 const kind = (item: string) => item.split(':')[0];
@@ -601,6 +813,8 @@ function sketch(item: string, r: number): Sketch {
   const s = new Sketch(w, h, r, mainOf(item, model?.main ?? '#9aa0ae'));
   if (model) model.draw(s);
   else s.cube(0.2, 0.2, 0, 0.6, 0.6, 40, s.main);
+  const fin = finishOf(item);
+  if (fin.motif) decorate(s, fin.id);
   return s;
 }
 
@@ -618,6 +832,8 @@ export function wallModel(item: string): SVGGElement {
   const g = el('g', { class: modelClass(item) });
   const model = WALL[kind(item)];
   if (model) model.draw(g, mainOf(item, model.main));
+  const decor = wallDecor(item, 22, 22);
+  if (decor) g.append(decor);
   return g;
 }
 
