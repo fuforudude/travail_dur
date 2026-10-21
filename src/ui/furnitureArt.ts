@@ -858,6 +858,59 @@ export function floorModel(item: string, x: number, y: number, r = 0, photo: str
   return g;
 }
 
+// ---------------------------------------------------------------------------
+// Équipements spéciaux des pièces de luxe (SPECIALS) : pas des meubles, posés à une place fixe.
+// ---------------------------------------------------------------------------
+
+const JAGER = '#1d3b24'; // bouteille vert sombre, étiquette orange
+const FIXTURES: Record<string, (s: Sketch) => void> = {
+  // Comptoir 3 × 1 contre le mur, la tireuse (3 bouteilles tête en bas) et des shots dessus.
+  jager(s) {
+    const bar = s.cube(0.02, 0.08, 0, 2.96, 0.8, 70, '#6b3f22');
+    s.front(bar, 0.88, 0.02, 2.98, 8, 14, '#3e2414');
+    s.front(bar, 0.88, 0.02, 2.98, 56, 62, '#c9a84c');
+    s.cube(0, 0.04, 70, 3, 0.88, 6, '#2b1a10');
+    const machine = s.cube(0.9, 0.16, 76, 1.2, 0.46, 46, '#15171a');
+    s.front(machine, 0.62, 1.0, 2.0, 82, 116, '#0b0c0e');
+    s.front(machine, 0.62, 1.38, 1.62, 96, 108, '#f07a1a');
+    for (const u of [1.12, 1.5, 1.88]) {
+      s.cyl(u, 0.38, 122, 0.06, 0.13, 46, JAGER, '#24452c');
+      s.cyl(u, 0.38, 138, 0.135, 0.135, 12, '#f07a1a');
+    }
+    s.cube(1.44, 0.6, 96, 0.12, 0.14, 8, METAL);
+    for (const u of [0.3, 0.5, 2.4, 2.6]) s.cyl(u, 0.6, 76, 0.07, 0.08, 14, '#e8dcc2', '#7a3b12');
+  },
+  // Coffre-fort 2 × 2 : porte blindée avec sa roue, lingots posés dessus.
+  coffre(s) {
+    const body = s.cube(0.12, 0.12, 0, 1.76, 1.6, 130, '#4a5260');
+    s.front(body, 1.72, 0.28, 1.72, 14, 118, '#5c6676');
+    s.front(body, 1.72, 0.34, 1.66, 20, 112, '#3a404b');
+    s.front(body, 1.72, 0.92, 1.08, 40, 92, '#c9a84c');
+    s.front(body, 1.72, 0.72, 1.28, 60, 72, '#c9a84c');
+    s.front(body, 1.72, 1.5, 1.58, 54, 78, METAL);
+    for (const [u, v, z] of [[0.3, 0.5, 130], [0.85, 0.5, 130], [0.55, 0.5, 142], [1.2, 0.9, 130]] as const) s.cube(u, v, z, 0.5, 0.26, 12, '#e8b82e');
+  },
+  // Jacuzzi 2 × 2 : margelle dorée, eau turquoise et bulles.
+  jacuzzi(s) {
+    const tub = s.cube(0.04, 0.04, 0, 1.92, 1.92, 44, '#e7e1d6');
+    s.front(tub, 1.96, 0.04, 1.96, 34, 40, '#e8b82e');
+    s.top(tub, 44, 0.04, 0.04, 1.96, 1.96, '#e8b82e');
+    s.top(tub, 44, 0.2, 0.2, 1.8, 1.8, '#3fc6d6');
+    s.top(tub, 44, 0.5, 0.5, 1.5, 1.5, '#7fe0ea', { 'fill-opacity': 0.7 });
+    for (const [u, v] of [[0.6, 0.7], [1.3, 0.6], [1.0, 1.2], [0.5, 1.4], [1.5, 1.4]] as const) s.ball(u, v, 48, 0.06, '#ffffff');
+  },
+};
+
+/** Équipement spécial `id` (emprise w × h) posé en (x, y), dans le repère de iso(). */
+export function fixtureModel(id: string, x: number, y: number, w: number, h: number): SVGGElement {
+  const [dx, dy] = iso(x, y);
+  const g = el('g', { transform: `translate(${dx.toFixed(1)} ${dy.toFixed(1)})` });
+  const s = new Sketch(w, h, 0, '#9aa0ae');
+  (FIXTURES[id] ?? ((k: Sketch) => k.cube(0.2, 0.2, 0, w - 0.4, h - 0.4, 40, k.main)))(s);
+  g.append(s.build('iso-model'));
+  return g;
+}
+
 /** Objet mural, dessiné de face autour de (0, 0). */
 export function wallModel(item: string, photo: string | null = null): SVGGElement {
   const g = el('g', { class: modelClass(item) });

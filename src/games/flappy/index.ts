@@ -40,7 +40,7 @@ function mount(ctx: GameContext): () => void {
       h('div', { class: 'game-bar fb-bar' }, h('span', { class: 'stat' }, 'Score ', scoreEl), rankEl, h('span', { class: 'stat' }, 'Record ', bestEl)),
       canvas,
       noteEl,
-      hints(['Espace ↑', 'battre des ailes'], ['R', 'rejouer'], ['Retour arrière', 'quitter']),
+      hints(['Espace ↑', 'battre des ailes'], ['R (ou Espace une fois perdu)', 'rejouer'], ['Retour arrière', 'quitter']),
     ),
   );
 
@@ -99,7 +99,7 @@ function mount(ctx: GameContext): () => void {
     else if (s?.dead) {
       g.fillText('Perdu !', W / 2, H / 2 - 100);
       g.fillStyle = c.muted;
-      g.fillText(isTouch() ? 'Touche pour rejouer' : 'R pour rejouer', W / 2, H / 2 + 120);
+      g.fillText(isTouch() ? 'Touche pour rejouer' : 'Espace ou R pour rejouer', W / 2, H / 2 + 120);
     }
   };
 
@@ -204,7 +204,14 @@ function mount(ctx: GameContext): () => void {
     const key = e.key.toLowerCase();
     if (key === ' ' || key === 'arrowup' || key === 'z' || key === 'w') {
       e.preventDefault();
-      if (!e.repeat) flap();
+      if (e.repeat) return;
+      // Perdu : Espace relance une partie (pas tout de suite, pour qu'un battement en trop ne la relance pas).
+      if (s?.dead) {
+        if (performance.now() - diedAt < 600) return;
+        note = '';
+        return void start();
+      }
+      flap();
     } else if (key === 'r') {
       if (s && started && !s.dead) finish();
       note = '';

@@ -42,8 +42,11 @@ jobs:
         with:
           version: latest
       - run: supabase link --project-ref "$PROJECT_REF"
+      # --include-all : les numéros sont réservés par domaine (appart 0013–0029, jeux 0030+), une migration
+      # de l'appart peut donc arriver après une plus récente des jeux ; sans ce drapeau, db push la refuse.
       - name: Migrations
-        run: supabase db push --linked
+        # --include-all : une migration de l'appart (0013-0029) peut arriver après une 0040 déjà passée.
+        run: supabase db push --linked --include-all --include-all
       - name: Fonctions serveur (td, board4)
         run: |
           npm run td:sync
