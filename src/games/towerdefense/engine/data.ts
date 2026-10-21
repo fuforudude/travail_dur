@@ -102,6 +102,10 @@ export interface TowerDef {
   role: string;
   starter: boolean;
   maxPerMap?: number;
+  /** Tour spéciale : posée sur certaines cartes, à débloquer contre de l'or, jamais construite ni améliorée. */
+  special?: boolean;
+  /** Comportement de tir emprunté à une tour normale (tours spéciales). */
+  as?: string;
   stats: TowerStats;
   /** Deux améliorations communes, puis deux voies au choix de deux améliorations chacune. */
   common: [UpgradeDef, UpgradeDef];
@@ -109,6 +113,10 @@ export interface TowerDef {
 }
 
 const U = (id: string, name: string, cost: number, text: string, set: Partial<TowerStats>): UpgradeDef => ({ id, name, cost, text, set });
+const SPECIAL = (id: string, name: string, as: string, role: string, stats: TowerStats): TowerDef => ({
+  id, name, as, role, stats, special: true, tier: 'boosted', cost: 0, starter: false,
+  common: [] as unknown as TowerDef['common'], paths: [] as unknown as TowerDef['paths'],
+});
 
 export const TOWERS: TowerDef[] = [
   {
@@ -294,6 +302,23 @@ export const TOWERS: TowerDef[] = [
       ] },
     ],
   },
+  // Tours spéciales (après les 10 tours normales : jamais dans la boutique ni dans les caisses).
+  SPECIAL('trebuchet', 'Trébuchet antique', 'cannon', 'Zone, très longue portée', {
+    damage: 140, damageType: 'physical', fireRate: 0.35, range: 7.5, hitsAir: false, detectsCamo: false, splash: 1.5, stun: 0.6,
+  }),
+  SPECIAL('phare', 'Phare', 'frost', 'Ralentit et révèle', {
+    damage: 12, damageType: 'magic', fireRate: 1, range: 4.5, hitsAir: true, detectsCamo: true, splash: 2, slow: 0.45, slowDur: 2,
+  }),
+  SPECIAL('paratonnerre', 'Paratonnerre', 'tesla', 'Éclairs en chaîne', {
+    damage: 70, damageType: 'magic', fireRate: 1.2, range: 4.5, hitsAir: true, detectsCamo: false, chain: 6, chainRange: 2.2, shieldMult: 2,
+  }),
+  SPECIAL('baliste', 'Grande baliste', 'crossbow', 'Perce tout, détecte', {
+    damage: 110, damageType: 'physical', fireRate: 1.4, range: 6, hitsAir: true, detectsCamo: true, pierce: 5, ignoreArmor: true,
+  }),
+  SPECIAL('puits', 'Puits sans fond', 'singularity', 'Trous noirs', {
+    damage: 0, damageType: 'pure', fireRate: 0, range: 5, hitsAir: true, detectsCamo: false,
+    holeEvery: 4, holeDur: 3, holeRadius: 1.6, holePct: 0.06, holeBossPct: 0.02, holeSlow: 0.4,
+  }),
 ];
 
 export const towerById = (id: string) => TOWERS.find((t) => t.id === id);
@@ -303,6 +328,7 @@ export const MAX_LEVEL = 4;
 
 /** Amélioration qui fait passer du niveau `level` au suivant (dans la voie `path` à partir du 3e). */
 export function upgradeAt(def: TowerDef, level: number, path: number | null): UpgradeDef | null {
+  if (def.special) return null;
   if (level < 2) return def.common[level];
   if (level >= MAX_LEVEL || path === null || path < 0) return null;
   return def.paths[path].ups[level - 2];
@@ -311,6 +337,7 @@ export function upgradeAt(def: TowerDef, level: number, path: number | null): Up
 /** Caractéristiques d'une tour à son niveau (et dans sa voie). */
 export function towerStats(def: TowerDef, level: number, path: number | null = null): TowerStats {
   let s = def.stats;
+  if (def.special) return s;
   for (let i = 0; i < Math.min(level, 2); i++) s = { ...s, ...def.common[i].set };
   if (path !== null && path >= 0) for (let i = 0; i < level - 2; i++) s = { ...s, ...def.paths[path].ups[i].set };
   return s;
@@ -397,33 +424,124 @@ function route(...pts: Pt[]): Pt[] {
   return out;
 }
 
-/** Carte 0 : le mode infini. Cartes 1 à 20 : les niveaux de la campagne (vérifiées par les tests). */
-export const MAPS: Pt[][] = [
-  route([0, 2], [4, 2], [4, 7], [9, 7], [9, 2], [13, 2], [13, 7], [15, 7]),
-  route([0, 5], [6, 5], [6, 2], [11, 2], [11, 6], [15, 6]),
-  route([0, 1], [4, 1], [4, 8], [10, 8], [10, 3], [15, 3]),
-  route([0, 8], [3, 8], [3, 2], [8, 2], [8, 7], [12, 7], [12, 1], [15, 1]),
-  route([7, 0], [7, 4], [2, 4], [2, 8], [13, 8], [13, 3], [15, 3]),
-  route([0, 2], [13, 2], [13, 5], [2, 5], [2, 8], [15, 8]),
-  route([0, 7], [5, 7], [5, 1], [10, 1], [10, 8], [15, 8]),
-  route([15, 1], [10, 1], [10, 5], [3, 5], [3, 1], [0, 1]),
-  route([0, 4], [3, 4], [3, 1], [7, 1], [7, 8], [11, 8], [11, 4], [15, 4]),
-  route([2, 0], [2, 6], [6, 6], [6, 2], [10, 2], [10, 8], [14, 8], [14, 0]),
-  route([0, 1], [14, 1], [14, 4], [1, 4], [1, 7], [15, 7]),
-  route([0, 8], [2, 8], [2, 1], [5, 1], [5, 8], [8, 8], [8, 1], [11, 1], [11, 8], [15, 8]),
-  route([8, 0], [8, 3], [3, 3], [3, 7], [12, 7], [12, 2], [15, 2]),
-  route([0, 3], [5, 3], [5, 6], [9, 6], [9, 2], [13, 2], [13, 8], [15, 8]),
-  route([0, 6], [3, 6], [3, 2], [12, 2], [12, 6], [15, 6]),
-  route([0, 1], [13, 1], [13, 3], [2, 3], [2, 5], [13, 5], [13, 7], [2, 7], [2, 9], [15, 9]),
-  route([15, 5], [11, 5], [11, 1], [6, 1], [6, 8], [1, 8], [1, 3], [0, 3]),
-  route([0, 2], [4, 2], [4, 7], [8, 7], [8, 4], [12, 4], [12, 8], [15, 8]),
-  route([7, 9], [7, 6], [2, 6], [2, 2], [12, 2], [12, 6], [15, 6]),
-  route([0, 8], [6, 8], [6, 4], [1, 4], [1, 1], [10, 1], [10, 6], [15, 6]),
-  route([0, 1], [14, 1], [14, 3], [1, 3], [1, 6], [14, 6], [14, 8], [0, 8]),
+/** Tour spéciale posée sur une carte : `cost` or pour la débloquer, dégâts × `power`. */
+export interface SpecialSpot {
+  x: number;
+  y: number;
+  tower: string;
+  cost: number;
+  power: number;
+}
+
+/**
+ * Une carte : sa taille et ses routes, chacune d'une entrée à une sortie. Plusieurs routes peuvent
+ * partager une entrée (bifurcation), une sortie (jonction) ou un tronçon ; les ennemis se répartissent
+ * entre elles, paquet par paquet.
+ */
+export interface MapDef {
+  w: number;
+  h: number;
+  routes: Pt[][];
+  special?: SpecialSpot;
+}
+
+const M = (routes: Pt[][], o: Partial<MapDef> = {}): MapDef => ({ w: COLS, h: ROWS, routes, ...o });
+const spot = (x: number, y: number, tower: string, cost: number, power = 1): SpecialSpot => ({ x, y, tower, cost, power });
+
+/** Carte 0 : le mode infini. Cartes 1 à 20 : la campagne ; 21 à 25 : les niveaux bonus. */
+export const MAPS: MapDef[] = [
+  M([route([0, 2], [4, 2], [4, 7], [9, 7], [9, 2], [13, 2], [13, 7], [15, 7])]),
+  // Acte I
+  M([route([0, 5], [6, 5], [6, 2], [11, 2], [11, 6], [15, 6])]),
+  M([route([0, 1], [4, 1], [4, 8], [10, 8], [10, 3], [15, 3])], { special: spot(7, 5, 'phare', 250) }),
+  M([route([0, 8], [3, 8], [3, 2], [8, 2], [8, 7], [12, 7], [12, 1], [15, 1])]),
+  M([ // deux entrées
+    route([7, 0], [7, 4], [2, 4], [2, 8], [13, 8], [13, 3], [15, 3]),
+    route([0, 1], [10, 1], [10, 8], [13, 8], [13, 3], [15, 3]),
+  ]),
+  M([route([0, 2], [13, 2], [13, 5], [2, 5], [2, 8], [15, 8])], { special: spot(7, 7, 'trebuchet', 400, 1.2) }),
+  M([ // deux sorties
+    route([0, 7], [5, 7], [5, 1], [10, 1], [10, 8], [15, 8]),
+    route([0, 7], [5, 7], [5, 1], [15, 1]),
+  ]),
+  M([route([19, 1], [14, 1], [14, 10], [8, 10], [8, 3], [3, 3], [3, 9], [0, 9])], { w: 20, h: 12 }),
+  // Acte II
+  M([ // deux entrées, deux sorties
+    route([0, 4], [3, 4], [3, 1], [7, 1], [7, 8], [11, 8], [11, 4], [15, 4]),
+    route([0, 9], [5, 9], [5, 6], [13, 6], [13, 0]),
+  ], { special: spot(9, 4, 'paratonnerre', 500) }),
+  M([route([2, 0], [2, 6], [6, 6], [6, 2], [10, 2], [10, 8], [14, 8], [14, 0])]),
+  M([
+    route([0, 2], [6, 2], [6, 8], [12, 8], [12, 4], [19, 4]),
+    route([0, 10], [9, 10], [9, 8], [12, 8], [12, 4], [19, 4]),
+  ], { w: 20, h: 12 }),
+  M([ // trois entrées
+    route([0, 1], [10, 1], [10, 6], [15, 6], [15, 9], [19, 9]),
+    route([0, 11], [10, 11], [10, 6], [15, 6], [15, 9], [19, 9]),
+    route([0, 6], [5, 6], [5, 3], [10, 3], [10, 6], [15, 6], [15, 9], [19, 9]),
+  ], { w: 20, h: 12 }),
+  M([route([0, 8], [2, 8], [2, 1], [5, 1], [5, 8], [8, 8], [8, 1], [11, 1], [11, 8], [15, 8])], { special: spot(13, 4, 'baliste', 600, 1.3) }),
+  M([ // trois sorties
+    route([0, 5], [6, 5], [6, 1], [19, 1]),
+    route([0, 5], [6, 5], [6, 10], [19, 10]),
+    route([0, 5], [12, 5], [12, 7], [19, 7]),
+  ], { w: 20, h: 12 }),
+  M([
+    route([0, 2], [8, 2], [8, 10], [21, 10]),
+    route([21, 2], [14, 2], [14, 6], [3, 6], [3, 12]),
+  ], { w: 22, h: 13, special: spot(11, 4, 'phare', 400, 1.5) }),
+  // Acte III
+  M([
+    route([0, 3], [7, 3], [7, 9], [14, 9], [14, 5], [19, 5]),
+    route([10, 0], [10, 9], [14, 9], [14, 5], [19, 5]),
+  ], { w: 20, h: 12, special: spot(11, 6, 'puits', 900) }),
+  M([route([0, 1], [13, 1], [13, 3], [2, 3], [2, 5], [13, 5], [13, 7], [2, 7], [2, 9], [15, 9])]),
+  M([ // quatre entrées
+    route([0, 1], [14, 1], [14, 6], [17, 6], [17, 9], [21, 9]),
+    route([0, 11], [14, 11], [14, 6], [17, 6], [17, 9], [21, 9]),
+    route([0, 6], [6, 6], [6, 3], [10, 3], [10, 6], [17, 6], [17, 9], [21, 9]),
+    route([7, 12], [7, 9], [11, 9], [11, 6], [17, 6], [17, 9], [21, 9]),
+  ], { w: 22, h: 13 }),
+  M([
+    route([0, 2], [10, 2], [10, 5], [16, 5], [16, 10], [19, 10]),
+    route([0, 9], [6, 9], [6, 5], [16, 5], [16, 10], [19, 10]),
+  ], { w: 20, h: 12, special: spot(8, 7, 'baliste', 600, 1.8) }),
+  M([ // trois entrées, deux sorties
+    route([0, 2], [10, 2], [10, 6], [16, 6], [16, 12]),
+    route([0, 10], [10, 10], [10, 6], [21, 6]),
+    route([5, 0], [5, 4], [10, 4], [10, 6], [21, 6]),
+  ], { w: 22, h: 13 }),
+  M([
+    route([0, 2], [6, 2], [6, 10], [12, 10], [12, 4], [18, 4], [18, 10], [21, 10]),
+    route([21, 0], [15, 0], [15, 2], [9, 2], [9, 7], [12, 7], [12, 4], [18, 4], [18, 10], [21, 10]),
+  ], { w: 22, h: 13, special: spot(15, 7, 'puits', 1000, 1.2) }),
+  // Niveaux bonus
+  M([route([0, 5], [5, 5], [5, 2], [10, 2], [10, 7], [15, 7])]),
+  M([
+    route([0, 1], [9, 1], [9, 10], [19, 10]),
+    route([19, 1], [13, 1], [13, 6], [9, 6], [9, 10], [19, 10]),
+  ], { w: 20, h: 12 }),
+  M([
+    route([0, 6], [8, 6], [8, 9], [14, 9], [14, 6], [21, 6]),
+    route([8, 0], [8, 9], [14, 9], [14, 6], [21, 6]),
+    route([21, 12], [18, 12], [18, 9], [14, 9], [14, 6], [21, 6]),
+  ], { w: 22, h: 13 }),
+  M([
+    route([0, 1], [6, 1], [6, 6], [10, 6], [15, 6], [15, 9], [19, 9]),
+    route([0, 11], [6, 11], [6, 6], [10, 6], [15, 6], [15, 9], [19, 9]),
+    route([19, 0], [12, 0], [12, 3], [10, 3], [10, 6], [15, 6], [15, 9], [19, 9]),
+    route([0, 6], [3, 6], [3, 8], [10, 8], [10, 6], [15, 6], [15, 9], [19, 9]),
+  ], { w: 20, h: 12, special: spot(8, 4, 'trebuchet', 900, 2) }),
+  M([
+    route([0, 1], [10, 1], [10, 6], [21, 6]),
+    route([0, 11], [10, 11], [10, 6], [16, 6], [16, 12]),
+    route([21, 0], [13, 0], [13, 4], [7, 4], [7, 8], [10, 8], [10, 6], [21, 6]),
+    route([21, 12], [19, 12], [19, 9], [13, 9], [13, 6], [16, 6], [16, 12]),
+  ], { w: 22, h: 13, special: spot(14, 8, 'puits', 1200, 1.5) }),
 ];
 
-/** Compatibilité : la carte du mode infini. */
-export const PATH = MAPS[0];
+/** Carte d'index `m` (le mode infini si elle n'existe pas). */
+export const mapOf = (m: number) => MAPS[m] ?? MAPS[0];
 
 // --- Partie -----------------------------------------------------------------------------------
 
@@ -460,11 +578,39 @@ export const themeOf = (w: number) => (w % 5 === 0 && w % 10 !== 0 ? THEMES[((w 
 
 export const LEVEL_COUNT = 20;
 
+/**
+ * Niveaux bonus (21 à 25), les défis de Tonton Jean-Mi : débloqués après le niveau `unlock` de la
+ * campagne, chacun avec sa règle qui pique. `lives` remplace les vies de départ (héros compris),
+ * `hp`, `speed` et `cost` multiplient les PV et la vitesse des ennemis et le prix des tours.
+ */
+export interface BonusLevel {
+  unlock: number;
+  waves: number;
+  offset: number;
+  rule: string;
+  lives?: number;
+  hp?: number;
+  speed?: number;
+  cost?: number;
+  boss: 'titan' | 'devourer' | null;
+}
+
+export const BONUS: BonusLevel[] = [
+  { unlock: 4, waves: 10, offset: 9, lives: 1, boss: null, rule: 'Une seule vie' },
+  { unlock: 8, waves: 11, offset: 18, speed: 1.5, hp: 1.1, boss: null, rule: 'Ennemis +50 % de vitesse' },
+  { unlock: 12, waves: 12, offset: 22, hp: 1.35, boss: 'titan', rule: 'Ennemis +35 % de PV, Titan au maximum' },
+  { unlock: 16, waves: 12, offset: 27, cost: 1.4, boss: null, rule: 'Tours et améliorations +40 %' },
+  { unlock: 20, waves: 16, offset: 32, lives: 8, hp: 1.2, speed: 1.1, boss: 'devourer', rule: '8 vies, ennemis +20 % de PV et +10 % de vitesse' },
+];
+export const BONUS_COUNT = BONUS.length;
+/** Niveau bonus L (21 à 25), ou null pour un niveau de la campagne. */
+export const bonusLevel = (L: number): BonusLevel | null => (L > LEVEL_COUNT ? BONUS[L - LEVEL_COUNT - 1] ?? null : null);
+
 /** Nombre de vagues du niveau L (1 à 20) : 6 au début, 16 au dernier. */
-export const levelWaves = (L: number) => 6 + Math.floor(L / 2);
+export const levelWaves = (L: number) => bonusLevel(L)?.waves ?? 6 + Math.floor(L / 2);
 
 /** Décalage de difficulté du niveau L : sa vague w vaut la vague levelOffset(L) + w du mode infini. */
-export const levelOffset = (L: number) => Math.floor(1.6 * (L - 1));
+export const levelOffset = (L: number) => bonusLevel(L)?.offset ?? Math.floor(1.6 * (L - 1));
 /**
  * Difficulté d'une vague de campagne, exprimée comme une vague du mode infini (la dernière vague
  * du niveau 20 vaut la vague 46).
@@ -472,7 +618,11 @@ export const levelOffset = (L: number) => Math.floor(1.6 * (L - 1));
 export const levelWave = (L: number, w: number) => levelOffset(L) + w;
 
 /** Boss à la dernière vague des niveaux 5, 10 et 15 (le Titan, de plus en plus fort) et 20 (Bagou). */
-export const levelBoss = (L: number): 'titan' | 'devourer' | null => (L === LEVEL_COUNT ? 'devourer' : L % 5 === 0 ? 'titan' : null);
+export const levelBoss = (L: number): 'titan' | 'devourer' | null => {
+  const b = bonusLevel(L);
+  if (b) return b.boss;
+  return L === LEVEL_COUNT ? 'devourer' : L % 5 === 0 ? 'titan' : null;
+};
 
 /**
  * Or de départ d'un niveau : environ les trois quarts de ce qu'un joueur du mode infini a gagné
@@ -480,8 +630,42 @@ export const levelBoss = (L: number): 'titan' | 'devourer' | null => (L === LEVE
  */
 export function levelGold(L: number): number {
   const o = levelOffset(L);
-  return START_GOLD + 10 * Math.round((0.65 * (105 * o + 7 * o * o)) / 10);
+  // Plusieurs entrées ou sorties : il faut défendre plus de terrain, on donne un peu plus d'or.
+  const routes = mapOf(L).routes;
+  const ends = (k: 0 | 1) => new Set(routes.map((r) => String(k ? r[r.length - 1] : r[0]))).size;
+  const extra = 1 + 0.2 * (ends(0) - 1) + 0.12 * (ends(1) - 1);
+  return START_GOLD + 10 * Math.round((0.65 * (105 * o + 7 * o * o) * extra) / 10);
 }
+
+// --- Étoiles et boutique à étoiles -------------------------------------------------------------
+
+/** Étoiles d'un niveau réussi : 3 sans perdre de vie, 2 avec au moins la moitié, 1 sinon. */
+export const starsFor = (lives: number, startLives: number) => (lives >= startLives ? 3 : 2 * lives >= startLives ? 2 : 1);
+export const MAX_STARS = 3 * (LEVEL_COUNT + BONUS_COUNT);
+
+export interface PerkDef {
+  id: string;
+  name: string;
+  text: (n: number) => string;
+  bonus: (n: number) => Partial<HeroBonus>;
+}
+
+/** Améliorations permanentes de la boutique à étoiles : 5 rangs, le rang n coûte n étoiles. */
+export const PERK_MAX = 5;
+export const perkCost = (rank: number) => rank;
+export const PERKS: PerkDef[] = [
+  { id: 'damage', name: 'Poudre de perlimpinpin', text: (n) => `Tours +${3 * n} % de dégâts`, bonus: (n) => ({ damageMult: 1 + 0.03 * n }) },
+  { id: 'rate', name: 'Huile de coude', text: (n) => `Tours +${3 * n} % de cadence`, bonus: (n) => ({ rateMult: 1 + 0.03 * n }) },
+  { id: 'range', name: 'Lunettes du grand-père', text: (n) => `Tours +${2 * n} % de portée`, bonus: (n) => ({ rangeMult: 1 + 0.02 * n }) },
+  { id: 'cost', name: 'Copain du forgeron', text: (n) => `Tours et améliorations −${2 * n} %`, bonus: (n) => ({ costMult: 1 - 0.02 * n }) },
+  { id: 'gold', name: 'Bas de laine', text: (n) => `+${30 * n} or au départ`, bonus: (n) => ({ startGold: 30 * n }) },
+];
+export type Perks = Record<string, number>;
+/** Rang valide d'une amélioration (0 si inconnue). */
+export const perkRank = (perks: Perks | undefined, id: string) => {
+  const n = Number(perks?.[id] ?? 0);
+  return Number.isInteger(n) ? Math.max(0, Math.min(PERK_MAX, n)) : 0;
+};
 
 // --- Déblocages (nombre de niveaux de la campagne terminés) ------------------------------------
 
@@ -537,4 +721,25 @@ export function heroBonus(hero: { id: string; level: number } | null): HeroBonus
   const def = hero ? HEROES.find((h) => h.id === hero.id) : undefined;
   if (!def || !hero) return NO_BONUS;
   return { ...NO_BONUS, ...def.bonus(Math.max(1, Math.min(HERO_MAX_LEVEL, hero.level))) };
+}
+
+/** Bonus d'une partie : héros, boutique à étoiles et règle du niveau bonus, cumulés. */
+export function runBonus(hero: { id: string; level: number } | null, perks: Perks | undefined, level: number): HeroBonus {
+  const b = { ...heroBonus(hero) };
+  for (const p of PERKS) {
+    const n = perkRank(perks, p.id);
+    if (!n) continue;
+    const e = p.bonus(n);
+    b.costMult *= e.costMult ?? 1;
+    b.rateMult *= e.rateMult ?? 1;
+    b.damageMult *= e.damageMult ?? 1;
+    b.rangeMult *= e.rangeMult ?? 1;
+    b.startGold += e.startGold ?? 0;
+  }
+  const bonus = bonusLevel(level);
+  if (bonus) {
+    b.costMult *= bonus.cost ?? 1;
+    b.speedMult *= bonus.speed ?? 1;
+  }
+  return b;
 }

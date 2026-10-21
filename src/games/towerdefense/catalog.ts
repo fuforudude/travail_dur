@@ -55,7 +55,7 @@ export interface CrateDef {
 
 export const CRATES: CrateDef[] = [
   { id: 'heroes', name: 'Caisse de héros', kind: 'hero', text: '8 héros qui renforcent toute la partie. Un héros déjà obtenu monte d’un niveau (5 au maximum).', contents: HEROES.map((h) => `hero:${h.id}`) },
-  { id: 'tower_skins', name: 'Skins de tours', kind: 'skin', text: '10 finitions pour chacune des 10 tours.', contents: TOWERS.flatMap((t) => TOWER_FINISHES.map((f) => `ts:${t.id}:${f.id}`)) },
+  { id: 'tower_skins', name: 'Skins de tours', kind: 'skin', text: '10 finitions pour chacune des 10 tours.', contents: TOWERS.filter((t) => !t.special).flatMap((t) => TOWER_FINISHES.map((f) => `ts:${t.id}:${f.id}`)) },
   { id: 'enemy_skins', name: 'Skins d’ennemis', kind: 'skin', text: '10 finitions pour chacun des 20 ennemis.', contents: ENEMIES.flatMap((e) => ENEMY_FINISHES.map((f) => `es:${e.id}:${f.id}`)) },
 ];
 

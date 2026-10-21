@@ -8,7 +8,7 @@ import { page } from '../../ui/layout';
 import { spatialNav } from '../../ui/menu';
 import { CRATES, ENEMY_FINISHES, heroOf, itemName, RARITY_NAMES, skinOf, TOWER_FINISHES, type CrateDef, type Rarity } from './catalog';
 import { ENEMIES, HERO_MAX_LEVEL, HEROES, TOWERS } from './engine/data';
-import { crateInfo, equipSkin, loadMeta, openCrate, type CrateInfo, type Meta } from './net';
+import { crateInfo, emptyMeta, equipSkin, loadMeta, openCrate, type CrateInfo, type Meta } from './net';
 import { previewItem } from './render';
 import './td.css';
 
@@ -29,7 +29,7 @@ export function tdCratesView(root: HTMLElement): () => void {
   const reveal = h('div', { class: 'cr-reveal', hidden: true });
   const cratesEl = h('div', { class: 'cr-crates' });
   const collection = h('div', {});
-  let meta: Meta = { owned: new Set(), equipped: new Map(), heroes: new Map(), cleared: 0, best: 0, online: false };
+  let meta: Meta = emptyMeta();
   let info = new Map<string, CrateInfo>();
   let busy = false;
   let disposed = false;
@@ -212,7 +212,7 @@ export function tdCratesView(root: HTMLElement): () => void {
     const enemyRows = ENEMIES.filter((e) => ENEMY_FINISHES.some((f) => meta.owned.has(`es:${e.id}:${f.id}`))).map((e) => skinRow('es', e.id, e.name));
     collection.replaceChildren(
       h('section', { class: 'home-section' }, h('h2', { class: 'home-h' }, 'Héros'), h('div', { class: 'shop-grid td-deck-grid' }, ...heroes)),
-      h('section', { class: 'home-section' }, h('h2', { class: 'home-h' }, 'Skins de tours'), ...TOWERS.map((t) => skinRow('ts', t.id, t.name))),
+      h('section', { class: 'home-section' }, h('h2', { class: 'home-h' }, 'Skins de tours'), ...TOWERS.filter((t) => !t.special).map((t) => skinRow('ts', t.id, t.name))),
       h(
         'section',
         { class: 'home-section' },

@@ -1,8 +1,9 @@
 // Tower defense : l'histoire de la campagne (20 niveaux, trois actes). Le Royaume des Cramptés est
 // envahi par les brainrots ; on le libère, du désert aux souterrains, jusqu'à Bagou, le fan de Linux
-// qui les a lâchés. Texte seulement : la difficulté de chaque niveau est dans engine/data.ts.
+// qui les a lâchés. Puis les niveaux bonus : les défis de Tonton Jean-Mi, 43 ans, qui parle « jeune »
+// avec dix ans de retard. Texte seulement : la difficulté de chaque niveau est dans engine/data.ts.
 
-import type { EnemyDef } from './engine/data';
+import { LEVEL_COUNT, type EnemyDef } from './engine/data';
 
 export interface Line {
   who: string;
@@ -25,7 +26,8 @@ export const ACTS: Act[] = [
   { name: 'Acte II · La Jungle Brainrot', from: 8 },
   { name: 'Acte III · Les Tunnels de Bagou', from: 15 },
 ];
-export const actOf = (L: number) => [...ACTS].reverse().find((a) => L >= a.from) ?? ACTS[0];
+export const BONUS_ACT: Act = { name: 'Bonus · Les Défis de Tonton Jean-Mi', from: LEVEL_COUNT + 1 };
+export const actOf = (L: number) => (L > LEVEL_COUNT ? BONUS_ACT : [...ACTS].reverse().find((a) => L >= a.from) ?? ACTS[0]);
 
 /** Nom des boss dans la campagne : des brainrots, puis Bagou (ailleurs, le nom de l'ennemi). */
 const BOSSES: Record<number, string> = {
@@ -33,6 +35,8 @@ const BOSSES: Record<number, string> = {
   10: 'Tralalero Tralala',
   15: 'Bombardiro Crocodilo',
   20: 'Bagou',
+  23: 'Tung Tung Tung Dab',
+  25: 'Bagou 2 : le Retour (en VF)',
 };
 export const bossName = (d: EnemyDef, level: number) => BOSSES[level] ?? d.name;
 
@@ -43,6 +47,7 @@ const B = 'Bagou';
 const T = 'Tung Tung Tung Sahur';
 const TR = 'Tralalero Tralala';
 const BC = 'Bombardiro Crocodilo';
+const J = 'Tonton Jean-Mi';
 
 /** Prologue : avant le niveau 1. */
 export const PROLOGUE: Line[] = [
@@ -245,3 +250,76 @@ export const STORY: LevelStory[] = [
     ],
   },
 ];
+
+/** Niveaux bonus (21 à 25) : les défis de Tonton Jean-Mi. */
+export const BONUS_STORY: LevelStory[] = [
+  {
+    name: 'YOLO (Mais Vraiment)',
+    intro: [
+      { who: J, text: 'Wesh wesh les jeunes ! C’est Tonton Jean-Mi, 43 ans, cadre chez un fournisseur de rouleaux de scotch. Vous êtes chauds patates ?' },
+      { who: S, text: 'Qui c’est, lui ?' },
+      { who: J, text: 'Moi, j’ai inventé des défis pour le Royaume. Le premier : YOLO. You Only Live Once. Une seule vie. C’est le swag ultime.' },
+      { who: G, text: 'Une seule vie ? Pour toute l’armée ?' },
+      { who: J, text: 'C’est ça, la street, mon Général. Allez, on y va, c’est le feu, ça va être de la balle atomique !' },
+    ],
+    outro: [
+      { who: J, text: 'Oh. Vous l’avez fait. C’est… comment on dit… c’est trop stylé. Non. C’est trop « goat ». C’est ça ? Ma fille dit que je dois arrêter.' },
+      { who: S, text: 'Votre fille a raison.' },
+    ],
+  },
+  {
+    name: 'Ça Passe Crème',
+    intro: [
+      { who: J, text: 'Défi numéro deux : « Ça passe crème ». Les brainrots ont bu trois Red Bull et un café. Ils vont super vite. Vitesse grand V. V comme « Vas-y frérot ».' },
+      { who: G, text: 'Ça ne veut rien dire.' },
+      { who: J, text: 'Exactement. C’est ça, le délire. Vous n’êtes pas prêts. Moi non plus, j’ai mal au dos.' },
+    ],
+    outro: [{ who: J, text: 'Bien joué ! Vous avez géré ça comme des chefs. Comme des chefs étoilés. Comme Top Chef. Vous regardez Top Chef ?' }],
+  },
+  {
+    name: 'Le Dab de la Mort',
+    intro: [
+      { who: J, text: 'Pour ce défi, j’ai appris à Tung Tung Tung Sahur à faire le dab. Regardez-le. Il dab. C’est TROP 2016.' },
+      { who: 'Tung Tung Tung Dab', text: 'TUNG. *dab*. TUNG. *dab*. TUNG TUNG TUNG. *dab dab dab*.' },
+      { who: S, text: 'Et il a l’air beaucoup plus solide qu’avant.' },
+      { who: J, text: 'Normal, il s’est mis au crossfit. Moi aussi. Enfin, je me suis inscrit.' },
+    ],
+    outro: [
+      { who: 'Tung Tung Tung Dab', text: 'Tung… *mini-dab*… tung…' },
+      { who: J, text: 'Respect. Vous méritez un « like ». Un pouce bleu. Un cœur. Un… je sais plus ce qu’on met maintenant.' },
+    ],
+  },
+  {
+    name: 'C’est Pas la Hess, C’est la Crise',
+    intro: [
+      { who: J, text: 'Les jeunes, petit défi économie : tout coûte plus cher. C’est l’inflation. C’est la hess. C’est ce qu’on dit, la hess ?' },
+      { who: S, text: 'Les tours sont à +40 %, Général.' },
+      { who: J, text: 'Bienvenue dans la vie d’adulte ! Remboursement de prêt, mutuelle, contrôle technique. C’est pas une dinguerie, ça ?' },
+    ],
+    outro: [
+      { who: J, text: 'Vous avez tenu avec un budget serré. Vous êtes des bêtes. Des bêtes de compta. C’est un compliment, je vous jure.' },
+      { who: G, text: 'Il nous fatigue, Sergente.' },
+    ],
+  },
+  {
+    name: 'Le Seum Ultime',
+    intro: [
+      { who: J, text: 'Dernier défi. J’ai rebranché Bagou. Je l’ai trouvé sur une clé USB, entre mes photos de vacances à La Baule et mon CV de 2009.' },
+      { who: 'Bagou 2 : le Retour (en VF)', text: 'Je suis revenu. J’utilise toujours Linux. Et maintenant j’ai aussi un abonnement à une newsletter sur Linux.' },
+      { who: J, text: 'Si vous perdez, vous aurez le seum. Le seum ULTIME. Huit vies, pas une de plus. Allez, gros, force à vous, c’est carré !' },
+      { who: S, text: '« Gros » ?' },
+      { who: J, text: 'C’est affectueux ! Ma fille m’a dit que c’était affectueux. Elle rigolait un peu en le disant, mais bon.' },
+    ],
+    outro: [
+      { who: 'Bagou 2 : le Retour (en VF)', text: 'sudo shutdown -h now…' },
+      { who: J, text: 'Incroyable. Vous avez fini tous mes défis. Vous êtes les boss. Les vrais. Les « big boss de la street du Royaume ».' },
+      { who: G, text: 'Merci, Jean-Mi. Vous pouvez rentrer chez vous, maintenant.' },
+      { who: J, text: 'Je rentre, je rentre. Mais j’ai une dernière question : est-ce que je suis « cringe » ?' },
+      { who: S, text: '…' },
+      { who: J, text: 'Je prends ça pour un non ! Salut les jeunes, restez frais comme des gardons !' },
+    ],
+  },
+];
+
+/** Histoire du niveau L (campagne ou bonus). */
+export const levelStory = (L: number): LevelStory => (L > LEVEL_COUNT ? BONUS_STORY[L - LEVEL_COUNT - 1] : STORY[L - 1]);

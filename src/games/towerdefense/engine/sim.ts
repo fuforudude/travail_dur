@@ -4,9 +4,9 @@
 // sont utilisés, pour un résultat identique au bit près des deux côtés.
 
 import {
-  COLS, ENEMIES, FINAL_WAVE, heroBonus, hpMult, LEVEL_COUNT, levelBoss, levelGold, levelWave, levelWaves, MAPS, MAX_LEVEL, maxTier, MINI,
-  ROWS, SELL_RATIO, START_GOLD, START_LIVES, themeOf, tierOfWave, TOWERS, towersFor, towerStats, upgradeAt, waveBonus, waveBudget,
-  type DamageType, type TowerStats,
+  BONUS_COUNT, bonusLevel, ENEMIES, FINAL_WAVE, hpMult, LEVEL_COUNT, levelBoss, levelGold, levelWave, levelWaves, MAPS, mapOf, MAX_LEVEL,
+  maxTier, MINI, PERK_MAX, PERKS, runBonus, SELL_RATIO, START_GOLD, START_LIVES, starsFor, themeOf, tierOfWave, TOWERS, towersFor, towerStats,
+  upgradeAt, waveBonus, waveBudget, type DamageType, type Perks, type TowerStats,
 } from './data.ts';
 
 export const TICK = 0.1; // s
@@ -28,16 +28,22 @@ const subSeed = (seed: number, wave: number, k: number) => (Math.imul(seed ^ Mat
 
 // --- Carte --------------------------------------------------------------------------------------
 
-const onPath = MAPS.map((path) => new Set(path.map(([x, y]) => y * COLS + x)));
-export const isBuildable = (map: number, x: number, y: number) =>
-  x >= 0 && x < COLS && y >= 0 && y < ROWS && !(onPath[map] ?? onPath[0]).has(y * COLS + x);
+const onPath = MAPS.map((m) => new Set(m.routes.flatMap((r) => r.map(([x, y]) => y * m.w + x))));
+export const isBuildable = (map: number, x: number, y: number) => {
+  const m = mapOf(map);
+  return x >= 0 && x < m.w && y >= 0 && y < m.h && !(onPath[map] ?? onPath[0]).has(y * m.w + x);
+};
 
-/** Longueur du chemin d'une carte, en cases. */
-export const pathLength = (map: number) => (MAPS[map] ?? MAPS[0]).length - 1;
+const routeOf = (map: number, route: number) => {
+  const routes = mapOf(map).routes;
+  return routes[route] ?? routes[0];
+};
+/** Longueur d'une route d'une carte, en cases. */
+export const pathLength = (map: number, route = 0) => routeOf(map, route).length - 1;
 
-/** Position (centre de case = .5) d'un point du chemin. */
-export function pathPos(map: number, p: number): [number, number] {
-  const path = MAPS[map] ?? MAPS[0];
+/** Position (centre de case = .5) d'un point d'une route. */
+export function pathPos(map: number, route: number, p: number): [number, number] {
+  const path = routeOf(map, route);
   const len = path.length - 1;
   const c = Math.max(0, Math.min(p, len));
   const i = Math.min(Math.floor(c), len - 1);
@@ -58,6 +64,8 @@ export interface TowerState {
   path: number; // voie choisie au 3e niveau (0 ou 1), −1 avant
   invested: number;
   fresh: boolean; // posée pendant la préparation en cours : revendue au prix plein
+  locked?: boolean; // tour spéciale de la carte : true tant qu'elle n'est pas débloquée
+  power?: number; // tour spéciale : multiplicateur de dégâts
 }
 
 export type Mode = 'campaign' | 'infinite';
@@ -65,11 +73,13 @@ export type Mode = 'campaign' | 'infinite';
 export interface RunState {
   seed: number;
   mode: Mode;
-  level: number; // niveau de la campagne (1 à 20), 0 en mode infini
+  level: number; // niveau de la campagne (1 à 20, 21 à 25 les bonus), 0 en mode infini
   map: number; // index dans MAPS
   allowed: string[]; // tours constructibles (débloquées par la campagne)
   tier: number; // niveau d'amélioration maximal (débloqué par la campagne)
   hero: { id: string; level: number } | null;
+  perks?: Perks; // boutique à étoiles
+  startLives?: number; // vies de départ, pour les étoiles
   won: boolean; // campagne : le niveau est réussi
   wave: number; // vagues terminées
   lives: number;
@@ -84,43 +94,65 @@ export interface RunState {
 
 export interface RunOptions {
   mode: Mode;
-  level: number; // campagne : 1 à 20
-  cleared: number; // niveaux de la campagne déjà terminés (débloque tours et améliorations)
+  level: number; // campagne : 1 à 20, bonus : 21 à 25
+  cleared: number; // niveaux de la campagne déjà terminés (débloque tours, améliorations et bonus)
   hero: { id: string; level: number } | null;
+  perks?: Perks;
 }
 
 /** Vérifie qu'une partie peut être lancée ; retourne un message d'erreur ou null. */
 export function runError(o: RunOptions): string | null {
   if (o.mode !== 'campaign' && o.mode !== 'infinite') return 'mode inconnu';
   if (o.mode === 'campaign') {
-    if (!Number.isInteger(o.level) || o.level < 1 || o.level > LEVEL_COUNT) return 'niveau inconnu';
-    if (o.level > o.cleared + 1) return 'niveau pas encore débloqué';
+    if (!Number.isInteger(o.level) || o.level < 1 || o.level > LEVEL_COUNT + BONUS_COUNT) return 'niveau inconnu';
+    const bonus = bonusLevel(o.level);
+    if (bonus ? o.cleared < bonus.unlock : o.level > o.cleared + 1) return 'niveau pas encore débloqué';
+  }
+  for (const [id, n] of Object.entries(o.perks ?? {})) {
+    if (!PERKS.some((p) => p.id === id) || !Number.isInteger(n) || n < 0 || n > PERK_MAX) return 'amélioration inconnue';
   }
   return null;
 }
 
 export function newRun(seed: number, o: RunOptions): RunState {
-  const bonus = heroBonus(o.hero);
   const campaign = o.mode === 'campaign';
-  return {
-    seed: seed >>> 0, mode: o.mode, level: campaign ? o.level : 0, map: campaign ? o.level : 0,
-    allowed: towersFor(o.cleared), tier: maxTier(o.cleared), hero: o.hero, won: false,
-    wave: 0, lives: START_LIVES + bonus.lives, gold: (campaign ? levelGold(o.level) : START_GOLD) + bonus.startGold,
+  const level = campaign ? o.level : 0;
+  const perks = { ...(o.perks ?? {}) };
+  const bonus = runBonus(o.hero, perks, level);
+  const lives = bonusLevel(level)?.lives ?? START_LIVES + bonus.lives;
+  const s: RunState = {
+    seed: seed >>> 0, mode: o.mode, level, map: level,
+    allowed: towersFor(o.cleared), tier: maxTier(o.cleared), hero: o.hero, perks, startLives: lives, won: false,
+    wave: 0, lives, gold: (campaign ? levelGold(o.level) : START_GOLD) + bonus.startGold,
     kills: 0, bossKills: 0, over: false, lostTo: null, towers: [], nextId: 1,
   };
+  const sp = mapOf(s.map).special;
+  const kind = sp ? TOWERS.findIndex((t) => t.id === sp.tower) : -1;
+  if (sp && kind >= 0) s.towers.push({ id: s.nextId++, x: sp.x, y: sp.y, kind, level: 0, path: -1, invested: 0, fresh: false, locked: true, power: sp.power });
+  return s;
 }
 
-/** Prix réel (bonus du héros compris). */
-export const priceOf = (s: RunState, cost: number) => Math.round(cost * heroBonus(s.hero).costMult);
+/** Bonus de la partie (héros, boutique à étoiles, règle du niveau bonus). */
+export const bonusOf = (s: RunState) => runBonus(s.hero, s.perks, s.mode === 'campaign' ? s.level : 0);
+/** Prix réel (bonus compris). */
+export const priceOf = (s: RunState, cost: number) => Math.round(cost * bonusOf(s).costMult);
+/** Prix pour débloquer la tour spéciale de la carte (bonus compris), ou null s'il n'y en a pas. */
+export const specialPrice = (s: RunState) => {
+  const sp = mapOf(s.map).special;
+  return sp ? priceOf(s, sp.cost) : null;
+};
+/** Étoiles gagnées (0 tant que le niveau n'est pas réussi). */
+export const starsOf = (s: RunState) => (s.won ? starsFor(s.lives, s.startLives ?? START_LIVES) : 0);
 export const sellValue = (t: TowerState) => (t.fresh ? t.invested : Math.floor(t.invested * SELL_RATIO));
 /** Prochaine amélioration de la tour (au 3e niveau, celle de la voie `path`). */
 export const upgradeOf = (t: TowerState, path: number = t.path) => upgradeAt(TOWERS[t.kind], t.level, t.level === 2 ? path : t.path);
 
 // --- Actions ------------------------------------------------------------------------------------
 // Codage envoyé au serveur, séparé par « ; » : B<x>.<y>.<tour 0-9>  U<x>.<y>  S<x>.<y>
+// A<x>.<y> : débloque la tour spéciale de la carte.
 // Pendant une vague, l'action est suivie de @<tick> : elle s'applique juste avant ce tick.
 
-export const ACTION_RE = /^([BUS])(\d{1,2})\.(\d{1,2})(?:\.(\d))?$/;
+export const ACTION_RE = /^([BUSA])(\d{1,2})\.(\d{1,2})(?:\.(\d))?$/;
 
 /** Applique une action ; retourne un message d'erreur (et ne change rien) si elle est impossible. */
 export function applyAction(s: RunState, a: string, running = false): string | null {
@@ -130,6 +162,17 @@ export function applyAction(s: RunState, a: string, running = false): string | n
   const x = Number(m[2]);
   const y = Number(m[3]);
   const i = s.towers.findIndex((t) => t.x === x && t.y === y);
+  if (m[1] === 'A') {
+    const t = s.towers[i];
+    if (m[4] !== undefined || !t || !TOWERS[t.kind].special) return 'pas de tour spéciale ici';
+    if (!t.locked) return 'déjà débloquée';
+    const cost = specialPrice(s) ?? 0;
+    if (s.gold < cost) return 'pas assez d’or';
+    s.gold -= cost;
+    t.locked = false;
+    return null;
+  }
+  if (i >= 0 && m[1] !== 'B' && TOWERS[s.towers[i].kind].special) return 'tour spéciale : ni améliorable ni vendable';
   if (m[1] === 'B') {
     if (m[4] === undefined) return 'action invalide';
     const kind = Number(m[4]);
@@ -172,6 +215,7 @@ export function applyAction(s: RunState, a: string, running = false): string | n
 export interface Spawn {
   enemy: number; // index dans ENEMIES
   at: number; // tick
+  lane: number; // paquet : il suit la route lane % nombre de routes de la carte (le boss : la première)
 }
 export interface WavePlan {
   wave: number;
@@ -199,7 +243,9 @@ export function planWave(seed: number, w: number): WavePlan {
 /** Campagne : vague w du niveau L (difficulté de la vague levelWave(L, w) du mode infini). */
 export function planLevelWave(seed: number, L: number, w: number): WavePlan {
   const boss = w === levelWaves(L) ? levelBoss(L) : null;
-  return composeWave(seed, w, levelWave(L, w), boss === 'devourer' ? DEVOURER : boss === 'titan' ? TITAN : null, false);
+  const plan = composeWave(seed, w, levelWave(L, w), boss === 'devourer' ? DEVOURER : boss === 'titan' ? TITAN : null, false);
+  plan.mult *= bonusLevel(L)?.hp ?? 1;
+  return plan;
 }
 
 function composeWave(seed: number, n: number, w: number, boss: number | null, themes: boolean): WavePlan {
@@ -261,13 +307,16 @@ function composeWave(seed: number, n: number, w: number, boss: number | null, th
   if (boss !== null) packets.splice(Math.floor(packets.length / 2), 0, [boss]);
   const spawns: Spawn[] = [];
   let at = 0;
+  let lane = 0;
   for (const p of packets) {
+    const bossPacket = boss !== null && p.length === 1 && p[0] === boss;
     for (const e of p) {
-      spawns.push({ enemy: e, at });
+      spawns.push({ enemy: e, at, lane: bossPacket ? 0 : lane });
       const d = ENEMIES[e];
       at += d.abilities.includes('swarm') ? 2 : Math.round(Math.max(4, Math.min(10, 8 / d.speed)));
     }
     at += 10; // 1 s entre deux paquets
+    if (!bossPacket) lane++;
   }
   return { wave: n, spawns, intro, theme: theme?.name ?? null, boss, mult: hpMult(w) };
 }
@@ -316,6 +365,7 @@ export interface Enemy {
   airborne: boolean; // Titan v40 : vole par moments
   revealed: boolean;
   phase: number; // boss
+  route: number; // route suivie sur la carte
   dig: number; // Bagou : prochain tunnel
   diedAt: number;
 }
@@ -358,6 +408,7 @@ export interface Hole {
 
 /** Tunnel de Bagou : un ennemi au sol qui passe sur l'entrée ressort à la sortie. */
 export interface Tunnel {
+  route: number;
   from: number;
   to: number;
   fx: number;
@@ -389,8 +440,9 @@ export function startWave(s: RunState) {
   const mult = plan.mult;
   // Le Titan se renforce à chaque apparition : niveaux 5, 10, 15 de la campagne ; vagues 10, 20, 30, 40 en infini.
   const titanLevel = Math.min(4, Math.max(1, campaign ? Math.floor(s.level / 5) : Math.floor(n / 10)));
-  const bonus = heroBonus(s.hero);
-  const len = pathLength(s.map);
+  const bonus = bonusOf(s);
+  const routeCount = mapOf(s.map).routes.length;
+  const lens = mapOf(s.map).routes.map((_, r) => pathLength(s.map, r));
   const enemies: Enemy[] = [];
   const dead: Enemy[] = []; // pour le Nécromancien
   const patches: Patch[] = [];
@@ -409,10 +461,10 @@ export function startWave(s: RunState) {
     const old = new Map(towers.map((l) => [l.t.id, l]));
     // Bannières : Comptoirs de la voie « Bannière » (voie 1), à partir du 3e niveau.
     const banners = s.towers.filter((t) => TOWERS[t.kind].id === BANK.id && t.path === 1 && t.level >= 3);
-    const dm = bonus.damageMult;
     towers = s.towers.map((t) => {
       const base = towerStats(TOWERS[t.kind], t.level, t.path);
-      // Bonus du héros sur les dégâts (tous les types de dégâts directs).
+      // Bonus de dégâts (héros, boutique, puissance d'une tour spéciale) sur tous les dégâts directs.
+      const dm = bonus.damageMult * (t.power ?? 1);
       const st: TowerStats = dm === 1 ? base : {
         ...base, damage: base.damage * dm,
         ...(base.dot ? { dot: base.dot * dm } : {}), ...(base.burn ? { burn: base.burn * dm } : {}),
@@ -438,17 +490,17 @@ export function startWave(s: RunState) {
   derive();
 
   // --- Ennemis
-  const spawn = (def: number, pos: number, opts: { mini?: boolean; hpRatio?: number; bounty?: number; revived?: boolean } = {}) => {
+  const spawn = (def: number, route: number, pos: number, opts: { mini?: boolean; hpRatio?: number; bounty?: number; revived?: boolean } = {}) => {
     const d = ENEMIES[def];
     const maxHp = (opts.mini ? MINI.hp : d.hp) * mult;
     let maxShield = (d.shield ?? 0) * mult;
     if (def === TITAN && titanLevel >= 2) maxShield = maxHp * 0.2;
-    const [x, y] = pathPos(s.map, pos);
+    const [x, y] = pathPos(s.map, route, pos);
     const e: Enemy = {
       uid: uid++, def, mini: Boolean(opts.mini), hp: maxHp * (opts.hpRatio ?? 1), maxHp, shield: maxShield, maxShield, pos, x, y, alive: true,
       bounty: opts.bounty ?? (opts.mini ? MINI.bounty : d.bounty), revived: Boolean(opts.revived), slow: 0, slowT: 0, stunT: 0, frozen: false,
       fragile: 0, fragileT: 0, dots: [], burn: 0, burnT: 0, burnPure: false, noHealT: 0, sinceHit: 0, clock: 0, clock2: 0,
-      burrowed: false, airborne: false, revealed: !d.camo, phase: 1, dig: 0, diedAt: 0,
+      burrowed: false, airborne: false, revealed: !d.camo, phase: 1, route, dig: 0, diedAt: 0,
     };
     enemies.push(e);
     return e;
@@ -470,7 +522,7 @@ export function startWave(s: RunState) {
     s.kills++;
     if (isBoss(e)) s.bossKills++;
     fx?.push({ k: 'death', x: e.x, y: e.y, boss: isBoss(e) });
-    if (e.def === SPLITTER && !e.mini) for (let k = 0; k < 3; k++) spawn(SPLITTER, Math.max(0, e.pos - 0.15 * k), { mini: true });
+    if (e.def === SPLITTER && !e.mini) for (let k = 0; k < 3; k++) spawn(SPLITTER, e.route, Math.max(0, e.pos - 0.15 * k), { mini: true });
     const plague = e.dots.filter((d) => d.plague > 0);
     if (plague.length) {
       for (const o of enemies) {
@@ -561,7 +613,8 @@ export function startWave(s: RunState) {
   // --- Comportement de chaque tour
   const fire = (tw: Live) => {
     const st = tw.st;
-    const kind = TOWERS[tw.t.kind].id;
+    const def = TOWERS[tw.t.kind];
+    const kind = def.as ?? def.id;
     const ti = tw.t.id;
     const dt = TICK;
     if (kind === 'bank') return;
@@ -750,7 +803,10 @@ export function startWave(s: RunState) {
     fx = collect ?? null;
     const dt = TICK;
 
-    while (nextSpawn < plan.spawns.length && plan.spawns[nextSpawn].at <= ticks) spawn(plan.spawns[nextSpawn++].enemy, 0);
+    while (nextSpawn < plan.spawns.length && plan.spawns[nextSpawn].at <= ticks) {
+      const sp = plan.spawns[nextSpawn++];
+      spawn(sp.enemy, sp.lane % routeCount, 0);
+    }
 
     // États, dégâts sur la durée, soins
     for (const e of enemies) {
@@ -790,7 +846,7 @@ export function startWave(s: RunState) {
         if (e.phase === 1 && e.hp < e.maxHp * 0.5) {
           e.phase = 2;
           // 3 Brutes à la première apparition (vague 10), 6 ensuite.
-          for (let k = 0; k < (titanLevel === 1 ? 3 : 6); k++) spawn(BRUTE, Math.max(0, e.pos - 0.12 * k));
+          for (let k = 0; k < (titanLevel === 1 ? 3 : 6); k++) spawn(BRUTE, e.route, Math.max(0, e.pos - 0.12 * k));
         }
       }
       if (e.def === DEVOURER) {
@@ -810,18 +866,18 @@ export function startWave(s: RunState) {
           e.clock2 += dt;
           if (e.clock2 >= 8 - 1e-9) {
             e.clock2 -= 8;
-            spawn(SPECTER, Math.max(0, e.pos - 0.2));
-            spawn(SPECTER, Math.max(0, e.pos - 0.4));
+            spawn(SPECTER, e.route, Math.max(0, e.pos - 0.2));
+            spawn(SPECTER, e.route, Math.max(0, e.pos - 0.4));
           }
         }
         // Tunnels : creusés sous ses pieds, toutes les 10 s (5 s à la fin) ; son escorte le rattrape.
         e.dig += dt;
-        if (e.dig >= (e.phase >= 3 ? 5 : 10) - 1e-9 && e.pos + 3 < len) {
+        if (e.dig >= (e.phase >= 3 ? 5 : 10) - 1e-9 && e.pos + 3 < lens[e.route]) {
           e.dig = 0;
           const to = e.pos + 2.5;
-          const [fx, fy] = pathPos(s.map, e.pos);
-          const [tx, ty] = pathPos(s.map, to);
-          tunnels.push({ from: e.pos, to, fx, fy, tx, ty });
+          const [fx, fy] = pathPos(s.map, e.route, e.pos);
+          const [tx, ty] = pathPos(s.map, e.route, to);
+          tunnels.push({ route: e.route, from: e.pos, to, fx, fy, tx, ty });
           if (tunnels.length > 4) tunnels.shift();
         }
         if (e.phase === 2 && e.hp < e.maxHp * 0.25) {
@@ -845,7 +901,7 @@ export function startWave(s: RunState) {
         const o = dead[k];
         if (ticks - o.diedAt > 60) continue;
         dead.splice(k, 1);
-        const r = spawn(o.def, o.pos, { hpRatio: 0.5, bounty: 0, revived: true });
+        const r = spawn(o.def, o.route, o.pos, { hpRatio: 0.5, bounty: 0, revived: true });
         r.revealed = !ENEMIES[o.def].camo;
         raised++;
       }
@@ -868,15 +924,15 @@ export function startWave(s: RunState) {
       else e.frozen = false;
       const before = e.pos;
       e.pos += speed * dt;
-      if (!flying(e)) for (const tn of tunnels) if (before < tn.from && e.pos >= tn.from) e.pos = Math.max(e.pos, tn.to);
-      if (e.pos >= len) {
+      if (!flying(e)) for (const tn of tunnels) if (tn.route === e.route && before < tn.from && e.pos >= tn.from) e.pos = Math.max(e.pos, tn.to);
+      if (e.pos >= lens[e.route]) {
         e.alive = false;
         const cost = ENEMIES[e.def].livesCost;
         s.lives = cost < 0 ? 0 : s.lives - cost;
         s.lostTo = ENEMIES[e.def].id;
         continue;
       }
-      [e.x, e.y] = pathPos(s.map, e.pos);
+      [e.x, e.y] = pathPos(s.map, e.route, e.pos);
     }
 
     // Détection des camouflés
@@ -887,6 +943,7 @@ export function startWave(s: RunState) {
 
     // Tours
     for (const tw of towers) {
+      if (tw.t.locked) continue;
       if (tw.disabledT > 0) {
         tw.disabledT -= dt;
         continue;

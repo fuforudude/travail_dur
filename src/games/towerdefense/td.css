@@ -43,6 +43,13 @@
 .td-level:disabled { opacity: 0.45; cursor: default; }
 .td-level:focus, .td-level:hover:not(:disabled) { outline: none; border-color: var(--accent); background: var(--accent-soft); }
 .td-infinite { grid-column: span 2; }
+.td-stars { color: #d9a514; letter-spacing: 0.08em; font-size: 0.9rem; }
+.td-stars.muted { color: var(--muted); letter-spacing: 0; }
+.td-stars.big { font-size: 1.6rem; }
+.td-bonus { border-style: dashed; }
+.td-perk { min-width: 11rem; max-width: 15rem; }
+.td-perk.on { border-color: #d9a514; }
+.td-perk:disabled { opacity: 0.6; cursor: default; }
 .td-heroes { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .td-hero { min-width: 9rem; max-width: 13rem; }
 .td-hero.on { border-color: var(--accent); background: var(--accent-soft); }

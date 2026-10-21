@@ -1,7 +1,7 @@
 // Fonction serveur du tower defense (Supabase Edge Function, Deno).
 //
 // Le serveur garde l'état de chaque partie. Au lancement, il vérifie le mode (niveau de la
-// campagne débloqué, héros possédé et son niveau) et tire la graine. À la fin de chaque vague, il reçoit les actions du
+// campagne débloqué, héros possédé et son niveau, améliorations de la boutique à étoiles) et tire la graine. À la fin de chaque vague, il reçoit les actions du
 // joueur (avant et pendant la vague, datées au tick près), rejoue la vague avec le même moteur
 // que le jeu (./engine, copié depuis src/ par scripts/td-sync.mjs) et enregistre le résultat
 // dans td_sessions ; le déclencheur points_on_td attribue alors les points.
@@ -10,7 +10,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { HEROES } from './engine/data.ts';
-import { newRun, replayWave, runError, type RunState } from './engine/sim.ts';
+import { newRun, replayWave, runError, starsOf, type RunState } from './engine/sim.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -29,15 +29,17 @@ async function start(uid: string, mode: unknown, level: unknown, hero: unknown) 
   if ((count ?? 0) >= 10) throw new Refused('trop de parties, réessaie dans une minute');
   if (mode !== 'campaign' && mode !== 'infinite') throw new Refused('mode inconnu');
   if (hero !== null && (typeof hero !== 'string' || !HEROES.some((h) => h.id === hero))) throw new Refused('héros inconnu');
-  const [{ data: cleared, error: e1 }, { data: owned, error: e2 }] = await Promise.all([
+  const [{ data: cleared, error: e1 }, { data: owned, error: e2 }, { data: perkRows, error: e3 }] = await Promise.all([
     db.rpc('td_cleared', { uid }),
     hero ? db.from('td_heroes').select('level').eq('user_id', uid).eq('hero_id', hero).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    db.from('td_perks').select('perk_id, rank').eq('user_id', uid),
   ]);
-  if (e1 || e2) throw new Error((e1 ?? e2)!.message);
+  if (e1 || e2 || e3) throw new Error((e1 ?? e2 ?? e3)!.message);
   if (hero && !owned) throw new Refused('héros pas encore obtenu');
   const options = {
     mode, level: mode === 'campaign' ? Number(level) : 0, cleared: Number(cleared ?? 0),
     hero: hero && owned ? { id: hero as string, level: Number(owned.level) } : null,
+    perks: Object.fromEntries((perkRows ?? []).map((r) => [String(r.perk_id), Number(r.rank)])),
   } as const;
   const err = runError(options);
   if (err) throw new Refused(err);
@@ -73,13 +75,13 @@ async function wave(uid: string, session: unknown, actions: unknown) {
   if (Date.now() - Date.parse(row.last_call_at) < ticks * 20) throw new Refused('vague jouée trop vite');
   const { data: saved, error: e2 } = await db
     .from('td_sessions')
-    .update({ state: s, wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills, over: s.over, won: s.won, last_call_at: new Date().toISOString(), last_ticks: ticks, step: row.step + 1 })
+    .update({ state: s, wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills, over: s.over, won: s.won, stars: starsOf(s), last_call_at: new Date().toISOString(), last_ticks: ticks, step: row.step + 1 })
     .eq('id', session)
     .eq('step', row.step)
     .select('id');
   if (e2) throw new Error(e2.message);
   if (!saved?.length) throw new Refused('vague déjà envoyée');
-  return { wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills, over: s.over, won: s.won, ticks };
+  return { wave: s.wave, lives: s.lives, gold: s.gold, kills: s.kills, over: s.over, won: s.won, stars: starsOf(s), ticks };
 }
 
 Deno.serve(async (req) => {

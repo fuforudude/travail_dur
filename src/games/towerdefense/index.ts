@@ -9,16 +9,18 @@ import { h, hints } from '../../ui/dom';
 import { spatialNav } from '../../ui/menu';
 import type { Game, GameContext } from '../types';
 import {
-  COLS, ENEMIES, FINAL_WAVE, HEROES, LEVEL_COUNT, levelBoss, levelWaves, MAPS, MAX_LEVEL, maxTier, ROWS, TIER_UNLOCK, TOWER_UNLOCK,
-  TOWERS, towersFor, towerStats, type TowerStats,
+  BONUS, bonusLevel, ENEMIES, FINAL_WAVE, HEROES, LEVEL_COUNT, levelBoss, levelWaves, mapOf, MAX_LEVEL, MAX_STARS, maxTier,
+  PERK_MAX, perkCost, PERKS, TIER_UNLOCK, TOWER_UNLOCK, TOWERS, towersFor, towerStats, type TowerStats,
 } from './engine/data';
 import {
-  applyAction, isBuildable, newRun, planLevelWave, planWave, priceOf, sellValue, startWave, TICK, upgradeOf,
+  applyAction, isBuildable, newRun, planLevelWave, planWave, priceOf, sellValue, specialPrice, starsOf, startWave, TICK, upgradeOf,
   type Enemy, type Fx, type Mode, type Running, type RunState,
 } from './engine/sim';
-import { equippedFinish, loadMeta, saveLocalProgress, sendWave, startRun, type Meta } from './net';
+import {
+  buyPerk, emptyMeta, equippedFinish, loadMeta, perksOf, recordStars, resetPerks, sendWave, starBalance, startRun, type Meta,
+} from './net';
 import { drawEnemy, drawTower, enemyLook, enemyRadius, previewItem, readPalette, towerLook, type Palette } from './render';
-import { ACTS, actOf, bossName, PROLOGUE, STORY, type Line } from './story';
+import { ACTS, actOf, BONUS_ACT, bossName, levelStory, PROLOGUE, type Line } from './story';
 import './td.css';
 
 interface Saved {
@@ -28,7 +30,7 @@ interface Saved {
   victory?: boolean; // message de la vague 50 déjà montré (mode infini)
 }
 
-const SAVE_KEY = 'state:td3';
+const SAVE_KEY = 'state:td4'; // td4 : cartes à plusieurs routes (les parties en cours d'avant sont oubliées)
 const HERO_KEY = 'hero:td';
 const TICK_MS = TICK * 1000;
 const DAMAGE = { physical: 'physique', magic: 'magique', pure: 'pur' } as const;
@@ -39,6 +41,20 @@ const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).repla
 const towerName = (id: string) => TOWERS.find((t) => t.id === id)?.name ?? id;
 /** Points d'un niveau réussi (voir 0032_td_campagne.sql). */
 const levelPoints = (L: number, first: boolean) => (first ? 100 + 40 * L : 5 * L);
+const starText = (n: number) => '★'.repeat(n) + '☆'.repeat(3 - n);
+
+/** Ce qui rend la carte du niveau L particulière (entrées, sorties, taille, tour spéciale). */
+function mapTraits(L: number): string[] {
+  const m = mapOf(L);
+  const ins = new Set(m.routes.map((r) => String(r[0]))).size;
+  const outs = new Set(m.routes.map((r) => String(r[r.length - 1]))).size;
+  const out: string[] = [];
+  if (ins > 1) out.push(`${ins} entrées`);
+  if (outs > 1) out.push(`${outs} sorties`);
+  if (m.w * m.h > 200) out.push('grande carte');
+  if (m.special) out.push(TOWERS.find((t) => t.id === m.special!.tower)?.name ?? 'tour spéciale');
+  return out;
+}
 
 function statsLine(st: TowerStats): string {
   if (st.income) return `+${st.income} or par vague${st.interest ? `, + ${Math.round(st.interest * 100)} % de l’or (${st.interestCap} max)` : ''}${st.aura ? ', aura de cadence et de portée' : ''}`;
@@ -74,7 +90,7 @@ function nextUnlock(cleared: number): string | null {
 }
 
 function mount(ctx: GameContext): () => void {
-  let meta: Meta = { owned: new Set(), equipped: new Map(), heroes: new Map(), cleared: 0, best: 0, online: false };
+  let meta: Meta = emptyMeta();
   let leave: () => void = () => {};
   let disposed = false;
   const metaReady = loadMeta().then((m) => (meta = m));
@@ -102,6 +118,34 @@ function mount(ctx: GameContext): () => void {
     let note = '';
     let starting = false;
 
+    const levelButton = (L: number, open: boolean, lockText: string) => {
+      const stars = meta.stars.get(L) ?? 0;
+      const boss = levelBoss(L);
+      const bonus = bonusLevel(L);
+      const traits = [...(bonus ? [bonus.rule] : []), ...mapTraits(L)];
+      const b = h(
+        'button',
+        { class: `td-level${stars ? ' done' : ''}${open && !stars ? ' next' : ''}${bonus ? ' td-bonus' : ''}`, type: 'button', disabled: !open, 'data-id': `level:${L}` },
+        h('b', {}, bonus ? `B${L - LEVEL_COUNT}` : String(L)),
+        h('span', { class: 'td-level-name' }, open ? levelStory(L).name : '???'),
+        h('span', { class: 'td-stars' + (stars ? '' : ' muted') }, open ? starText(stars) : `🔒 ${lockText || ''}`.trim()),
+        h('span', { class: 'small muted' }, `${levelWaves(L)} vagues${boss ? ' · boss' : ''}${open && traits.length ? ` · ${traits.join(' · ')}` : ''}`),
+      );
+      b.addEventListener('click', () => play('campaign', L));
+      return b;
+    };
+
+    const shopAction = async (run: () => Promise<void>, ok: string) => {
+      try {
+        await run();
+        note = ok;
+        blip(660);
+      } catch (e) {
+        note = (e as Error).message;
+      }
+      if (!disposed) render();
+    };
+
     const render = () => {
       const cleared = meta.cleared;
       const hero = chosenHero();
@@ -126,22 +170,29 @@ function mount(ctx: GameContext): () => void {
       const acts = ACTS.map((act, k) => {
         const to = (ACTS[k + 1]?.from ?? LEVEL_COUNT + 1) - 1;
         const buttons: HTMLElement[] = [];
-        for (let L = act.from; L <= to; L++) {
-          const done = L <= cleared;
-          const open = L <= cleared + 1;
-          const boss = levelBoss(L);
-          const b = h(
-            'button',
-            { class: `td-level${done ? ' done' : ''}${open && !done ? ' next' : ''}`, type: 'button', disabled: !open, 'data-id': `level:${L}` },
-            h('b', {}, String(L)),
-            h('span', { class: 'td-level-name' }, open ? STORY[L - 1].name : '???'),
-            h('span', { class: 'small muted' }, `${done ? '✓ ' : open ? '' : '🔒 '}${levelWaves(L)} vagues${boss ? ' · boss' : ''}`),
-          );
-          b.addEventListener('click', () => play('campaign', L));
-          buttons.push(b);
-        }
+        for (let L = act.from; L <= to; L++) buttons.push(levelButton(L, L <= cleared + 1, ''));
         return h('section', { class: 'td-act' }, h('h3', {}, act.name), h('div', { class: 'td-levels' }, ...buttons));
       });
+      const bonusButtons = BONUS.map((b, k) => levelButton(LEVEL_COUNT + 1 + k, cleared >= b.unlock, `après le niveau ${b.unlock}`));
+
+      // Boutique à étoiles
+      const balance = starBalance(meta);
+      const perkRows = PERKS.map((p) => {
+        const rank = meta.perks.get(p.id) ?? 0;
+        const cost = perkCost(rank + 1);
+        const maxed = rank >= PERK_MAX;
+        const b = h(
+          'button',
+          { class: `shop-item td-perk${maxed ? ' on' : ''}`, type: 'button', disabled: maxed || balance.left < cost, 'data-id': `perk:${p.id}` },
+          h('span', { class: 'shop-name' }, `${p.name} · ${'●'.repeat(rank)}${'○'.repeat(PERK_MAX - rank)}`),
+          h('span', { class: 'small' }, rank ? p.text(rank) : 'Pas encore acheté'),
+          h('span', { class: 'small muted' }, maxed ? 'Rang maximum' : `Rang ${rank + 1} : ${p.text(rank + 1)} · ★ ${cost}`),
+        );
+        b.addEventListener('click', () => void shopAction(() => buyPerk(meta, p.id), `${p.name} : rang ${rank + 1} !`));
+        return b;
+      });
+      const reset = h('button', { class: 'field', type: 'button', disabled: !balance.spent }, 'Récupérer mes étoiles');
+      reset.addEventListener('click', () => void shopAction(() => resetPerks(meta), 'Étoiles récupérées : tu peux tout redépenser.'));
 
       const infinite = h(
         'button',
@@ -163,12 +214,21 @@ function mount(ctx: GameContext): () => void {
             'div',
             {},
             h('h2', {}, 'L’expédition'),
-            h('p', { class: 'muted small' }, `${cleared} / ${LEVEL_COUNT} niveaux · ${towersFor(cleared).length} tours débloquées${up ? ` · prochain déblocage : ${up}` : ' · tout est débloqué'}`),
+            h('p', { class: 'muted small' }, `${cleared} / ${LEVEL_COUNT} niveaux · ★ ${balance.earned} / ${MAX_STARS} · ${towersFor(cleared).length} tours débloquées${up ? ` · prochain déblocage : ${up}` : ' · tout est débloqué'}`),
           ),
           h('div', { class: 'td-deck-actions' }, crates),
         ),
         ...acts,
+        h('section', { class: 'td-act' }, h('h3', {}, BONUS_ACT.name), h('p', { class: 'muted small' }, 'Tonton Jean-Mi a préparé des défis. Ils piquent.'), h('div', { class: 'td-levels' }, ...bonusButtons)),
         h('section', { class: 'td-act' }, h('h3', {}, 'Après l’expédition'), h('div', { class: 'td-levels' }, infinite)),
+        h(
+          'section',
+          { class: 'td-act' },
+          h('h3', {}, `Boutique à étoiles · ★ ${balance.left} à dépenser`),
+          h('p', { class: 'muted small' }, '1 étoile par niveau réussi, 2 en gardant au moins la moitié de tes vies, 3 sans en perdre une seule. Les améliorations valent pour toutes tes parties.'),
+          h('div', { class: 'td-heroes' }, ...perkRows),
+          h('div', { class: 'td-deck-actions' }, reset),
+        ),
         h(
           'section',
           { class: 'td-act' },
@@ -187,8 +247,8 @@ function mount(ctx: GameContext): () => void {
       if (starting) return;
       focusLevel = L;
       if (mode === 'infinite') return void begin(mode, 0);
-      const lines = [...(L === 1 ? PROLOGUE : []), ...STORY[L - 1].intro];
-      show(() => storyScreen(`Niveau ${L} · ${STORY[L - 1].name}`, actOf(L).name, lines, () => void begin(mode, L), () => show(menuScreen)));
+      const lines = [...(L === 1 ? PROLOGUE : []), ...levelStory(L).intro];
+      show(() => storyScreen(`${levelTitle(L)} · ${levelStory(L).name}`, actOf(L).name, lines, () => void begin(mode, L), () => show(menuScreen)));
     };
 
     void metaReady.then(() => !disposed && render());
@@ -207,6 +267,8 @@ function mount(ctx: GameContext): () => void {
     return offKeys;
   };
 
+  const levelTitle = (L: number) => (L > LEVEL_COUNT ? `Défi ${L - LEVEL_COUNT}` : `Niveau ${L}`);
+
   /** Lance une partie : classée si le serveur répond, sinon jouée sur place. */
   const begin = async (mode: Mode, L: number) => {
     const hero = chosenHero();
@@ -218,7 +280,7 @@ function mount(ctx: GameContext): () => void {
       saved = { s: r.state, actions: [], session: r.id };
     } catch (e) {
       msg = (e as Error).message;
-      saved = { s: newRun((Math.random() * 2 ** 32) >>> 0, { mode, level: L, cleared: meta.cleared, hero }), actions: [], session: null };
+      saved = { s: newRun((Math.random() * 2 ** 32) >>> 0, { mode, level: L, cleared: meta.cleared, hero, perks: perksOf(meta) }), actions: [], session: null };
     }
     if (disposed) return;
     runNote = msg ? `Partie non classée : ${msg}.` : '';
@@ -284,8 +346,11 @@ function mount(ctx: GameContext): () => void {
     let session = saved.session;
     let victorySeen = Boolean(saved.victory);
     const campaign = s.mode === 'campaign';
-    const path = MAPS[s.map] ?? MAPS[0];
+    const map = mapOf(s.map);
+    const COLS = map.w;
+    const ROWS = map.h;
     const clearedBefore = meta.cleared;
+    const starsBefore = meta.stars.get(s.level) ?? 0;
     let cx = 6;
     let cy = 4;
     let speed = 1;
@@ -320,7 +385,7 @@ function mount(ctx: GameContext): () => void {
         info,
         noteEl,
         hints(
-          ['← ↑ → ↓', 'case'], ['1 – 0', 'construire'], ['U', 'améliorer'], ['S', 'vendre'], ['Espace', 'lancer la vague'],
+          ['← ↑ → ↓', 'case'], ['1 – 0', 'construire'], ['U', map.special ? 'améliorer / débloquer' : 'améliorer'], ['S', 'vendre'], ['Espace', 'lancer la vague'],
           ['F', 'vitesse'], ['P', 'pause'], ['R', 'abandonner'], ['Retour arrière', 'quitter'],
         ),
       ),
@@ -336,7 +401,7 @@ function mount(ctx: GameContext): () => void {
     const resize = () => {
       const cs = getComputedStyle(ctx.root);
       const inner = ctx.root.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-      const w = Math.min(720, inner > 0 ? inner : 640);
+      const w = Math.min(COLS * 45, inner > 0 ? inner : 640);
       cell = Math.floor(w / COLS);
       const ratio = window.devicePixelRatio || 1;
       canvas.width = cell * COLS * ratio;
@@ -358,7 +423,7 @@ function mount(ctx: GameContext): () => void {
       g.fillStyle = pal.bg;
       g.fillRect(0, 0, W, H);
       g.fillStyle = pal.path;
-      for (const [x, y] of path) g.fillRect(x * cell, y * cell, cell, cell);
+      for (const route of map.routes) for (const [x, y] of route) g.fillRect(x * cell, y * cell, cell, cell);
       g.strokeStyle = pal.grid;
       g.lineWidth = 1;
       g.beginPath();
@@ -376,8 +441,10 @@ function mount(ctx: GameContext): () => void {
       g.font = `${Math.round(cell * 0.5)}px system-ui, sans-serif`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillText('›', path[0][0] * cell + cell / 2, path[0][1] * cell + cell / 2);
-      g.fillText('⚑', path[path.length - 1][0] * cell + cell / 2, path[path.length - 1][1] * cell + cell / 2);
+      for (const route of map.routes) {
+        g.fillText('›', route[0][0] * cell + cell / 2, route[0][1] * cell + cell / 2);
+        g.fillText('⚑', route[route.length - 1][0] * cell + cell / 2, route[route.length - 1][1] * cell + cell / 2);
+      }
 
       if (running) {
         for (const p of running.patches()) {
@@ -433,8 +500,17 @@ function mount(ctx: GameContext): () => void {
       const lives = running ? new Map(running.towers().map((l) => [l.t.id, l])) : null;
       for (const t of s.towers) {
         const l = lives?.get(t.id);
-        const id = TOWERS[t.kind].id;
-        drawTower(g, id, t.level, (t.x + 0.5) * cell, (t.y + 0.5) * cell, cell, l?.angle ?? -Math.PI / 2, towerLook(id, towerFinish(t.kind), pal, now), now, { disabled: (l?.disabledT ?? 0) > 0 });
+        const def = TOWERS[t.kind];
+        const id = def.as ?? def.id;
+        const look = def.special ? { ...towerLook(id, null, pal, now), body: '#e6b422', edge: '#8a6a10' } : towerLook(id, towerFinish(t.kind), pal, now);
+        drawTower(g, id, def.special ? MAX_LEVEL : t.level, (t.x + 0.5) * cell, (t.y + 0.5) * cell, cell, l?.angle ?? -Math.PI / 2, look, now, { disabled: t.locked || (l?.disabledT ?? 0) > 0 });
+        if (def.special) {
+          g.fillStyle = t.locked ? pal.muted : '#e6b422';
+          g.font = `${Math.round(cell * 0.38)}px system-ui, sans-serif`;
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          g.fillText(t.locked ? '🔒' : '★', (t.x + 0.82) * cell, (t.y + 0.18) * cell);
+        }
       }
 
       if (running) {
@@ -552,6 +628,11 @@ function mount(ctx: GameContext): () => void {
 
     const upgradePanel = (t: RunState['towers'][number]): HTMLElement[] => {
       const def = TOWERS[t.kind];
+      if (def.special) {
+        return [h('p', { class: 'small' }, t.locked
+          ? `Tour spéciale de la carte : U pour la débloquer (${specialPrice(s)} or). Dégâts ×${fmt(t.power ?? 1)}, ni améliorable ni vendable.`
+          : `Tour spéciale débloquée · dégâts ×${fmt(t.power ?? 1)}`)];
+      }
       const sell = `S vendre (+${sellValue(t)}${t.fresh ? ', prix plein' : ''})`;
       if (t.level >= MAX_LEVEL) return [h('p', { class: 'small muted' }, `Niveau maximum · ${sell}`)];
       if (t.level + 1 > s.tier) {
@@ -587,7 +668,7 @@ function mount(ctx: GameContext): () => void {
       const w = running ? running.number : s.wave + 1;
       const total = campaign ? levelWaves(s.level) : FINAL_WAVE;
       stats.replaceChildren(
-        campaign ? h('span', { class: 'stat' }, 'Niveau ', h('b', {}, String(s.level))) : '',
+        campaign ? h('span', { class: 'stat' }, s.level > LEVEL_COUNT ? 'Défi ' : 'Niveau ', h('b', {}, String(s.level > LEVEL_COUNT ? s.level - LEVEL_COUNT : s.level))) : '',
         h('span', { class: 'stat' }, 'Vague ', h('b', {}, w <= total ? `${Math.min(w, total)}/${total}` : `${w} ∞`)),
         h('span', { class: 'stat' }, 'Vies ', h('b', { 'data-k': 'lives' }, String(s.lives))),
         h('span', { class: 'stat' }, 'Or ', h('b', { 'data-k': 'gold' }, String(s.gold))),
@@ -608,7 +689,7 @@ function mount(ctx: GameContext): () => void {
       if (t) {
         const def = TOWERS[t.kind];
         const st = towerStats(def, t.level, t.path);
-        detail.push(h('p', { class: 'small' }, h('b', {}, `${def.name} · ${levelName(t)}`), ` — ${statsLine(st)}`));
+        detail.push(h('p', { class: 'small' }, h('b', {}, `${def.name} · ${def.special ? 'spéciale' : levelName(t)}`), ` — ${statsLine(st)}`));
         detail.push(...upgradePanel(t));
       } else if (isBuildable(s.map, cx, cy)) detail.push(h('p', { class: 'small muted' }, `Case libre : ${KEYS.slice(0, s.allowed.length).join(', ')} pour construire.`));
       else detail.push(h('p', { class: 'small muted' }, 'Chemin des ennemis.'));
@@ -663,11 +744,17 @@ function mount(ctx: GameContext): () => void {
     };
 
     const wonOverlay = () => {
-      const first = s.level > clearedBefore;
-      const unlocks = first ? unlocksBetween(clearedBefore, s.level) : [];
+      const bonus = s.level > LEVEL_COUNT;
+      const first = bonus ? starsBefore === 0 : s.level > clearedBefore;
+      const unlocks = first && !bonus ? unlocksBetween(clearedBefore, s.level) : [];
+      const bonusUnlocked = !bonus && first ? BONUS.filter((b) => b.unlock > clearedBefore && b.unlock <= s.level) : [];
+      if (bonusUnlocked.length) unlocks.push('un défi de Tonton Jean-Mi');
+      const stars = starsOf(s);
       return [
-        h('strong', {}, `Niveau ${s.level} réussi !`),
-        h('span', {}, `${plural(s.lives, 'vie')} restante${s.lives > 1 ? 's' : ''} · ${plural(s.kills, 'ennemi')} vaincu${s.kills > 1 ? 's' : ''}`),
+        h('strong', {}, `${levelTitle(s.level)} réussi !`),
+        h('span', { class: 'td-stars big' }, starText(stars)),
+        h('span', {}, `${plural(s.lives, 'vie')} restante${s.lives > 1 ? 's' : ''} sur ${s.startLives ?? s.lives} · ${plural(s.kills, 'ennemi')} vaincu${s.kills > 1 ? 's' : ''}`),
+        stars > starsBefore ? h('span', { class: 'small' }, `+${stars - starsBefore} ★ pour la boutique à étoiles`) : h('span', { class: 'small muted' }, `Ton record sur ce niveau : ${starText(starsBefore)}`),
         session ? h('span', { class: 'small' }, `+${levelPoints(s.level, first)} points ◆${first ? '' : ' (niveau rejoué)'}`) : '',
         unlocks.length ? h('span', { class: 'small' }, `Débloqué : ${unlocks.join(', ')}.`) : '',
         h('div', { class: 'td-deck-actions' }, button('Carte', toMenu), button('La suite de l’histoire', outro, true)),
@@ -697,9 +784,9 @@ function mount(ctx: GameContext): () => void {
     };
     const outro = () => {
       remove(SAVE_KEY);
-      focusLevel = Math.min(LEVEL_COUNT, s.level + 1);
+      focusLevel = s.level > LEVEL_COUNT ? s.level : Math.min(LEVEL_COUNT, s.level + 1);
       const L = s.level;
-      show(() => storyScreen(`Niveau ${L} · ${STORY[L - 1].name}`, actOf(L).name, STORY[L - 1].outro, () => show(menuScreen), () => show(menuScreen)));
+      show(() => storyScreen(`${levelTitle(L)} · ${levelStory(L).name}`, actOf(L).name, levelStory(L).outro, () => show(menuScreen), () => show(menuScreen)));
     };
 
     // --- Vagues
@@ -721,10 +808,7 @@ function mount(ctx: GameContext): () => void {
       const sent = actions.join(';');
       actions = [];
       snapshot = null;
-      if (s.won && s.level > meta.cleared) {
-        meta.cleared = s.level;
-        saveLocalProgress(meta);
-      }
+      if (s.won) recordStars(meta, s.level, starsOf(s));
       if (session) {
         const r = await sendWave(session, sent).catch((e: Error) => {
           note = `Partie non classée désormais : ${e.message}.`;
@@ -850,6 +934,7 @@ function mount(ctx: GameContext): () => void {
           choosing = true;
           return render();
         }
+        if (t && TOWERS[t.kind].special && t.locked) return act(`A${cx}.${cy}`);
         return act(`U${cx}.${cy}`);
       } else if (key === 's') return act(`S${cx}.${cy}`);
       else if (key === ' ' || key === 'enter') {
