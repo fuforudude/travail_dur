@@ -343,7 +343,7 @@ export function towerStats(def: TowerDef, level: number, path: number | null = n
 
 export type Ability =
   | 'swarm' | 'heal_aura' | 'shield' | 'split' | 'regen' | 'speed_aura' | 'burrow'
-  | 'slow_resist' | 'immune_slow' | 'revive' | 'titan' | 'devourer';
+  | 'slow_resist' | 'immune_slow' | 'revive' | 'titan' | 'devourer' | 'youg' | 'martine';
 
 export interface EnemyDef {
   id: string;
@@ -394,6 +394,9 @@ export const ENEMIES: EnemyDef[] = [
   // Réglé avec un joueur automatique (tours de départ seulement) : il passe la vague 10, la vague 20 reste un vrai défi.
   E({ id: 'titan', name: 'Titan', tier: 'boss', firstWave: 10, hp: 2000, speed: 0.4, armor: 5, abilities: ['titan'], bounty: 500, threat: 0, livesCost: 12, text: 'Invoque des Brutes à mi-vie (3, puis 6), plus fort à chaque apparition', counters: 'Tout ce qui frappe fort' }),
   E({ id: 'devourer', name: 'Bagou', tier: 'boss', firstWave: 50, hp: 15000, speed: 0.35, armor: 12, abilities: ['devourer'], bounty: 3000, threat: 0, livesCost: -1, text: 'Fan de Linux : « kill -9 » sur votre meilleure tour, creuse des tunnels pour son escorte, bouclier, puis fonce', counters: 'Singularité, Railgun, Sniper U2' }),
+  // Chapitre 2, la chasse à la sorcière (niveaux 26 à 75).
+  E({ id: 'youg', name: 'Youg', tier: 'boss', firstWave: 999, hp: 9500, speed: 0.5, armor: 10, abilities: ['youg'], bounty: 2500, threat: 0, livesCost: 15, text: 'Rat géant : fait surgir des nuées de rats, enragé à mi-vie (plus rapide, insensible au gel)', counters: 'Lance-flammes, Canon, Tesla contre les rats ; Railgun, Sniper contre lui' }),
+  E({ id: 'martine', name: 'Martine', tier: 'boss', firstWave: 999, hp: 18000, speed: 0.38, armor: 8, abilities: ['martine'], bounty: 5000, threat: 0, livesCost: -1, text: 'Sorcière : change votre meilleure tour en crapaud, s’envole sur son balai, se téléporte et appelle des rats', counters: 'Tours anti-aériennes, Singularité, Railgun' }),
 ];
 
 /** Mini-scindeur : n'apparaît qu'à la mort d'un Scindeur. */
@@ -537,6 +540,90 @@ export const MAPS: MapDef[] = [
   ], { w: 22, h: 13, special: spot(14, 8, 'puits', 1200, 1.5) }),
 ];
 
+/**
+ * Cartes du chapitre 2 (niveaux 26 à 75) : générées à partir du numéro du niveau, donc identiques
+ * partout. Une route principale en serpentin de gauche à droite ; selon le niveau, des entrées en plus
+ * (par le haut ou le bas, qui rejoignent la route), une 2e sortie, une tour spéciale, et une taille
+ * de 16 × 10 à 22 × 13. Vérifiées par scripts/sql-test.mjs… et par la boucle de contrôle des cartes.
+ */
+const SPECIAL_TOWERS = ['phare', 'trebuchet', 'paratonnerre', 'baliste', 'puits'];
+function chapter2Map(k: number): MapDef {
+  let seed = (k * 2654435761) >>> 0;
+  const rnd = (n: number) => {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return (((t ^ (t >>> 14)) >>> 0) % n) | 0;
+  };
+  const sizes: [number, number][] = [[16, 10], [18, 11], [20, 12], [22, 13]];
+  const [w, h] = sizes[Math.min(3, Math.floor((k - 1) / 13) + rnd(2))];
+  // Route principale : de (0, y) au bord droit, en serpentin (x croissant : jamais sur elle-même).
+  const turns = 3 + rnd(3);
+  const xs: number[] = [];
+  for (let i = 1; i <= turns; i++) xs.push(Math.round((i * (w - 2)) / (turns + 1)));
+  for (let i = 1; i < xs.length; i++) if (xs[i] <= xs[i - 1] + 1) xs[i] = xs[i - 1] + 2;
+  const pts: Pt[] = [];
+  let y = 1 + rnd(h - 2);
+  pts.push([0, y]);
+  for (const x of xs) {
+    pts.push([x, y]);
+    // Aller vers l'autre moitié de la carte, pour un long chemin.
+    const ny = y < h / 2 ? Math.floor(h / 2) + rnd(Math.ceil(h / 2) - 1) : 1 + rnd(Math.floor(h / 2) - 1);
+    y = Math.max(1, Math.min(h - 2, ny === y ? (y + 3) % (h - 2) + 1 : ny));
+    pts.push([x, y]);
+  }
+  pts.push([w - 1, y]);
+  const main = route(...pts);
+  const routes: Pt[][] = [main];
+  // Entrées en plus (0 à 2) : par le haut ou le bas, elles rejoignent un tronçon horizontal de la route.
+  const extra = k % 4 === 0 || k % 6 === 0 ? 2 : k % 3 === 0 ? 1 : 0; // 3 entrées au plus
+  // Une entrée trop courte serait injouable : 22 cases au moins, sinon un autre essai.
+  for (let e = 0; e < extra; e++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const seg = rnd(Math.max(1, Math.floor(pts.length / 2) - 1)) * 2 + 1; // tronçon horizontal pts[seg-1] → pts[seg]
+      const [ax, ay] = pts[seg - 1];
+      const [bx] = pts[seg];
+      const edge = (e + attempt) % 2 === 0 ? 0 : h - 1;
+      if (bx - ax < 2 || Math.abs(edge - ay) < 2) continue;
+      const x = ax + 1 + rnd(bx - ax - 1);
+      const r = route([x, edge], [x, ay], ...pts.slice(seg));
+      if (r.length - 1 >= 22) {
+        routes.push(r);
+        break;
+      }
+    }
+  }
+  // Deuxième sortie : un niveau sur cinq, la route se sépare vers le haut ou le bas.
+  if (k % 5 === 0 && pts.length >= 6) {
+    // Bifurcation tardive (avant-dernier virage) : l'essentiel du chemin reste commun et défendable.
+    let j = pts.length - 3;
+    if (j % 2 === 0) j--;
+    const [x, yy] = pts[j];
+    const edge = yy < h / 2 ? h - 1 : 0;
+    const r = route(...pts.slice(0, j + 1), [x, edge]);
+    if (r.length - 1 >= 20) routes.push(r);
+  }
+  const map: MapDef = { w, h, routes };
+  // Tour spéciale, un niveau sur trois : sur une case libre près du centre.
+  if (k % 3 === 1) {
+    const taken = new Set(routes.flatMap((r) => r.map(([x, yy]) => yy * w + x)));
+    const cx = Math.floor(w / 2);
+    const cy = Math.floor(h / 2);
+    for (let d = 0; d < 6 && !map.special; d++)
+      for (let dy = -d; dy <= d && !map.special; dy++)
+        for (let dx = -d; dx <= d && !map.special; dx++) {
+          const x = cx + dx;
+          const yy = cy + dy;
+          if (x > 0 && yy > 0 && x < w - 1 && yy < h - 1 && !taken.has(yy * w + x)) {
+            map.special = spot(x, yy, SPECIAL_TOWERS[k % SPECIAL_TOWERS.length], 600 + 20 * k, 1.5 + k * 0.03);
+          }
+        }
+  }
+  return map;
+}
+for (let k = 1; k <= 50; k++) MAPS[25 + k] = chapter2Map(k);
+
 /** Carte d'index `m` (le mode infini si elle n'existe pas). */
 export const mapOf = (m: number) => MAPS[m] ?? MAPS[0];
 
@@ -603,21 +690,40 @@ export const BONUS_COUNT = BONUS.length;
 /** Niveau bonus L (21 à 25), ou null pour un niveau de la campagne. */
 export const bonusLevel = (L: number): BonusLevel | null => (L > LEVEL_COUNT ? BONUS[L - LEVEL_COUNT - 1] ?? null : null);
 
-/** Nombre de vagues du niveau L (1 à 20) : 6 au début, 16 au dernier. */
-export const levelWaves = (L: number) => bonusLevel(L)?.waves ?? 6 + Math.floor(L / 2);
+/**
+ * Chapitre 2, la chasse à la sorcière : niveaux 26 à 75 (numéros après les défis bonus), débloqués
+ * après le niveau 20, dans l'ordre. Youg (le rat) au niveau 50, Martine (la sorcière) au 75.
+ */
+export const CHAPTER2_FIRST = 26;
+export const CHAPTER2_COUNT = 50;
+export const CHAPTER2_LAST = CHAPTER2_FIRST + CHAPTER2_COUNT - 1;
+export const inChapter2 = (L: number) => L >= CHAPTER2_FIRST && L <= CHAPTER2_LAST;
+/** Rang dans le chapitre 2 (1 à 50). */
+const ch2 = (L: number) => L - CHAPTER2_FIRST + 1;
+
+/** Nombre de vagues du niveau L : 6 à 16 (campagne), 10 à 20 (chapitre 2). */
+export const levelWaves = (L: number) => bonusLevel(L)?.waves ?? (inChapter2(L) ? 10 + Math.floor(ch2(L) / 5) : 6 + Math.floor(L / 2));
 
 /** Décalage de difficulté du niveau L : sa vague w vaut la vague levelOffset(L) + w du mode infini. */
-export const levelOffset = (L: number) => bonusLevel(L)?.offset ?? Math.floor(1.6 * (L - 1));
+export const levelOffset = (L: number) => bonusLevel(L)?.offset ?? (inChapter2(L) ? 18 + Math.floor(ch2(L) * 0.3) : Math.floor(1.6 * (L - 1)));
 /**
  * Difficulté d'une vague de campagne, exprimée comme une vague du mode infini (la dernière vague
  * du niveau 20 vaut la vague 46).
  */
 export const levelWave = (L: number, w: number) => levelOffset(L) + w;
 
-/** Boss à la dernière vague des niveaux 5, 10 et 15 (le Titan, de plus en plus fort) et 20 (Bagou). */
-export const levelBoss = (L: number): 'titan' | 'devourer' | null => {
+/**
+ * Boss à la dernière vague : niveaux 5, 10 et 15 (le Titan) et 20 (Bagou) ; chapitre 2 : un Titan tous
+ * les 10 niveaux, Youg au milieu (niveau 50), Martine à la fin (75).
+ */
+export type BossId = 'titan' | 'devourer' | 'youg' | 'martine';
+export const levelBoss = (L: number): BossId | null => {
   const b = bonusLevel(L);
   if (b) return b.boss;
+  if (inChapter2(L)) {
+    const k = ch2(L);
+    return k === 25 ? 'youg' : k === CHAPTER2_COUNT ? 'martine' : k % 10 === 0 ? 'titan' : null;
+  }
   return L === LEVEL_COUNT ? 'devourer' : L % 5 === 0 ? 'titan' : null;
 };
 
@@ -630,7 +736,8 @@ export function levelGold(L: number): number {
   // Plusieurs entrées ou sorties : il faut défendre plus de terrain, on donne un peu plus d'or.
   const routes = mapOf(L).routes;
   const ends = (k: 0 | 1) => new Set(routes.map((r) => String(k ? r[r.length - 1] : r[0]))).size;
-  const extra = 1 + 0.2 * (ends(0) - 1) + 0.12 * (ends(1) - 1);
+  // Chapitre 2 : de plus grandes cartes à couvrir, 25 % d'or en plus.
+  const extra = (1 + 0.2 * (ends(0) - 1) + 0.12 * (ends(1) - 1)) * (inChapter2(L) ? 1.25 : 1);
   return START_GOLD + 10 * Math.round((0.65 * (105 * o + 7 * o * o) * extra) / 10);
 }
 
@@ -638,7 +745,7 @@ export function levelGold(L: number): number {
 
 /** Étoiles d'un niveau réussi : 3 sans perdre de vie, 2 avec au moins la moitié, 1 sinon. */
 export const starsFor = (lives: number, startLives: number) => (lives >= startLives ? 3 : 2 * lives >= startLives ? 2 : 1);
-export const MAX_STARS = 3 * (LEVEL_COUNT + BONUS_COUNT);
+export const MAX_STARS = 3 * (LEVEL_COUNT + BONUS_COUNT + CHAPTER2_COUNT);
 
 export interface PerkDef {
   id: string;

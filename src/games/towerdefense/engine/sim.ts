@@ -4,7 +4,7 @@
 // sont utilisés, pour un résultat identique au bit près des deux côtés.
 
 import {
-  BONUS_COUNT, bonusLevel, ENEMIES, FINAL_WAVE, hpMult, LEVEL_COUNT, levelBoss, levelGold, levelWave, levelWaves, MAPS, mapOf, MAX_LEVEL,
+  bonusLevel, CHAPTER2_FIRST, CHAPTER2_LAST, ENEMIES, inChapter2, FINAL_WAVE, hpMult, LEVEL_COUNT, levelBoss, levelGold, levelWave, levelWaves, MAPS, mapOf, MAX_LEVEL,
   maxTier, MINI, PERK_MAX, PERKS, runBonus, SELL_RATIO, START_GOLD, START_LIVES, starsFor, themeOf, tierOfWave, TOWERS, towersFor, towerStats,
   upgradeAt, waveBonus, waveBudget, type DamageType, type Perks, type TowerStats,
 } from './data.ts';
@@ -96,6 +96,7 @@ export interface RunOptions {
   mode: Mode;
   level: number; // campagne : 1 à 20, bonus : 21 à 25
   cleared: number; // niveaux de la campagne déjà terminés (débloque tours, améliorations et bonus)
+  cleared2?: number; // chapitre 2 : plus haut niveau réussi (26 à 75), 0 si aucun
   hero: { id: string; level: number } | null;
   perks?: Perks;
 }
@@ -104,9 +105,13 @@ export interface RunOptions {
 export function runError(o: RunOptions): string | null {
   if (o.mode !== 'campaign' && o.mode !== 'infinite') return 'mode inconnu';
   if (o.mode === 'campaign') {
-    if (!Number.isInteger(o.level) || o.level < 1 || o.level > LEVEL_COUNT + BONUS_COUNT) return 'niveau inconnu';
+    if (!Number.isInteger(o.level) || o.level < 1 || o.level > CHAPTER2_LAST) return 'niveau inconnu';
     const bonus = bonusLevel(o.level);
-    if (bonus ? o.cleared < bonus.unlock : o.level > o.cleared + 1) return 'niveau pas encore débloqué';
+    // Chapitre 2 : après le niveau 20, puis dans l'ordre.
+    const locked = inChapter2(o.level)
+      ? o.cleared < LEVEL_COUNT || (o.level > CHAPTER2_FIRST && (o.cleared2 ?? 0) < o.level - 1)
+      : bonus ? o.cleared < bonus.unlock : o.level > o.cleared + 1;
+    if (locked) return 'niveau pas encore débloqué';
   }
   for (const [id, n] of Object.entries(o.perks ?? {})) {
     if (!PERKS.some((p) => p.id === id) || !Number.isInteger(n) || n < 0 || n > PERK_MAX) return 'amélioration inconnue';
@@ -229,6 +234,9 @@ export interface WavePlan {
 const idx = (id: string) => ENEMIES.findIndex((e) => e.id === id);
 const TITAN = idx('titan');
 const DEVOURER = idx('devourer');
+const YOUG = idx('youg');
+const MARTINE = idx('martine');
+const LARVA = idx('larva');
 const BRUTE = idx('brute');
 const SPECTER = idx('specter');
 const SPLITTER = idx('splitter');
@@ -243,7 +251,8 @@ export function planWave(seed: number, w: number): WavePlan {
 /** Campagne : vague w du niveau L (difficulté de la vague levelWave(L, w) du mode infini). */
 export function planLevelWave(seed: number, L: number, w: number): WavePlan {
   const boss = w === levelWaves(L) ? levelBoss(L) : null;
-  const plan = composeWave(seed, w, levelWave(L, w), boss === 'devourer' ? DEVOURER : boss === 'titan' ? TITAN : null, false);
+  const bossIdx = boss === 'devourer' ? DEVOURER : boss === 'titan' ? TITAN : boss === 'youg' ? YOUG : boss === 'martine' ? MARTINE : null;
+  const plan = composeWave(seed, w, levelWave(L, w), bossIdx, false);
   plan.mult *= bonusLevel(L)?.hp ?? 1;
   return plan;
 }
@@ -568,7 +577,7 @@ export function startWave(s: RunState) {
     e.dots[oldest] = d;
   };
 
-  const slowImmune = (e: Enemy) => has(e, 'immune_slow') || (e.def === DEVOURER && e.phase >= 3);
+  const slowImmune = (e: Enemy) => has(e, 'immune_slow') || (e.def === DEVOURER && e.phase >= 3) || (e.def === YOUG && e.phase >= 2);
   const applySlow = (e: Enemy, pct: number, dur: number) => {
     if (slowImmune(e)) return;
     const p = has(e, 'slow_resist') ? pct / 2 : pct;
@@ -849,6 +858,45 @@ export function startWave(s: RunState) {
           for (let k = 0; k < (titanLevel === 1 ? 3 : 6); k++) spawn(BRUTE, e.route, Math.max(0, e.pos - 0.12 * k));
         }
       }
+      // Youg, le rat géant : des nuées de rats, enragé à mi-vie.
+      if (e.def === YOUG) {
+        e.clock += dt;
+        if (e.clock >= 6 - 1e-9) {
+          e.clock -= 6;
+          for (let k = 0; k < (e.phase >= 2 ? 8 : 5); k++) spawn(LARVA, e.route, Math.max(0, e.pos - 0.1 * (k + 1)));
+        }
+        if (e.phase === 1 && e.hp < e.maxHp * 0.5) {
+          e.phase = 2;
+          e.slowT = 0;
+          e.stunT = 0;
+        }
+      }
+      // Martine, la sorcière : crapaud, balai, téléportation, puis bouclier et rats.
+      if (e.def === MARTINE) {
+        e.clock += dt;
+        if (e.clock >= 12 - 1e-9) {
+          e.clock -= 12;
+          let target: Live | null = null;
+          for (const tw of towers) if (tw.disabledT <= 0 && (!target || tw.t.invested > target.t.invested)) target = tw;
+          if (target) target.disabledT = 6;
+        }
+        e.clock2 += dt;
+        if (e.clock2 >= 10 - 1e-9) e.clock2 -= 10;
+        e.airborne = e.clock2 >= 7 - 1e-9; // 3 s sur son balai toutes les 10 s
+        e.dig += dt;
+        if (e.dig >= 15 - 1e-9 && e.pos + 3 < lens[e.route]) {
+          e.dig = 0;
+          e.pos += 2;
+        }
+        if (e.phase === 1 && e.hp < e.maxHp * 0.5) {
+          e.phase = 2;
+          e.shield += e.maxHp * 0.15;
+          e.maxShield = Math.max(e.maxShield, e.shield);
+        }
+        if (e.phase >= 2 && e.clock >= 8 - 1e-9 && e.clock < 8 + dt - 1e-9) {
+          for (let k = 0; k < 6; k++) spawn(LARVA, e.route, Math.max(0, e.pos - 0.1 * (k + 1)));
+        }
+      }
       if (e.def === DEVOURER) {
         e.clock += dt;
         if (e.clock >= 15 - 1e-9) {
@@ -918,6 +966,7 @@ export function startWave(s: RunState) {
         }
       }
       if (e.def === DEVOURER && e.phase >= 3) speed *= 2;
+      if (e.def === YOUG && e.phase >= 2) speed *= 1.5;
       speed *= bonus.speedMult;
       if (e.slowT > 0) speed *= 1 - e.slow;
       if (e.stunT > 0) speed = 0;

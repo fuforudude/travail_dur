@@ -36,15 +36,16 @@ async function start(uid: string, mode: unknown, level: unknown, hero: unknown) 
   if ((count ?? 0) >= 10) throw new Refused('trop de parties, réessaie dans une minute');
   if (mode !== 'campaign' && mode !== 'infinite') throw new Refused('mode inconnu');
   if (hero !== null && (typeof hero !== 'string' || !HEROES.some((h) => h.id === hero))) throw new Refused('héros inconnu');
-  const [{ data: cleared, error: e1 }, { data: owned, error: e2 }, { data: perkRows, error: e3 }] = await Promise.all([
+  const [{ data: cleared, error: e1 }, { data: owned, error: e2 }, { data: perkRows, error: e3 }, { data: cleared2, error: e4 }] = await Promise.all([
     db.rpc('td_cleared', { uid }),
     hero ? db.from('td_heroes').select('level').eq('user_id', uid).eq('hero_id', hero).maybeSingle() : Promise.resolve({ data: null, error: null }),
     db.from('td_perks').select('perk_id, rank').eq('user_id', uid),
+    db.rpc('td_cleared2', { uid }), // chapitre 2 (0040_chapitre2.sql)
   ]);
-  if (e1 || e2 || e3) throw new Error((e1 ?? e2 ?? e3)!.message);
+  if (e1 || e2 || e3 || e4) throw new Error((e1 ?? e2 ?? e3 ?? e4)!.message);
   if (hero && !owned) throw new Refused('héros pas encore obtenu');
   const options = {
-    mode, level: mode === 'campaign' ? Number(level) : 0, cleared: Number(cleared ?? 0),
+    mode, level: mode === 'campaign' ? Number(level) : 0, cleared: Number(cleared ?? 0), cleared2: Number(cleared2 ?? 0),
     hero: hero && owned ? { id: hero as string, level: Number(owned.level) } : null,
     perks: Object.fromEntries((perkRows ?? []).map((r) => [String(r.perk_id), Number(r.rank)])),
   } as const;

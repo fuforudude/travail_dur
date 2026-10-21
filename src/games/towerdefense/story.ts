@@ -3,7 +3,8 @@
 // qui les a lâchés. Puis les niveaux bonus : les défis de Tonton Jean-Mi, 43 ans, qui parle « jeune »
 // avec dix ans de retard. Texte seulement : la difficulté de chaque niveau est dans engine/data.ts.
 
-import { LEVEL_COUNT, type EnemyDef } from './engine/data';
+import { CHAPTER2_FIRST, inChapter2, LEVEL_COUNT, type EnemyDef } from './engine/data';
+import { ACTS2, BOSSES2, PROLOGUE2, STORY2 } from './story2';
 
 export interface Line {
   who: string;
@@ -27,7 +28,11 @@ export const ACTS: Act[] = [
   { name: 'Acte III · Les Tunnels de Bagou', from: 15 },
 ];
 export const BONUS_ACT: Act = { name: 'Bonus · Les Défis de Tonton Jean-Mi', from: LEVEL_COUNT + 1 };
-export const actOf = (L: number) => (L > LEVEL_COUNT ? BONUS_ACT : [...ACTS].reverse().find((a) => L >= a.from) ?? ACTS[0]);
+export const actOf = (L: number) =>
+  inChapter2(L) ? [...ACTS2].reverse().find((a) => L >= a.from) ?? ACTS2[0] : L > LEVEL_COUNT ? BONUS_ACT : [...ACTS].reverse().find((a) => L >= a.from) ?? ACTS[0];
+export { ACTS2 };
+/** Prologue d'un niveau : le début de chaque chapitre. */
+export const prologueOf = (L: number): Line[] => (L === 1 ? PROLOGUE : L === CHAPTER2_FIRST ? PROLOGUE2 : []);
 
 /** Nom des boss dans la campagne : des brainrots, puis Bagou (ailleurs, le nom de l'ennemi). */
 const BOSSES: Record<number, string> = {
@@ -38,7 +43,7 @@ const BOSSES: Record<number, string> = {
   23: 'Tung Tung Tung Dab',
   25: 'Bagou 2 : le Retour (en VF)',
 };
-export const bossName = (d: EnemyDef, level: number) => BOSSES[level] ?? d.name;
+export const bossName = (d: EnemyDef, level: number) => BOSSES[level] ?? BOSSES2[level] ?? d.name;
 
 const G = 'Général Moustache';
 const S = 'Sergente Gisèle';
@@ -322,4 +327,5 @@ export const BONUS_STORY: LevelStory[] = [
 ];
 
 /** Histoire du niveau L (campagne ou bonus). */
-export const levelStory = (L: number): LevelStory => (L > LEVEL_COUNT ? BONUS_STORY[L - LEVEL_COUNT - 1] : STORY[L - 1]);
+export const levelStory = (L: number): LevelStory =>
+  inChapter2(L) ? STORY2[L - CHAPTER2_FIRST] : L > LEVEL_COUNT ? BONUS_STORY[L - LEVEL_COUNT - 1] : STORY[L - 1];

@@ -218,7 +218,7 @@ export function drawTower(g: CanvasRenderingContext2D, id: string, level: number
 const SIZE: Record<string, number> = {
   prowler: 0.26, runner: 0.2, brute: 0.32, larva: 0.14, bat: 0.24, armored: 0.3, shade: 0.24, healer: 0.26, shieldbearer: 0.27,
   splitter: 0.3, troll: 0.36, shaman: 0.27, burrower: 0.29, colossus: 0.42, specter: 0.28, golem: 0.4, wyvern: 0.38,
-  necromancer: 0.3, titan: 0.48, devourer: 0.56,
+  necromancer: 0.3, titan: 0.48, devourer: 0.56, youg: 0.5, martine: 0.52,
 };
 export const enemyRadius = (id: string, cell: number, mini = false) => (mini ? 0.18 : SIZE[id] ?? 0.26) * cell;
 
@@ -332,6 +332,30 @@ export function drawEnemy(g: CanvasRenderingContext2D, id: string, cx: number, c
       g.lineTo(r * 0.6, -r * 0.7);
       g.closePath();
       g.fill();
+    } else if (id === 'youg') {
+      // Youg : oreilles rondes, queue, yeux rouges.
+      g.beginPath();
+      g.arc(-r * 0.6, -r * 0.75, r * 0.32, 0, Math.PI * 2);
+      g.arc(r * 0.6, -r * 0.75, r * 0.32, 0, Math.PI * 2);
+      g.fill();
+      g.beginPath();
+      g.moveTo(r * 0.9, r * 0.3);
+      g.quadraticCurveTo(r * 1.8, r * 0.2 + Math.sin(t * 6) * r * 0.3, r * 1.6, -r * 0.5);
+      g.stroke();
+      g.fillStyle = '#e0302a';
+      g.fillRect(-r * 0.4, -r * 0.2, r * 0.22, r * 0.22);
+      g.fillRect(r * 0.18, -r * 0.2, r * 0.22, r * 0.22);
+    } else if (id === 'martine') {
+      // Martine : chapeau pointu de sorcière.
+      g.fillStyle = '#2a1f3d';
+      g.beginPath();
+      g.moveTo(-r * 1.05, -r * 0.55);
+      g.lineTo(r * 1.05, -r * 0.55);
+      g.lineTo(r * 0.15, -r * 1.9);
+      g.closePath();
+      g.fill();
+      g.fillStyle = '#8a4fd6';
+      g.fillRect(-r * 0.55, -r * 0.75, r * 1.1, r * 0.18);
     } else if (id === 'devourer') {
       const open = 0.25 + 0.2 * Math.sin(t * 3);
       g.fillStyle = '#000000';

@@ -6,7 +6,7 @@ import { load, save } from '../../core/storage';
 import { ensureAccount } from '../../net/auth';
 import { errorMessage, getSupabase, multiConfigured } from '../../net/supabase';
 import { skinOf, type Finish, type Rarity } from './catalog';
-import { LEVEL_COUNT, PERK_MAX, perkCost, type Perks } from './engine/data';
+import { inChapter2, LEVEL_COUNT, PERK_MAX, perkCost, type Perks } from './engine/data';
 import type { Mode, RunState } from './engine/sim';
 
 export interface Meta {
@@ -14,6 +14,7 @@ export interface Meta {
   equipped: Map<string, string>; // emplacement (ts:<tour>, es:<ennemi>) → skin
   heroes: Map<string, number>; // héros → niveau
   cleared: number; // niveaux de la campagne terminés
+  cleared2: number; // chapitre 2 : plus haut niveau réussi (26 à 75), 0 si aucun
   stars: Map<number, number>; // niveau → meilleures étoiles
   perks: Map<string, number>; // amélioration de la boutique à étoiles → rang
   best: number; // record du mode infini
@@ -21,7 +22,7 @@ export interface Meta {
 }
 
 export const emptyMeta = (): Meta => ({
-  owned: new Set(), equipped: new Map(), heroes: new Map(), cleared: 0, stars: new Map(), perks: new Map(), best: 0, online: false,
+  owned: new Set(), equipped: new Map(), heroes: new Map(), cleared: 0, cleared2: 0, stars: new Map(), perks: new Map(), best: 0, online: false,
 });
 
 /** Étoiles gagnées, dépensées et disponibles. */
@@ -32,6 +33,9 @@ export function starBalance(meta: Meta) {
   for (const r of meta.perks.values()) for (let k = 1; k <= r; k++) spent += perkCost(k);
   return { earned, spent, left: earned - spent };
 }
+
+/** Plus haut niveau réussi du chapitre 2 (0 si aucun). */
+const chapter2Max = (stars: [number, number][]) => Math.max(0, ...stars.map(([L]) => L).filter(inChapter2));
 
 export const perksOf = (meta: Meta): Perks => Object.fromEntries(meta.perks);
 
@@ -50,7 +54,7 @@ const fromCache = (): Meta => {
   const c = load<Cached | null>(CACHE, null);
   return {
     owned: new Set(c?.owned ?? []), equipped: new Map(c?.equipped ?? []), heroes: new Map(c?.heroes ?? []),
-    cleared: c?.cleared ?? 0, stars: new Map(c?.stars ?? []), perks: new Map(c?.perks ?? []), best: c?.best ?? 0, online: false,
+    cleared: c?.cleared ?? 0, cleared2: chapter2Max(c?.stars ?? []), stars: new Map(c?.stars ?? []), perks: new Map(c?.perks ?? []), best: c?.best ?? 0, online: false,
   };
 };
 const toCache = (m: Meta) =>
@@ -67,6 +71,7 @@ export function saveLocalProgress(meta: Meta) {
 export function recordStars(meta: Meta, level: number, stars: number) {
   if (stars > (meta.stars.get(level) ?? 0)) meta.stars.set(level, stars);
   if (level <= LEVEL_COUNT && level > meta.cleared) meta.cleared = level;
+  if (inChapter2(level) && level > meta.cleared2) meta.cleared2 = level;
   saveLocalProgress(meta);
 }
 
@@ -103,6 +108,7 @@ export async function loadMeta(): Promise<Meta> {
       equipped: new Map((equipped.data ?? []).map((r) => [String(r.slot), String(r.item_id)])),
       heroes: new Map((heroes.data ?? []).map((r) => [String(r.hero_id), Number(r.level)])),
       cleared: Math.max(0, ...[...stars.keys()].filter((L) => L <= LEVEL_COUNT)),
+      cleared2: chapter2Max([...stars]),
       stars,
       perks: new Map((perks.data ?? []).map((r) => [String(r.perk_id), Number(r.rank)])),
       best: Number(best.data?.[0]?.wave ?? 0),

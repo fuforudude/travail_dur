@@ -10,7 +10,7 @@ import { h, hints } from '../../ui/dom';
 import { spatialNav } from '../../ui/menu';
 import type { Game, GameContext } from '../types';
 import {
-  BONUS, bonusLevel, ENEMIES, FINAL_WAVE, HEROES, LEVEL_COUNT, levelBoss, levelWaves, mapOf, MAX_LEVEL, MAX_STARS, maxTier,
+  BONUS, bonusLevel, CHAPTER2_COUNT, CHAPTER2_FIRST, CHAPTER2_LAST, ENEMIES, inChapter2, FINAL_WAVE, HEROES, LEVEL_COUNT, levelBoss, levelWaves, mapOf, MAX_LEVEL, MAX_STARS, maxTier,
   PERK_MAX, perkCost, PERKS, TIER_UNLOCK, TOWERS, towersFor, towerStats, type TowerStats,
 } from './engine/data';
 import {
@@ -22,7 +22,7 @@ import {
 } from './net';
 import { enqueue, onUpload, startUploads } from './uploads';
 import { drawEnemy, drawTower, enemyLook, enemyRadius, previewItem, readPalette, towerLook, type Palette } from './render';
-import { ACTS, actOf, BONUS_ACT, bossName, levelStory, PROLOGUE, type Line } from './story';
+import { ACTS, ACTS2, actOf, BONUS_ACT, bossName, levelStory, prologueOf, type Line } from './story';
 import './td.css';
 
 interface Saved {
@@ -42,7 +42,13 @@ const plural = (n: number, word: string) => `${n} ${word}${n > 1 && !/[sx]$/.tes
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ','));
 const towerName = (id: string) => TOWERS.find((t) => t.id === id)?.name ?? id;
 /** Points d'un niveau réussi (voir 0032_td_campagne.sql, gains × GAIN_MULT depuis 0034_gains.sql). */
-const levelPoints = (L: number, first: boolean) => GAIN_MULT * (first ? 100 + 40 * L : 5 * L);
+const levelPoints = (L: number, first: boolean) => GAIN_MULT * (first ? 100 + 40 * Math.min(L, 45) : 5 * Math.min(L, 45));
+/**
+ * Numéro affiché : le chapitre 2 continue la campagne (21 à 70) ; en interne il occupe 26 à 75,
+ * après les défis bonus (21 à 25, affichés B1 à B5).
+ */
+const shownLevel = (L: number) => (inChapter2(L) ? L - 5 : L);
+const levelTitle = (L: number) => (bonusLevel(L) ? `Défi ${L - LEVEL_COUNT}` : `Niveau ${shownLevel(L)}`);
 const starText = (n: number) => '★'.repeat(n) + '☆'.repeat(3 - n);
 
 /** Ce qui rend la carte du niveau L particulière (entrées, sorties, taille, tour spéciale). */
@@ -131,7 +137,7 @@ function mount(ctx: GameContext): () => void {
       const b = h(
         'button',
         { class: `td-level${stars ? ' done' : ''}${open && !stars ? ' next' : ''}${bonus ? ' td-bonus' : ''}`, type: 'button', disabled: !open, 'data-id': `level:${L}` },
-        h('b', {}, bonus ? `B${L - LEVEL_COUNT}` : String(L)),
+        h('b', {}, bonus ? `B${L - LEVEL_COUNT}` : String(shownLevel(L))),
         h('span', { class: 'td-level-name' }, open ? levelStory(L).name : '???'),
         h('span', { class: 'td-stars' + (stars ? '' : ' muted') }, open ? starText(stars) : `🔒 ${lockText || ''}`.trim()),
         h('span', { class: 'small muted' }, `${levelWaves(L)} vagues${boss ? ' · boss' : ''}${open && traits.length ? ` · ${traits.join(' · ')}` : ''}`),
@@ -193,6 +199,18 @@ function mount(ctx: GameContext): () => void {
         return h('section', { class: 'td-act' }, h('h3', {}, act.name), h('div', { class: 'td-levels' }, ...buttons));
       });
       const bonusButtons = BONUS.map((b, k) => levelButton(LEVEL_COUNT + 1 + k, cleared >= b.unlock, `après le niveau ${b.unlock}`));
+      // Chapitre 2 : après le niveau 20, puis dans l'ordre.
+      const cleared2 = meta.cleared2;
+      const acts2 = ACTS2.map((act, k) => {
+        const to = (ACTS2[k + 1]?.from ?? CHAPTER2_LAST + 1) - 1;
+        const buttons: HTMLElement[] = [];
+        for (let L = act.from; L <= to; L++) {
+          const open = cleared >= LEVEL_COUNT && (L === CHAPTER2_FIRST || cleared2 >= L - 1);
+          buttons.push(levelButton(L, open, L === CHAPTER2_FIRST ? `après le niveau ${LEVEL_COUNT}` : ''));
+        }
+        return h('section', { class: 'td-act' }, h('h3', {}, act.name), h('div', { class: 'td-levels' }, ...buttons));
+      });
+      const done2 = [...meta.stars.keys()].filter(inChapter2).length;
 
       // Boutique à étoiles
       const balance = starBalance(meta);
@@ -235,12 +253,14 @@ function mount(ctx: GameContext): () => void {
             'div',
             {},
             h('h2', {}, 'L’expédition'),
-            h('p', { class: 'muted small' }, `${cleared} / ${LEVEL_COUNT} niveaux · ★ ${balance.earned} / ${MAX_STARS}`),
+            h('p', { class: 'muted small' }, `${cleared} / ${LEVEL_COUNT} niveaux${cleared >= LEVEL_COUNT ? ` · chapitre 2 : ${done2} / ${CHAPTER2_COUNT}` : ''} · ★ ${balance.earned} / ${MAX_STARS}`),
           ),
           h('div', { class: 'td-deck-actions' }, crates),
         ),
         ...acts,
         h('section', { class: 'td-act' }, h('h3', {}, BONUS_ACT.name), h('div', { class: 'td-levels' }, ...bonusButtons)),
+        h('h2', { class: 'td-chapter' }, 'Chapitre 2 · La chasse à la sorcière'),
+        ...acts2,
         h('section', { class: 'td-act' }, h('h3', {}, 'Après l’expédition'), h('div', { class: 'td-levels' }, infinite)),
         h(
           'section',
@@ -267,7 +287,8 @@ function mount(ctx: GameContext): () => void {
         return;
       }
       if (kept) return window.scrollTo(0, scrollY);
-      const target = focusLevel ? `level:${focusLevel}` : `level:${Math.min(LEVEL_COUNT, cleared + 1)}`;
+      const next = cleared < LEVEL_COUNT ? cleared + 1 : cleared2 ? Math.min(CHAPTER2_LAST, cleared2 + 1) : CHAPTER2_FIRST;
+      const target = focusLevel ? `level:${focusLevel}` : `level:${next}`;
       (wrap.querySelector<HTMLElement>(`[data-id="${target}"]`) ?? wrap.querySelector<HTMLElement>('.td-level'))?.focus();
     };
 
@@ -275,7 +296,7 @@ function mount(ctx: GameContext): () => void {
       if (starting) return;
       focusLevel = L;
       if (mode === 'infinite') return void begin(mode, 0);
-      const lines = [...(L === 1 ? PROLOGUE : []), ...levelStory(L).intro];
+      const lines = [...prologueOf(L), ...levelStory(L).intro];
       show(() => storyScreen(`${levelTitle(L)} · ${levelStory(L).name}`, actOf(L).name, lines, () => void begin(mode, L), () => show(menuScreen)));
     };
 
@@ -295,7 +316,6 @@ function mount(ctx: GameContext): () => void {
     return offKeys;
   };
 
-  const levelTitle = (L: number) => (L > LEVEL_COUNT ? `Défi ${L - LEVEL_COUNT}` : `Niveau ${L}`);
 
   /** Lance une partie : classée si le serveur répond, sinon jouée sur place. */
   let launching = false;
@@ -759,7 +779,7 @@ function mount(ctx: GameContext): () => void {
       const w = running ? running.number : s.wave + 1;
       const total = campaign ? levelWaves(s.level) : FINAL_WAVE;
       stats.replaceChildren(
-        campaign ? h('span', { class: 'stat' }, s.level > LEVEL_COUNT ? 'Défi ' : 'Niveau ', h('b', {}, String(s.level > LEVEL_COUNT ? s.level - LEVEL_COUNT : s.level))) : '',
+        campaign ? h('span', { class: 'stat' }, bonusLevel(s.level) ? 'Défi ' : 'Niveau ', h('b', {}, String(bonusLevel(s.level) ? s.level - LEVEL_COUNT : shownLevel(s.level)))) : '',
         h('span', { class: 'stat' }, 'Vague ', h('b', {}, w <= total ? `${Math.min(w, total)}/${total}` : `${w} ∞`)),
         h('span', { class: 'stat' }, 'Vies ', h('b', { 'data-k': 'lives' }, String(s.lives))),
         h('span', { class: 'stat' }, 'Or ', h('b', { 'data-k': 'gold' }, String(s.gold))),
@@ -830,7 +850,7 @@ function mount(ctx: GameContext): () => void {
     };
 
     const wonOverlay = () => {
-      const bonus = s.level > LEVEL_COUNT;
+      const bonus = s.level > LEVEL_COUNT; // défi bonus ou chapitre 2 : pas de déblocage de tours
       const first = bonus ? starsBefore === 0 : s.level > clearedBefore;
       const unlocks = first && !bonus ? unlocksBetween(clearedBefore, s.level) : [];
       const bonusUnlocked = !bonus && first ? BONUS.filter((b) => b.unlock > clearedBefore && b.unlock <= s.level) : [];
@@ -871,7 +891,7 @@ function mount(ctx: GameContext): () => void {
     };
     const outro = () => {
       remove(SAVE_KEY);
-      focusLevel = s.level > LEVEL_COUNT ? s.level : Math.min(LEVEL_COUNT, s.level + 1);
+      focusLevel = bonusLevel(s.level) ? s.level : inChapter2(s.level) ? Math.min(CHAPTER2_LAST, s.level + 1) : Math.min(LEVEL_COUNT, s.level + 1);
       const L = s.level;
       show(() => storyScreen(`${levelTitle(L)} · ${levelStory(L).name}`, actOf(L).name, levelStory(L).outro, () => show(menuScreen), () => show(menuScreen)));
     };
