@@ -21,5 +21,5 @@ jobs:
       # Migrations rejouées dans PGlite, droits des fonctions, règles de sécurité (scripts/sql-test.mjs).
       - run: npm run test:sql
       # Le moteur du tower defense copié dans la fonction serveur doit être à jour, et le code doit compiler.
-      - run: npm run td:sync && git diff --exit-code supabase/functions/td/engine
+      - run: npm run td:sync && git diff --exit-code supabase/functions
       - run: npx tsc

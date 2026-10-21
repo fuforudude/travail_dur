@@ -23,6 +23,8 @@ export const games: GameInfo[] = [
   { id: 'chess', name: 'Échecs', description: 'Solo contre l’ordinateur ou à deux en salon', modes: ['solo', 'multi'], load: () => import('./chess').then((m) => m.chess) },
   { id: 'checkers', name: 'Dames', description: 'Dames internationales, solo ou à deux', modes: ['solo', 'multi'], load: () => import('./checkers').then((m) => m.checkers) },
   { id: 'quoridor', name: 'Quoridor', description: 'Le corridor : murs et course, solo ou à deux', modes: ['solo', 'multi'], load: () => import('./quoridor').then((m) => m.quoridor) },
+  { id: 'chess4', name: 'Échecs à 4', description: 'Chacun pour soi sur le plateau en croix', modes: ['solo', 'multi'], load: () => import('./four').then((m) => m.chess4) },
+  { id: 'quoridor4', name: 'Corridor à 4', description: 'Quatre pions, cinq murs chacun', modes: ['solo', 'multi'], load: () => import('./four').then((m) => m.quoridor4) },
   { id: 'quarto', name: 'Quarto', description: 'Aligner un point commun, solo ou à deux', modes: ['solo', 'multi'], load: () => import('./quarto').then((m) => m.quarto) },
 ];
 

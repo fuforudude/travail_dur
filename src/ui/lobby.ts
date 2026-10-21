@@ -5,7 +5,7 @@ import { getGame } from '../games/registry';
 import type { Game } from '../games/types';
 import { ensureAccount } from '../net/auth';
 import { isValidCode, normalizeCode, Room, type Player } from '../net/room';
-import { multiConfigured } from '../net/supabase';
+import { getSupabase, multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { nameEl } from '../net/cosmetics';
 import { friendList, inviteToRoom, type Friend } from '../net/friends';
@@ -14,6 +14,9 @@ import { h, hints } from './dom';
 import { page } from './layout';
 
 const DUEL_GAMES: DuelGame[] = ['connect4', 'tictactoe', 'chess', 'checkers', 'quoridor', 'quarto'];
+/** Jeux à 4 (fonction serveur board4) : lancés pour tout le salon, l'ordinateur complète. */
+const FOUR_GAMES = ['chess4', 'quoridor4'] as const;
+type FourGame = (typeof FOUR_GAMES)[number];
 let lastGame = 0; // jeu proposé par défaut : le dernier choisi
 
 /** `#/join` : saisie d'un code de salon. */
@@ -99,7 +102,7 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
   const gameName = (id: string) => getGame(id)?.name ?? id;
 
   let loadingGame = false;
-  const startGame = (matchId: string, gameId: DuelGame) => {
+  const startGame = (matchId: string, gameId: DuelGame | FourGame) => {
     const info = getGame(gameId);
     if (!room || unmountGame || loadingGame || !info) return;
     incoming = outgoing = null;
@@ -201,6 +204,36 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
     render();
   };
 
+  // Partie à 4 : avec les joueurs du salon qui ne sont pas déjà en partie (3 au plus).
+  let launching4 = false;
+  const startFour = (game: FourGame) => {
+    if (!room || launching4) return;
+    launching4 = true;
+    void act(async () => {
+      try {
+        const { board4 } = await import('../games/four/online4');
+        const players = others().filter((p) => !p.busy).slice(0, 3).map((p) => p.id);
+        const { id } = await board4<{ id: string }>({ op: 'create', game, room: code, players });
+        startGame(id, game);
+      } finally {
+        launching4 = false;
+      }
+    });
+  };
+  /** Nouvelle partie à 4 où je suis : on la rejoint tout de suite. */
+  const watchFour = async () => {
+    const supabase = await getSupabase();
+    if (!supabase) return () => {};
+    const channel = supabase
+      .channel(`m4room:${code}:${me}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'matches4', filter: `room=eq.${code}` }, (p) => {
+        const m = p.new as { id: string; game: FourGame; players: (string | null)[]; status: string; plies: number };
+        if (m.players?.includes(me) && m.status === 'playing' && m.plies === 0 && !unmountGame && !loadingGame) startGame(m.id, m.game);
+      })
+      .subscribe();
+    return () => void supabase.removeChannel(channel);
+  };
+
   const pickGame = (i: number) => {
     gameIndex = lastGame = (i + DUEL_GAMES.length) % DUEL_GAMES.length;
     render();
@@ -254,6 +287,21 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
           { class: 'picker' },
           h('span', { class: 'muted small' }, 'Jeu du défi'),
           h('span', { class: 'picker-games', role: 'group', 'aria-label': 'Jeu du défi' }, ...chips),
+        ),
+        h(
+          'div',
+          { class: 'picker' },
+          h('span', { class: 'muted small' }, 'À 4 joueurs'),
+          h(
+            'span',
+            { class: 'picker-games' },
+            ...FOUR_GAMES.map((g) => {
+              const b = h('button', { class: 'chip', type: 'button', disabled: launching4 }, gameName(g));
+              b.addEventListener('mousedown', (e) => e.preventDefault());
+              b.addEventListener('click', () => startFour(g));
+              return b;
+            }),
+          ),
         ),
         h('h2', {}, `Joueurs (${room.players.length})`),
         h('ul', { class: 'players' }, ...items),
@@ -347,6 +395,9 @@ export function lobbyView(root: HTMLElement, [rawCode]: string[]): (() => void) 
     const unwatch = await watchMyMatches(me, onMatch);
     if (disposed) return unwatch();
     offs.push(unwatch);
+    const unwatch4 = await watchFour();
+    if (disposed) return unwatch4();
+    offs.push(unwatch4);
     (await pendingChallenges(me, code)).forEach(onMatch);
     render();
   })().catch((err: Error) => {

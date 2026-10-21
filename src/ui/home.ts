@@ -27,6 +27,8 @@ const LOOK: Record<string, { icon: string; tone: number; tags: string[] }> = {
   checkers: { icon: '◉', tone: 4, tags: ['Solo', 'Multi'] },
   quoridor: { icon: '▥', tone: 3, tags: ['Solo', 'Multi'] },
   quarto: { icon: '◧', tone: 1, tags: ['Solo', 'Multi'] },
+  chess4: { icon: '♛︎', tone: 2, tags: ['Solo', 'À 4'] },
+  quoridor4: { icon: '▦', tone: 4, tags: ['Solo', 'À 4'] },
 };
 
 let lastFocus = ''; // pour revenir sur la même carte en rentrant à l'accueil

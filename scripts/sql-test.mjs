@@ -130,6 +130,34 @@ else fail('account_delete a laissé des traces du compte');
   else fail(`vente : ${after - before} points reçus (attendu ${Math.floor((Number(base.price) * 67) / 100)}), meuble encore là : ${gone}`);
 }
 
+// Parties à 4 (0039) : le gagnant humain est payé à la fin, pas pour une partie trop courte.
+{
+  const p1 = await newUser();
+  const p2 = await newUser();
+  const bal = async (u) => Number((await db.query(`select coalesce((select balance from public.wallets where user_id = $1), 0) as b`, [u])).rows[0].b);
+  const mk = async (plies) =>
+    (await db.query(
+      `insert into public.matches4 (game, room, players, names, board, turn, plies, created_by)
+       values ('chess4', 'ABCD', array[$1::uuid, $2::uuid, null, null], array['a','b','o1','o2'], '[]', 0, $3, $1) returning id`,
+      [p1, p2, plies],
+    )).rows[0].id;
+  await db.query(`select public.points_open($1)`, [p1]); // les 100 points de bienvenue d'abord
+  const short = await mk(5);
+  const before = await bal(p1);
+  await db.query(`update public.matches4 set status = 'won', winner = 0, turn = null where id = $1`, [short]);
+  const afterShort = await bal(p1);
+  const long = await mk(40);
+  await db.query(`update public.matches4 set status = 'won', winner = 0, turn = null where id = $1`, [long]);
+  const afterLong = await bal(p1);
+  if (afterShort === before && afterLong - afterShort === 3 * 120 + 30) ok('partie à 4 : le gagnant reçoit 360 points + 30 de partie jouée, rien pour une partie trop courte');
+  else fail(`partie à 4 : +${afterShort - before} (courte), +${afterLong - afterShort} (longue)`);
+  const seen = (await as(p2, `select count(*)::int as n from public.matches4`)).rows[0].n;
+  const outsider = await newUser();
+  const hidden = (await as(outsider, `select count(*)::int as n from public.matches4`)).rows[0].n;
+  if (seen === 2 && hidden === 0) ok('une partie à 4 n’est visible que de ses joueurs');
+  else fail(`visibilité des parties à 4 : joueur ${seen}, étranger ${hidden}`);
+}
+
 // Double authentification des admins (0037) : sans code (aal1), les actions d'admin sont refusées.
 const admin = await newUser();
 await db.query(`insert into public.admins (user_id) values ($1)`, [admin]);
