@@ -58,6 +58,27 @@ export const scareNow = (target: string) => rpc<void>('admin_scare', { target })
 export const deletePlayer = (target: string) => rpc<void>('admin_delete_player', { target });
 export const giveItem = (target: string, item: string) => rpc<void>('admin_give', { target, item });
 
+/** Suspension en cours d'un joueur (0045_suspension.sql) ; `until` null : sans fin. */
+export interface Suspension {
+  until: string | null;
+  reason: string | null;
+}
+/** `hours` 0 : sans fin. */
+export const suspendPlayer = (target: string, hours: number, reason: string) => rpc<void>('admin_suspend', { target, hours, reason });
+export const unsuspendPlayer = (target: string) => rpc<void>('admin_unsuspend', { target });
+
+/** Suspensions en cours parmi ces joueurs (les suspensions terminées sont ignorées). */
+export async function suspensionsOf(ids: string[]): Promise<Map<string, Suspension>> {
+  const supabase = await getSupabase();
+  if (!supabase || !ids.length) return new Map();
+  const { data, error } = await supabase.from('suspensions').select('user_id, until, reason').in('user_id', ids);
+  if (error) throw serverError(error);
+  const now = Date.now();
+  return new Map(
+    ((data as (Suspension & { user_id: string })[] | null) ?? []).filter((s) => !s.until || Date.parse(s.until) > now).map((s) => [s.user_id, { until: s.until, reason: s.reason }]),
+  );
+}
+
 /** Envoie une photo dans le stockage « artworks » puis l'ajoute à la liste des photos à accrocher. */
 export async function addArtwork(file: File, title: string): Promise<void> {
   const supabase = await getSupabase();

@@ -11,7 +11,11 @@ import {
   renamePlayer,
   scareNow,
   setCurse,
+  suspendPlayer,
+  suspensionsOf,
+  unsuspendPlayer,
   type PlayerRow,
+  type Suspension,
 } from '../net/admin';
 import { artworks, BASES, FINISHES, itemName } from '../net/apartment';
 import { nameEl } from '../net/cosmetics';
@@ -24,6 +28,10 @@ import { page } from './layout';
 
 const SLOT_NAMES: Record<string, string> = { name_color: 'couleur de pseudo', name_effect: 'effet de pseudo', title: 'titre', skin: 'skin' };
 const LEVELS = ['', 'rare (8 à 15 min)', 'normal (3 à 8 min)', 'fréquent (1 à 3 min)'];
+/** Durées de suspension proposées, en heures (0 : sans fin). */
+const DURATIONS: [number, string][] = [[1, '1 heure'], [24, '1 jour'], [72, '3 jours'], [168, '1 semaine'], [720, '30 jours'], [0, 'Sans fin']];
+const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+const suspendedText = (s: Suspension) => (s.until ? `suspendu jusqu’au ${when(s.until)}` : 'suspendu sans fin');
 const ACTIONS: Record<string, string> = {
   points: 'Points',
   rename: 'Renommage',
@@ -32,6 +40,8 @@ const ACTIONS: Record<string, string> = {
   scare: 'Screamer',
   give: 'Don d’objet',
   delete: 'Joueur supprimé',
+  suspend: 'Suspension',
+  unsuspend: 'Fin de suspension',
   artwork_add: 'Photo ajoutée',
   artwork_delete: 'Photo supprimée',
 };
@@ -62,11 +72,13 @@ export function adminView(root: HTMLElement): () => void {
   const results = h('tbody', {});
   const detail = h('div', { class: 'admin-detail card', hidden: true });
   let players: PlayerRow[] = [];
+  let suspended = new Map<string, Suspension>();
   let selected: PlayerRow | null = null;
 
   const loadPlayers = async () => {
     try {
       players = await findPlayers(search.value.trim());
+      suspended = await suspensionsOf(players.map((p) => p.id)).catch(() => new Map<string, Suspension>()); // migration 0045 pas encore passée
       results.replaceChildren(
         ...players.map((p) => {
           // Les trois actions courantes, directement sur la ligne.
@@ -101,7 +113,12 @@ export function adminView(root: HTMLElement): () => void {
             { class: selected?.id === p.id ? 'me' : '' },
             h('td', {}, nameEl(p.id, p.username), p.is_admin ? h('span', { class: 'tag' }, ' admin') : '', p.verified ? '' : h('span', { class: 'muted small' }, ' invité')),
             h('td', {}, formatPoints(p.balance)),
-            h('td', {}, p.cursed ? h('span', { class: 'tag danger-tag' }, `maudit · ${p.curse_level}`) : ''),
+            h(
+              'td',
+              {},
+              p.cursed ? h('span', { class: 'tag danger-tag' }, `maudit · ${p.curse_level}`) : '',
+              suspended.has(p.id) ? h('span', { class: 'tag danger-tag', title: suspended.get(p.id)!.reason ?? '' }, suspendedText(suspended.get(p.id)!)) : '',
+            ),
             h('td', { class: 'admin-actions' }, edit, curse, del),
           );
         }),
@@ -158,6 +175,26 @@ export function adminView(root: HTMLElement): () => void {
     const gift = h('button', { class: 'field', type: 'button' }, 'Donner l’objet');
     gift.addEventListener('click', () => void run(() => giveItem(p.id, item.value), 'Objet donné.'));
 
+    // Suspension : plus de connexion ni d'accès au site pendant la durée choisie (0045_suspension.sql).
+    const susp = suspended.get(p.id);
+    const duration = h('select', { class: 'field', 'aria-label': 'Durée' }, ...DURATIONS.map(([hrs, label]) => h('option', { value: hrs, selected: hrs === 24 }, label)));
+    const why = h('input', { class: 'field', placeholder: 'Raison (montrée au joueur)', maxlength: 200, 'aria-label': 'Raison de la suspension' });
+    const suspend = h('button', { class: 'field danger', type: 'button', disabled: p.is_admin }, 'Suspendre');
+    let sureSuspend = false;
+    suspend.addEventListener('click', async () => {
+      if (!sureSuspend) {
+        sureSuspend = true;
+        suspend.textContent = 'Confirmer ?';
+        const label = DURATIONS.find(([hrs]) => String(hrs) === duration.value)?.[1].toLowerCase() ?? '';
+        return say(`${p.username} sera déconnecté et ne pourra plus rien faire sur le site (${label}). Clique à nouveau pour confirmer.`);
+      }
+      if (await run(() => suspendPlayer(p.id, Number(duration.value), why.value.trim()), `${p.username} est suspendu.`)) void loadPlayers();
+    });
+    const lift = h('button', { class: 'field', type: 'button' }, 'Lever la suspension');
+    lift.addEventListener('click', async () => {
+      if (await run(() => unsuspendPlayer(p.id), `${p.username} n’est plus suspendu.`)) void loadPlayers();
+    });
+
     const row = (label: string, ...controls: HTMLElement[]) => h('div', { class: 'admin-row' }, h('span', { class: 'muted small' }, label), h('div', { class: 'admin-controls' }, ...controls));
     detail.hidden = false;
     detail.replaceChildren(
@@ -166,6 +203,11 @@ export function adminView(root: HTMLElement): () => void {
       row('Pseudo', newName, rename),
       row('Malédiction', level, curse, scare),
       row('Objet', item, gift),
+      p.is_admin
+        ? ''
+        : susp
+          ? row('Suspension', h('span', { class: 'tag danger-tag' }, suspendedText(susp)), ...(susp.reason ? [h('span', { class: 'small' }, `Raison : ${susp.reason}`)] : []), lift)
+          : row('Suspension', duration, why, suspend),
       h('p', { class: 'muted small' }, `Identifiant : ${p.id}`),
     );
     results.querySelectorAll('tr').forEach((tr, i) => tr.classList.toggle('me', players[i]?.id === p.id));

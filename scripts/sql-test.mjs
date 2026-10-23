@@ -220,6 +220,36 @@ const withCode = await throws(() => asAdmin('aal2', `select public.admin_points(
 if (!withCode) ok('un admin avec double authentification peut agir');
 else fail(`admin avec double authentification refusé : ${withCode}`);
 
+// Suspension (0045) : le compte suspendu est bloqué partout sauf account_status, puis libéré.
+{
+  const bad = await newUser();
+  await db.query(`insert into auth.sessions (user_id) values ($1)`, [bad]);
+  const admin2 = await newUser();
+  await db.query(`insert into public.admins (user_id) values ($1)`, [admin2]);
+  const self = await throws(() => asAdmin('aal2', `select public.admin_suspend($1, 0, 'test')`, [admin]));
+  const noAdmin = await throws(() => asAdmin('aal2', `select public.admin_suspend($1, 0, 'test')`, [admin2]));
+  const byPlayer = await throws(() => as(a, `select public.admin_suspend($1, 0, 'test')`, [bad]));
+  if (self?.includes('soi-même') && noAdmin?.includes('suspendre un admin') && byPlayer?.includes('réservé aux admins'))
+    ok('on ne se suspend pas soi-même, ni un autre admin, et un joueur ne suspend personne');
+  else fail(`suspension de soi : ${self ?? 'acceptée'} ; d’un admin : ${noAdmin ?? 'acceptée'} ; par un joueur : ${byPlayer ?? 'acceptée'}`);
+  await asAdmin('aal2', `select public.admin_suspend($1, 24, 'triche')`, [bad]);
+  const u = (await db.query(`select banned_until > now() + interval '23 hours' as banned, (select count(*)::int from auth.sessions where user_id = $1) as sessions from auth.users where id = $1`, [bad])).rows[0];
+  const blocked = await throws(() => as(bad, `select public.request_check()`));
+  const other = await throws(() => as(a, `select public.request_check()`));
+  const status = (await as(bad, `select public.account_status() as s`)).rows[0].s;
+  if (u.banned && u.sessions === 0 && blocked?.includes('suspendu') && !other && status.suspended && status.reason === 'triche')
+    ok('un compte suspendu ne se reconnecte plus, ses requêtes sont refusées, il voit la raison ; les autres passent');
+  else fail(`suspension : banni ${u.banned}, sessions ${u.sessions}, requête ${blocked ?? 'acceptée'}, autre joueur ${other ?? 'ok'}, statut ${JSON.stringify(status)}`);
+  await asAdmin('aal2', `select public.admin_unsuspend($1)`, [bad]);
+  const freed = await throws(() => as(bad, `select public.request_check()`));
+  const unbanned = (await db.query(`select banned_until is null as ok from auth.users where id = $1`, [bad])).rows[0].ok;
+  if (!freed && unbanned) ok('une suspension levée rend l’accès');
+  else fail(`après levée : ${freed ?? 'accès rendu'}, banned_until vidé : ${unbanned}`);
+  await db.query(`insert into public.suspensions (user_id, until) values ($1, now() - interval '1 minute')`, [bad]);
+  if (!(await throws(() => as(bad, `select public.request_check()`)))) ok('une suspension terminée ne bloque plus');
+  else fail('une suspension expirée bloque encore');
+}
+
 // Grande échelle (0043) : la mise maximale suit le solde, les caisses chères donnent du Divin.
 {
   const rich = await newUser();

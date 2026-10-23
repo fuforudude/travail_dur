@@ -15,7 +15,14 @@ create table auth.users (
   email text,
   email_confirmed_at timestamptz,
   is_anonymous boolean not null default false,
+  banned_until timestamptz,
   created_at timestamptz not null default now()
+);
+
+-- Sessions de connexion (supprimées quand un admin suspend un compte).
+create table auth.sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade
 );
 
 create function auth.uid() returns uuid
