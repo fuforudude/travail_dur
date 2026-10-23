@@ -1,6 +1,6 @@
 import { isTyping, pushKeys } from '../core/input';
 import { blip } from '../core/sound';
-import { formatPoints, getWallet, holdWallet, keepStake, onWallet, shortPoints, spinSlots, stakeSteps } from '../net/points';
+import { formatPoints, getWallet, holdWallet, keepStake, onWallet, spinSlots, stakeLabel, stakeSteps } from '../net/points';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { autoPlay } from './autoplay';
@@ -22,6 +22,7 @@ export function slotsView(root: HTMLElement): () => void {
   }
 
   let bet = 10; // mise choisie
+  let allIn = false; // mise « All in » choisie : elle suit le solde
   const bets = () => stakeSteps(getWallet()?.balance ?? 0, 8);
   let spinning = false;
   let message = 'Choisis ta mise, puis joue.';
@@ -73,13 +74,15 @@ export function slotsView(root: HTMLElement): () => void {
     const w = getWallet();
     balanceEl.replaceChildren('Solde ', h('b', {}, w ? formatPoints(w.balance) : '…'));
     const list = bets();
-    bet = keepStake(list, bet); // le solde a pu changer
+    const balance = w?.balance ?? 0;
+    bet = allIn ? list[list.length - 1] : keepStake(list, bet); // le solde a pu changer
     betEl.replaceChildren(
       ...list.map((v) => {
-        const b = h('button', { class: 'rl-token' + (v === bet ? ' on' : ''), type: 'button' }, shortPoints(v));
+        const b = h('button', { class: 'rl-token' + (v === bet ? ' on' : '') + (v === balance ? ' all-in' : ''), type: 'button' }, stakeLabel(v, balance));
         b.addEventListener('mousedown', (e) => e.preventDefault());
         b.addEventListener('click', () => {
           bet = v;
+          allIn = v === balance;
           render();
         });
         return b;
@@ -151,6 +154,7 @@ export function slotsView(root: HTMLElement): () => void {
       const list = bets();
       const i = list.indexOf(keepStake(list, bet));
       bet = list[Math.max(0, Math.min(list.length - 1, i + (key === 'arrowleft' ? -1 : 1)))];
+      allIn = bet === getWallet()?.balance;
     }
     else if (key === ' ' || key === 'enter') {
       if (!auto.running()) void spin();

@@ -1,6 +1,6 @@
 import { isTyping, pushKeys } from '../core/input';
 import { blip } from '../core/sound';
-import { casinoMax, formatPoints, getWallet, holdWallet, keepStake, onWallet, shortPoints, spinRoulette, stakeSteps } from '../net/points';
+import { formatPoints, getWallet, holdWallet, keepStake, onWallet, spinRoulette, stakeLabel, stakeSteps } from '../net/points';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { autoPlay } from './autoplay';
@@ -94,6 +94,7 @@ export function rouletteView(root: HTMLElement): () => void {
   let bets: Record<string, number> = {};
   let lastBets: Record<string, number> = {};
   let chip = 5; // montant du jeton choisi
+  let allIn = false; // jeton « All in » choisi : il suit le solde
   const chipList = () => stakeSteps(getWallet()?.balance ?? 0, 6);
   let cursor = spots.findIndex((s) => s.key === 'red');
   let spinning = false;
@@ -181,13 +182,15 @@ export function rouletteView(root: HTMLElement): () => void {
       if (amount) el.append(h('span', { class: 'rl-chip' }, formatPoints(amount)));
     });
     const list = chipList();
-    chip = keepStake(list, chip); // le solde a pu changer
+    const balance = getWallet()?.balance ?? 0;
+    chip = allIn ? list[list.length - 1] : keepStake(list, chip); // le solde a pu changer
     chips.replaceChildren(
       ...list.map((v) => {
-        const b = h('button', { class: 'rl-token' + (v === chip ? ' on' : ''), type: 'button' }, shortPoints(v));
+        const b = h('button', { class: 'rl-token' + (v === chip ? ' on' : '') + (v === balance ? ' all-in' : ''), type: 'button' }, stakeLabel(v, balance));
         b.addEventListener('mousedown', (e) => e.preventDefault());
         b.addEventListener('click', () => {
           chip = v;
+          allIn = v === balance;
           render();
         });
         return b;
@@ -205,8 +208,7 @@ export function rouletteView(root: HTMLElement): () => void {
     if (spinning) return;
     const value = chip;
     const balance = getWallet()?.balance ?? 0;
-    if (total() + value > casinoMax(balance)) message = `Mise maximale : ${formatPoints(casinoMax(balance))} points par tour (20 % de ton solde).`;
-    else if (total() + value > balance) message = 'Pas assez de points.';
+    if (total() + value > balance) message = 'Pas assez de points.';
     else {
       bets = { ...bets, [key]: (bets[key] ?? 0) + value };
       message = 'Lance la roue.';
@@ -307,6 +309,7 @@ export function rouletteView(root: HTMLElement): () => void {
       const list = chipList();
       const i = list.indexOf(keepStake(list, chip));
       chip = list[Math.max(0, Math.min(list.length - 1, i + (key === '-' ? -1 : 1)))];
+      allIn = chip === getWallet()?.balance;
     }
     else if (key === ' ') {
       if (!auto.running()) void spin();

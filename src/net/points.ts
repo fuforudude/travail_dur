@@ -197,16 +197,19 @@ export async function spinSlots(bet: number): Promise<SlotsResult> {
 export const shortPoints = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toLocaleString('fr-FR')} M` : n >= 1e4 ? `${(n / 1e3).toLocaleString('fr-FR')} k` : formatPoints(n);
 
-/** Mise maximale par tour au casino : 20 % du solde, au moins 500, au plus 100 millions (comme public.casino_max). */
-export const casinoMax = (balance: number) => Math.max(500, Math.min(100_000_000, Math.floor(balance / 5)));
+/** Plus de mise maximale au casino (0048_all_in.sql) : on peut miser tout son solde. */
+export const casinoMax = (balance: number) => Math.max(0, balance);
 
-const STAKES = [1, 5, ...[1, 2, 3, 4, 5, 6, 7].flatMap((e) => [1, 2.5, 5].map((k) => k * 10 ** e)), 100_000_000];
+const STAKES = [1, 5, ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].flatMap((e) => [1, 2.5, 5].map((k) => k * 10 ** e))];
 
-/** Jetons proposés au casino : les `n` plus gros montants (1, 5, 10, 25, 50, 100, 250…) jusqu'à la mise maximale. */
+/** Jetons proposés au casino : les plus gros montants (1, 5, 10, 25, 50, 100, 250…) sous le solde, puis le solde entier (« all in »), `n` en tout. */
 export function stakeSteps(balance: number, n: number): number[] {
-  const max = casinoMax(balance);
-  return STAKES.filter((v) => v <= max).slice(-n);
+  if (balance < 1) return [STAKES[0]];
+  return [...STAKES.filter((v) => v < balance).slice(-(n - 1)), balance];
 }
+
+/** Libellé d'un jeton : « All in » pour le solde entier. */
+export const stakeLabel = (v: number, balance: number) => (v === balance ? 'All in' : shortPoints(v));
 
 /** Jeton à garder quand la liste change : le même montant s'il y est encore, sinon le plus proche en dessous. */
 export const keepStake = (list: number[], v: number) => [...list].reverse().find((x) => x <= v) ?? list[0];

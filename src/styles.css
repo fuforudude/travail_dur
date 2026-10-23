@@ -1142,6 +1142,9 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
   cursor: pointer;
 }
 .rl-token.on { border: 2px solid var(--tone4); background: color-mix(in srgb, var(--tone4) 18%, var(--surface)); }
+/* « All in » : tout le solde sur un seul tour (0048_all_in.sql). */
+.rl-token.all-in { color: var(--danger-text); border-color: var(--danger-text); padding: 0 0.6rem; }
+.rl-token.all-in.on { color: #fff; background: var(--danger); border-style: solid; }
 .rl-buttons { display: flex; gap: 0.4rem; }
 .rl-spin { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
 .rl-spin:focus { background: var(--accent); color: var(--accent-text); }

@@ -318,18 +318,16 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   else fail(`paliers : ${first} puis ${second} (attendu ${expected}), atteints ${done}`);
 }
 
-// Grande échelle (0043) : la mise maximale suit le solde, les caisses chères donnent du Divin.
+// All in (0048) : plus de mise maximale, on peut miser tout son solde mais pas plus ;
+// les caisses chères donnent du Divin (0043).
 {
   const rich = await newUser();
   await as(rich, `select public.casino_slots(1)`);
   await db.query(`update public.wallets set balance = 10000000 where user_id = $1`, [rich]);
-  const tooMuch = await throws(() => as(rich, `select public.casino_slots(2000001)`));
-  const max = await throws(() => as(rich, `select public.casino_slots(2000000)`));
-  if (tooMuch?.includes('mise maximale') && !max) ok('avec 10 millions, on mise jusqu’à 2 millions (20 % du solde), pas plus');
-  else fail(`mise maximale : 2 000 001 → ${tooMuch ?? 'acceptée'}, 2 000 000 → ${max ?? 'acceptée'}`);
-  const small = await throws(() => as(a, `select public.casino_slots(501)`));
-  if (small?.includes('mise maximale')) ok('avec un petit solde, la mise reste limitée à 500');
-  else fail(`petit solde : 501 → ${small ?? 'acceptée'}`);
+  const tooMuch = await throws(() => as(rich, `select public.casino_slots(10000001)`));
+  const allIn = await throws(() => as(rich, `select public.casino_slots(10000000)`));
+  if (tooMuch?.includes('pas assez') && !allIn) ok('avec 10 millions, on peut tout miser d’un coup, pas un point de plus');
+  else fail(`all in : 10 000 001 → ${tooMuch ?? 'acceptée'}, 10 000 000 → ${allIn ?? 'acceptée'}`);
   const divine = (await db.query(`select count(*)::int as n from public.furniture_items where rarity = 'divine'`)).rows[0].n;
   const elsewhere = (await db.query(`select count(*)::int as n from public.crate_odds where rarity = 'divine' and crate_id not in ('royale', 'divine')`)).rows[0].n;
   if (divine > 0 && elsewhere === 0) ok('des meubles Divins existent, seulement dans les caisses royale et divine');
