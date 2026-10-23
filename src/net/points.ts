@@ -13,9 +13,11 @@ export interface PointEvent {
   id: number;
   amount: number;
   reason: string;
-  kind: 'game' | 'record' | 'bonus' | 'casino';
+  kind: 'game' | 'record' | 'bonus' | 'casino' | 'gift';
   created_at: string;
 }
+
+export const formatPoints = (n: number) => n.toLocaleString('fr-FR');
 
 /** Multiplicateur des gains de jeu et de record (public.points_gain_mult, 0034_gains.sql). */
 export const GAIN_MULT = 3;
@@ -31,8 +33,9 @@ export const SCALE: [string, string][] = [
   ['À deux, victoire', 'Morpion 45 · Puissance 4 90 · Quarto 120 · Quoridor 180 · Dames 270 · Échecs 300'],
   ['À deux, sinon', 'nul : un tiers · défaite : 9 · victoire par abandon ou au temps : moitié'],
   ['Solo contre l’ordinateur', 'gagné : 30 + un dixième de la victoire à deux (Échecs : 60) · sinon 12 (30 parties par jour)'],
-  ['Record personnel', '+300 (au moins 2 000 au 2048 et à Tetris, 10 tuyaux, vague 5)'],
-  ['Record absolu', '+1 500 en battant le meilleur score de tous les joueurs'],
+  ['Record personnel', `+${formatPoints(5000 * GAIN_MULT)} (au moins 2 000 au 2048 et à Tetris, 10 tuyaux, vague 5)`],
+  ['Record absolu', `+${formatPoints(100000 * GAIN_MULT)} en battant le meilleur score de tous les joueurs`],
+  ['Paliers', `scores de fou furieux : jusqu’à +${formatPoints(1000000 * GAIN_MULT)}, une fois chacun (liste plus bas)`],
 ];
 
 let wallet: Wallet | null = null;
@@ -145,6 +148,24 @@ export async function history(limit = 40): Promise<PointEvent[]> {
   return ((data as PointEvent[] | null) ?? []).map((e) => ({ ...e, amount: Number(e.amount) }));
 }
 
+/** Envoie des points à un ami (0047_dons_paliers.sql) ; retourne le nouveau solde. */
+export async function givePoints(target: string, amount: number, message: string): Promise<number> {
+  const balance = await rpc<number>('points_give', { target, amount, message: message || null });
+  setWallet({ balance: Number(balance), earned: wallet?.earned ?? 0 });
+  return Number(balance);
+}
+
+/** Palier de score (une prime, une seule fois par joueur) ; `reward` multiplicateur compris. */
+export interface Milestone {
+  game: '2048' | 'tetris' | 'flappy' | 'td' | 'wordle';
+  threshold: number;
+  label: string;
+  reward: number;
+  done: boolean;
+}
+
+export const milestones = () => rpc<Milestone[]>('points_milestones_mine');
+
 export interface RouletteResult {
   number: number;
   stake: number;
@@ -171,7 +192,6 @@ export async function spinSlots(bet: number): Promise<SlotsResult> {
   return r;
 }
 
-export const formatPoints = (n: number) => n.toLocaleString('fr-FR');
 
 /** Montant court pour les jetons : 2,5 k, 10 M… */
 export const shortPoints = (n: number) =>

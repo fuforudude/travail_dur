@@ -1740,3 +1740,16 @@ button.field.danger:is(:hover, :focus, :active):not(:disabled) {
   line-height: 16px;
   text-align: center;
 }
+
+/* Points : dons entre amis, paliers de fou furieux (0047_dons_paliers.sql). */
+.pts-history li.ev-gift { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.pts-goals { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.6rem; }
+.pts-goals > p { grid-column: 1 / -1; margin: 0; }
+.pts-goal-game { padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 8px; }
+.pts-goal-game h3 { margin: 0 0 0.3rem; font-size: 0.95rem; }
+.pts-goal-game ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
+.pts-goal-game li { display: flex; gap: 0.5rem; }
+.pts-goal-game li.done { color: var(--muted); }
+.pts-goal-game li.done .pts-amount { text-decoration: line-through; }
+.gift-form { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: -0.1rem 0 0.2rem 0.9rem; padding: 0.4rem 0.6rem; border-left: 2px solid var(--accent); }
+.gift-form .field { width: auto; flex: 1 1 7rem; min-width: 0; }

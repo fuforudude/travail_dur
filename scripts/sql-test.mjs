@@ -268,6 +268,56 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   else fail(`revenus : avant ${before}, pendant ${during}, après ${after} (attendu 1000, 1000, 1200)`);
 }
 
+// Dons entre amis (0047) : seulement à un ami, pas plus que son solde, rien n'est créé ni perdu.
+{
+  const giver = await newUser();
+  const friend = await newUser();
+  const stranger = await newUser();
+  await as(giver, `select public.points_wallet()`);
+  await as(friend, `select public.points_wallet()`);
+  await db.query(`update public.wallets set balance = 1000 where user_id = $1`, [giver]);
+  const notFriend = await throws(() => as(giver, `select public.points_give($1, 10)`, [stranger]));
+  await db.query(`insert into public.friendships (a, b, requested_by, accepted) values (least($1::uuid, $2::uuid), greatest($1::uuid, $2::uuid), $1, true)`, [giver, friend]);
+  const self = await throws(() => as(giver, `select public.points_give($1, 10)`, [giver]));
+  const tooMuch = await throws(() => as(giver, `select public.points_give($1, 1001)`, [friend]));
+  const negative = await throws(() => as(giver, `select public.points_give($1, -5)`, [friend]));
+  if (notFriend?.includes('ami') && self?.includes('soi-même') && tooMuch?.includes('pas assez') && negative?.includes('invalide'))
+    ok('un don est refusé à un inconnu, à soi-même, au-delà du solde, ou négatif');
+  else fail(`dons refusés : inconnu ${notFriend ?? 'accepté'}, soi ${self ?? 'accepté'}, trop ${tooMuch ?? 'accepté'}, négatif ${negative ?? 'accepté'}`);
+  const before = Number((await db.query(`select balance from public.wallets where user_id = $1`, [friend])).rows[0].balance);
+  const left = Number((await as(giver, `select public.points_give($1, 400, 'bon anniv') as b`, [friend])).rows[0].b);
+  const w = (await db.query(`select balance, earned from public.wallets where user_id = $1`, [friend])).rows[0];
+  const ev = (await db.query(`select reason from public.point_events where user_id = $1 and kind = 'gift'`, [friend])).rows[0]?.reason;
+  if (left === 600 && Number(w.balance) === before + 400 && Number(w.earned) === 0 && ev?.includes('bon anniv'))
+    ok('un don passe d’un ami à l’autre, avec son message, sans compter comme gagné en jouant');
+  else fail(`don : reste ${left}, reçu ${Number(w.balance) - before}, gagné ${w.earned}, ligne ${ev}`);
+  await as(giver, `select public.points_give($1, 1)`, [friend]);
+  await as(giver, `select public.points_give($1, 1)`, [friend]);
+  if ((await throws(() => as(giver, `select public.points_give($1, 1)`, [friend])))?.includes('trop de dons')) ok('au plus 3 dons toutes les 10 secondes');
+  else fail('les dons en rafale ne sont pas limités');
+}
+
+// Records et paliers (0047) : primes énormes, chaque palier une seule fois.
+{
+  const ace = await newUser();
+  const total = async () => Number((await db.query(`select coalesce(sum(amount), 0) as n from public.point_events where user_id = $1 and kind = 'record'`, [ace])).rows[0].n);
+  const flappy = async (score) => {
+    const id = (await db.query(`insert into public.flappy_sessions (user_id, seed) values ($1, 1) returning id`, [ace])).rows[0].id;
+    await db.query(`update public.flappy_sessions set finished_at = now(), score = $2 where id = $1`, [id, score]);
+  };
+  await db.query(`insert into public.flappy_sessions (user_id, seed, finished_at, score) values ($1, 1, now(), 10)`, [a]);
+  const others = Number((await db.query(`select max(score) as n from public.flappy_sessions where finished_at is not null`)).rows[0].n);
+  await flappy(60); // paliers 25 et 50 (+ record absolu si personne n'a fait mieux)
+  const first = await total();
+  await flappy(55); // ni record ni nouveau palier
+  const second = await total();
+  const expected = (10000 + 50000 + (others < 60 ? 100000 : 0)) * 3;
+  const list = (await as(ace, `select public.points_milestones_mine() as l`)).rows[0].l;
+  const done = list.filter((m) => m.game === 'flappy' && m.done).map((m) => m.threshold);
+  if (first === expected && second === first && done.join() === '25,50') ok('les paliers de Flappy rapportent une fois chacun, et la page Points les voit');
+  else fail(`paliers : ${first} puis ${second} (attendu ${expected}), atteints ${done}`);
+}
+
 // Grande échelle (0043) : la mise maximale suit le solde, les caisses chères donnent du Divin.
 {
   const rich = await newUser();

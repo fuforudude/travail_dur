@@ -13,6 +13,7 @@ import {
   type Friend,
   type Relation,
 } from '../net/friends';
+import { formatPoints, getWallet, givePoints } from '../net/points';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { h, hints } from './dom';
@@ -33,6 +34,7 @@ export function friendsView(root: HTMLElement, [param]: string[]): () => void {
   let friends: Friend[] = [];
   let status = '';
   let disposed = false;
+  let giftTo = ''; // ami à qui on est en train d'envoyer des points
   const body = h('div', {});
   const statusEl = h('p', { class: 'status' });
   const tabsEl = h('div', { class: 'tabs' });
@@ -171,11 +173,55 @@ export function friendsView(root: HTMLElement, [param]: string[]): () => void {
                 }
                 void act(() => removeFriend(f.id), `${f.username} n’est plus ton ami.`);
               });
-              return row(f.id, f.username, button('Voir son appart', () => navigate(`/appart/${f.id}`)), remove);
-            }),
+              const gift = button('Envoyer ◆', () => {
+                giftTo = giftTo === f.id ? '' : f.id;
+                render();
+              });
+              gift.setAttribute('aria-expanded', String(giftTo === f.id));
+              const line = row(f.id, f.username, gift, button('Voir son appart', () => navigate(`/appart/${f.id}`)), remove);
+              return giftTo === f.id ? [line, giftForm(f)] : [line];
+            }).flat(),
           )
         : h('p', { class: 'muted' }, 'Pas encore d’amis.'),
     );
+  };
+
+  // Don de points à un ami : montant, message facultatif, et confirmation au-delà de 10 % du solde.
+  const giftForm = (f: Friend) => {
+    const amount = h('input', { class: 'field', type: 'number', min: 1, step: 1, inputmode: 'numeric', placeholder: 'Montant', 'aria-label': `Points à envoyer à ${f.username}` });
+    const note = h('input', { class: 'field', maxlength: 80, placeholder: 'Message (facultatif)', 'aria-label': 'Message' });
+    const send = h('button', { class: 'field small-btn', type: 'submit' }, 'Envoyer');
+    let sure = 0;
+    const form = h('form', { class: 'gift-form' }, amount, note, send);
+    amount.addEventListener('input', () => {
+      sure = 0;
+      send.textContent = 'Envoyer';
+    });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const n = Math.floor(Number(amount.value));
+      const balance = getWallet()?.balance ?? 0;
+      if (!(n >= 1)) return say('Indique un nombre de points.');
+      if (n > balance) return say(`Tu n’as que ${formatPoints(balance)} points.`);
+      if (n > balance / 10 && sure !== n) {
+        sure = n;
+        send.textContent = `Confirmer ${formatPoints(n)} ?`;
+        return;
+      }
+      send.disabled = true;
+      givePoints(f.id, n, note.value.trim())
+        .then(() => {
+          giftTo = '';
+          say(`${formatPoints(n)} points envoyés à ${f.username}.`);
+          render();
+        })
+        .catch((err: Error) => {
+          send.disabled = false;
+          say(err.message);
+        });
+    });
+    queueMicrotask(() => amount.focus());
+    return form;
   };
 
   const load = async () => {

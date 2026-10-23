@@ -1,5 +1,5 @@
 import { pushKeys } from '../core/input';
-import { formatPoints, getWallet, history, onWallet, SCALE, type PointEvent } from '../net/points';
+import { formatPoints, getWallet, history, milestones, onWallet, SCALE, type Milestone, type PointEvent } from '../net/points';
 import { itemById } from '../net/shop';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
@@ -12,6 +12,7 @@ export function pointsView(root: HTMLElement): () => void {
   const balance = h('span', { class: 'pts-balance' }, '…');
   const earned = h('span', { class: 'muted small' });
   const list = h('ol', { class: 'pts-history' }, h('li', { class: 'muted' }, 'Chargement…'));
+  const goals = h('div', { class: 'pts-goals' });
 
   const roulette = h('button', { class: 'field', type: 'button' }, 'Roulette');
   roulette.addEventListener('click', () => navigate('/roulette'));
@@ -35,6 +36,8 @@ export function pointsView(root: HTMLElement): () => void {
       multiConfigured ? h('div', { class: 'pts-actions' }, shop, roulette, slots) : h('p', { class: 'notice' }, 'Les points ne sont pas disponibles en mode local.'),
       h('h2', {}, 'Comment gagner des points'),
       h('table', { class: 'pts-scale' }, h('tbody', {}, ...SCALE.map(([g, rule]) => h('tr', {}, h('td', {}, g), h('td', {}, rule))))),
+      multiConfigured ? h('h2', {}, 'Paliers de fou furieux') : '',
+      goals,
       h('h2', {}, 'Derniers mouvements'),
       list,
     ),
@@ -49,16 +52,50 @@ export function pointsView(root: HTMLElement): () => void {
       h('span', {}, e.reason.replace(/^Boutique : (.+)$/, (_, id: string) => `Boutique : ${itemById(id)?.name ?? id}`)),
       h('span', { class: 'muted small push' }, new Date(e.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })),
     );
+  const GAMES: Record<Milestone['game'], string> = { '2048': '2048', tetris: 'Tetris', flappy: 'Flappy Bird', td: 'Tower defense', wordle: 'Wordle' };
+  const loadGoals = () =>
+    milestones()
+      .then((all) => {
+        const games = [...new Set(all.map((m) => m.game))];
+        goals.replaceChildren(
+          h('p', { class: 'muted small' }, 'Une prime énorme, une seule fois, quand tu atteins chaque palier.'),
+          ...games.map((g) =>
+            h(
+              'div',
+              { class: 'pts-goal-game' },
+              h('h3', {}, GAMES[g]),
+              h(
+                'ul',
+                {},
+                ...all
+                  .filter((m) => m.game === g)
+                  .map((m) =>
+                    h(
+                      'li',
+                      { class: m.done ? 'done' : '' },
+                      h('span', {}, (m.done ? '✓ ' : '') + m.label),
+                      h('span', { class: 'pts-amount push' }, `+${formatPoints(m.reward)}`),
+                    ),
+                  ),
+              ),
+            ),
+          ),
+        );
+      })
+      .catch(() => goals.replaceChildren()); // migration 0047 pas encore passée
   const load = () =>
     history()
       .then((events) => list.replaceChildren(...(events.length ? events.map(line) : [h('li', { class: 'muted' }, 'Rien pour l’instant.')])))
       .catch((e: Error) => list.replaceChildren(h('li', { class: 'notice' }, e.message)));
-  if (multiConfigured) void load();
-  else list.replaceChildren();
+  if (multiConfigured) {
+    void load();
+    void loadGoals();
+  } else list.replaceChildren();
 
   const offWallet = onWallet(() => {
     show();
     void load();
+    void loadGoals();
   });
   const offKeys = pushKeys((e) => {
     const key = e.key.toLowerCase();
