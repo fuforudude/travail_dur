@@ -1,10 +1,12 @@
 import { isTyping, pushKeys } from '../core/input';
 import { blip } from '../core/sound';
+import { load, save } from '../core/storage';
 import { isAdmin } from '../net/admin';
 import { serverNow } from '../net/serverClock';
 import {
   artworks,
   baseOf,
+  BASES,
   buyRoom,
   buySpecial,
   capHours,
@@ -391,13 +393,21 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
   const isFrame = (item: string) => baseOf(item)?.id === 'frame';
   /** Chez soi, une pièce achetée et nettoyée s'aménage directement : pas de mode à part. */
   const editing = () => mine() && unlocked() && state.cleanStep >= CLEAN_TASKS.length;
-  /** Réserve : meubles pas encore posés, regroupés par modèle (« Chaise × 3 »), dans l'ordre d'achat. */
+  /**
+   * Réserve : meubles pas encore posés, en piles par modèle (« Chaise Or × 3 »), rangées par type
+   * (ordre du catalogue) puis du plus rentable au moins rentable.
+   */
   const stacks = (): Owned[][] => {
     const used = new Set(placedAll().map((p) => p.o));
     const m = new Map<string, Owned[]>();
     for (const o of owned) if (!used.has(o.id) && o.id !== hand?.id) m.set(o.item_id, [...(m.get(o.item_id) ?? []), o]);
-    return [...m.values()];
+    const rank = (item: string) => BASES.findIndex((b) => b.id === baseOf(item)?.id);
+    return [...m.values()].sort((a, b) => rank(a[0].item_id) - rank(b[0].item_id) || itemIncome(b[0].item_id) - itemIncome(a[0].item_id));
   };
+  /** Affichage de la réserve : regroupée par type de meuble (toutes les chaises ensemble) ou modèle par modèle. */
+  let grouping = load<'type' | 'model'>('appart:reserve', 'type');
+  let placeFilter: Zone | 'all' = 'all';
+  const openTypes = new Set<string>(); // types dépliés
 
   // -------------------------------------------------------------------------
   // Zoom : molette ou pincement autour du point visé, + / − / 0, et glisser pour se déplacer.
@@ -849,6 +859,87 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
     );
   };
 
+  /** Une ligne de la réserve, qui prend en main le premier meuble de la pile (`sub` : dans un type déplié). */
+  const pileEl = (pile: Owned[], sub = false) => {
+    const o = pile[0];
+    const fin = finishOf(o.item_id);
+    const b = h(
+      'button',
+      { class: `ap-inv${sub ? ' ap-sub' : ''} rar-${fin.rarity}${o.item_id === hand?.item_id ? ' on' : ''}`, type: 'button', title: 'Prendre en main' },
+      furnitureEl(o.item_id),
+      h('span', { class: 'ap-inv-name' }, sub ? fin.name[0].toUpperCase() + fin.name.slice(1) : itemName(o.item_id), h('span', { class: 'muted small' }, ` · ${formatPoints(Math.round(itemIncome(o.item_id)))}/h`)),
+      pile.length > 1 ? h('span', { class: 'ap-inv-n' }, `× ${pile.length}`) : '',
+    );
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', () => take(o));
+    return b;
+  };
+
+  /** Réserve : en-tête (nombre, regroupement, sol / mur) et liste des piles. */
+  const reserveEl = (reserve: Owned[][]): HTMLElement[] => {
+    const count = (piles: Owned[][]) => piles.reduce((t, pile) => t + pile.length, 0);
+    const zoneOf = (pile: Owned[]) => sizeOf(pile[0].item_id).place;
+    const both = reserve.some((p) => zoneOf(p) === 'floor') && reserve.some((p) => zoneOf(p) === 'wall');
+    if (!both) placeFilter = 'all';
+    const shown = reserve.filter((p) => placeFilter === 'all' || zoneOf(p) === placeFilter);
+    const seg = <T extends string>(cur: T, opts: [T, string][], set: (v: T) => void) =>
+      h(
+        'div',
+        { class: 'ap-seg', role: 'group' },
+        ...opts.map(([v, label]) => {
+          const b = h('button', { class: `ap-seg-b${v === cur ? ' on' : ''}`, type: 'button', 'aria-pressed': String(v === cur) }, label);
+          b.addEventListener('mousedown', (e) => e.preventDefault());
+          b.addEventListener('click', () => {
+            set(v);
+            renderSide();
+          });
+          return b;
+        }),
+      );
+    const head = h(
+      'div',
+      { class: 'ap-reserve-head' },
+      h('h3', { class: 'ap-reserve' }, `Réserve · ${count(reserve)}`),
+      reserve.length
+        ? seg(grouping, [['type', 'Par type'], ['model', 'Détail']], (v) => {
+            grouping = v;
+            save('appart:reserve', v);
+          })
+        : '',
+      both ? seg(placeFilter, [['all', 'Tout'], ['floor', 'Sol'], ['wall', 'Mur']], (v) => (placeFilter = v)) : '',
+    );
+    if (!reserve.length) return [head, h('p', { class: 'muted small' }, 'Réserve vide : achète des meubles ou ouvre des caisses.')];
+    if (grouping === 'model') return [head, h('div', { class: 'ap-inventory' }, ...shown.map((pile) => pileEl(pile)))];
+    // Par type : une ligne par type de meuble (« Chaise × 7 · 3 modèles »), qui se déplie sur ses modèles.
+    const types = new Map<string, Owned[][]>();
+    for (const pile of shown) {
+      const id = baseOf(pile[0].item_id)?.id ?? pile[0].item_id;
+      types.set(id, [...(types.get(id) ?? []), pile]);
+    }
+    const rows = [...types].flatMap(([id, piles]) => {
+      if (piles.length === 1) return [pileEl(piles[0])];
+      const open = openTypes.has(id);
+      const holding = piles.some((p) => p[0].item_id === hand?.item_id);
+      const best = piles[0][0].item_id; // le plus rentable (stacks est trié)
+      const b = h(
+        'button',
+        { class: `ap-inv ap-type rar-${finishOf(best).rarity}${holding && !open ? ' on' : ''}`, type: 'button', 'aria-expanded': String(open), title: open ? 'Replier' : 'Voir les modèles' },
+        furnitureEl(best),
+        h('span', { class: 'ap-inv-name' }, baseOf(best)?.name ?? best, h('span', { class: 'muted small' }, ` · ${piles.length} modèles, jusqu’à ${formatPoints(Math.round(itemIncome(best)))}/h`)),
+        h('span', { class: 'ap-inv-n' }, `× ${count(piles)}`),
+        h('span', { class: 'ap-chev', 'aria-hidden': 'true' }, open ? '▾' : '▸'),
+      );
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('click', () => {
+        if (open) openTypes.delete(id);
+        else openTypes.add(id);
+        renderSide();
+      });
+      return open ? [b, h('div', { class: 'ap-subs' }, ...piles.map((pile) => pileEl(pile, true)))] : [b];
+    });
+    return [head, h('div', { class: 'ap-inventory' }, ...rows)];
+  };
+
   const renderSide = () => {
     if (!mine()) {
       side.hidden = true;
@@ -894,21 +985,6 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
       return;
     }
     const reserve = stacks();
-    const list = reserve.length
-      ? reserve.map((pile) => {
-          const o = pile[0];
-          const b = h(
-            'button',
-            { class: `ap-inv rar-${finishOf(o.item_id).rarity}${o.item_id === hand?.item_id ? ' on' : ''}`, type: 'button', title: 'Prendre en main' },
-            furnitureEl(o.item_id),
-            h('span', {}, itemName(o.item_id), h('span', { class: 'muted small' }, ` · ${formatPoints(Math.round(itemIncome(o.item_id)))}/h`)),
-            pile.length > 1 ? h('span', { class: 'ap-inv-n' }, `× ${pile.length}`) : '',
-          );
-          b.addEventListener('mousedown', (e) => e.preventDefault());
-          b.addEventListener('click', () => take(o));
-          return b;
-        })
-      : [h('p', { class: 'muted small' }, 'Réserve vide : achète des meubles ou ouvre des caisses.')];
     const btn = (label: string, f: () => void, cls = 'field') => {
       const b = h('button', { class: cls, type: 'button', disabled: busy }, label);
       b.addEventListener('mousedown', (e) => e.preventDefault());
@@ -952,8 +1028,7 @@ export function apartmentView(root: HTMLElement, [ownerParam]: string[]): () => 
             }),
           )
         : '',
-      h('h3', { class: 'ap-reserve' }, `Réserve · ${reserve.reduce((t, pile) => t + pile.length, 0)}`),
-      h('div', { class: 'ap-inventory' }, ...list),
+      ...reserveEl(reserve),
       specialCard(),
     );
   };

@@ -78,6 +78,7 @@
 .rar-silver { --rar: #a9b4c2; }
 .rar-gold { --rar: #e4ae39; }
 .td-crate { border-top: 4px solid var(--rar, var(--border)); }
+.td-crate.complete { opacity: 0.75; }
 .td-crates .cr-cell canvas { margin: 0 auto; }
 .td-crates .cr-reveal canvas { margin: 0.3rem auto; }
 

@@ -35,6 +35,8 @@ export interface CrateStageOptions {
   filler: () => HTMLElement;
   /** Appelé après chaque ouverture réussie (mise à jour de la page dessous). */
   onOpened?: () => void;
+  /** Texte du bouton quand il n'y a plus rien à gagner (« Caisse complète ✓ »), vide sinon : plus d'ouverture possible. */
+  soldOut?: () => string;
 }
 
 /** Ouvre la caisse en plein écran ; se ferme avec Retour arrière ou le bouton Fermer (Échap est la touche panique). */
@@ -67,17 +69,19 @@ export function openCrateStage(o: CrateStageOptions): void {
   );
 
   const render = () => {
-    againBtn.textContent = o.again();
-    againBtn.append(Object.assign(document.createElement('span'), { className: 'keyboard-only', textContent: ' (Entrée)' }));
-    againBtn.disabled = busy || auto.running();
-    auto.setDisabled(busy && !auto.running());
+    const done = o.soldOut?.() ?? '';
+    againBtn.textContent = done || o.again();
+    if (!done) againBtn.append(Object.assign(document.createElement('span'), { className: 'keyboard-only', textContent: ' (Entrée)' }));
+    againBtn.disabled = busy || auto.running() || !!done;
+    auto.el.hidden = !!done && !auto.running();
+    auto.setDisabled((busy && !auto.running()) || !!done);
     haulEl.hidden = !haul.length;
     if (haul.length) haulEl.replaceChildren(h('p', { class: 'muted small' }, `Obtenu (${haul.length}) :`), h('div', { class: 'cr-haul-list' }, ...haul));
   };
 
   /** Une ouverture : tirage, bandeau, révélation. Retourne false en cas d'échec. */
   const once = async (fast: boolean): Promise<boolean> => {
-    if (closed || busy) return false;
+    if (closed || busy || o.soldOut?.()) return false;
     busy = true;
     status.textContent = 'Ouverture…';
     render();

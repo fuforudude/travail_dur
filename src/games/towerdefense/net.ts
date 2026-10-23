@@ -220,19 +220,23 @@ export interface CrateInfo {
   price: number;
   minWave: number;
   odds: [Rarity, number][];
+  /** Objets que le serveur peut tirer (public.td_catalog) : fait foi sur CRATES de catalog.ts. */
+  items: Set<string>;
 }
 
 export async function crateInfo(): Promise<Map<string, CrateInfo>> {
   const { supabase } = await client();
-  const [crates, odds] = await Promise.all([
+  const [crates, odds, catalog] = await Promise.all([
     supabase.from('td_crates').select('id, price, min_wave').eq('active', true),
     supabase.from('td_crate_odds').select('crate_id, rarity, weight'),
+    supabase.from('td_catalog').select('id, crate_id'),
   ]);
-  const error = crates.error ?? odds.error;
+  const error = crates.error ?? odds.error ?? catalog.error;
   if (error) throw new Error(errorMessage(error));
   const out = new Map<string, CrateInfo>();
-  for (const c of crates.data ?? []) out.set(String(c.id), { id: String(c.id), price: Number(c.price), minWave: Number(c.min_wave), odds: [] });
+  for (const c of crates.data ?? []) out.set(String(c.id), { id: String(c.id), price: Number(c.price), minWave: Number(c.min_wave), odds: [], items: new Set() });
   for (const o of odds.data ?? []) out.get(String(o.crate_id))?.odds.push([o.rarity as Rarity, Number(o.weight)]);
+  for (const k of catalog.data ?? []) out.get(String(k.crate_id))?.items.add(String(k.id));
   for (const c of out.values()) c.odds.sort((a, b) => b[1] - a[1]);
   return out;
 }

@@ -1,5 +1,5 @@
 import { pushKeys } from '../core/input';
-import { BASES, buyFurniture, crateInfo, CRATES, finishOf, itemName, itemsOfRarity, openCrate, PHOTO_CHANCE, RARITY_NAMES, type Rarity } from '../net/apartment';
+import { artworks, BASES, buyFurniture, crateInfo, CRATES, finishOf, itemName, itemsOfRarity, openCrate, ownedPhotos, PHOTO_CHANCE, RARITY_NAMES, type Rarity } from '../net/apartment';
 import { ensureAccount } from '../net/auth';
 import { formatPoints, getWallet, onWallet, refreshWallet } from '../net/points';
 import { navigate } from '../router';
@@ -21,6 +21,12 @@ export function cratesView(root: HTMLElement): () => void {
   let busy = false;
   let prices = new Map<string, number>();
   let odds = new Map<string, [Rarity, number][]>();
+  let photos = { got: 0, total: 0 }; // caisse souvenirs : une fois toutes les photos débloquées, plus que des meubles
+  const photoInfo = h('p', { class: 'small' });
+  const showPhotos = () => {
+    photoInfo.textContent =
+      photos.got >= photos.total ? `✓ Toutes les photos débloquées (${photos.total}) : elle ne donne plus que des meubles.` : `📷 Photos : ${photos.got} / ${photos.total} débloquées`;
+  };
 
   const showBalance = () => {
     const w = getWallet();
@@ -29,7 +35,7 @@ export function cratesView(root: HTMLElement): () => void {
 
   // Bandeau qui défile (façon caisse de CS:GO) : objets tirés au hasard selon les chances.
   const randomItem = (crate: string) => {
-    if (crate === 'photos' && Math.random() < PHOTO_CHANCE) return 'photo';
+    if (crate === 'photos' && photos.got < photos.total && Math.random() < PHOTO_CHANCE) return 'photo';
     const table = odds.get(crate) ?? [];
     const total = table.reduce((a, [, w]) => a + w, 0);
     let r = Math.random() * total;
@@ -57,6 +63,10 @@ export function cratesView(root: HTMLElement): () => void {
       filler: () => cell(randomItem(crate)),
       draw: async () => {
         const r = await openCrate(crate);
+        if (r.photo) {
+          photos.got++;
+          showPhotos();
+        }
         const rarity = r.photo ? 'rar-photo' : `rar-${r.rarity}`;
         return {
           rarity,
@@ -101,12 +111,16 @@ export function cratesView(root: HTMLElement): () => void {
   };
 
   (async () => {
-    if (!(await ensureAccount())) {
+    const account = await ensureAccount();
+    if (!account) {
       wrap.replaceChildren(h('div', { class: 'card narrow' }, h('h1', {}, 'Connexion impossible'), h('p', { class: 'muted' }, 'Le serveur ne répond pas : réessaie dans un instant.')));
       return;
     }
-    ({ prices, odds } = await crateInfo());
+    const [info, all, mine] = await Promise.all([crateInfo(), artworks(), ownedPhotos(account.id)]);
     if (disposed) return;
+    ({ prices, odds } = info);
+    photos = { got: all.filter((a) => mine.has(a.id)).length, total: all.length };
+    showPhotos();
     const crates = CRATES.map((c) => {
       const table = odds.get(c.id) ?? [];
       const total = table.reduce((a, [, w]) => a + w, 0);
@@ -117,6 +131,7 @@ export function cratesView(root: HTMLElement): () => void {
         { class: 'card cr-crate' },
         h('h2', {}, c.name),
         h('p', { class: 'muted small' }, c.text),
+        c.id === 'photos' && photos.total ? photoInfo : '',
         h('ul', { class: 'cr-odds' }, ...table.map(([r, w]) => h('li', { class: `rar-${r}` }, h('span', {}, RARITY_NAMES[r]), h('b', {}, percent(w, total))))),
         b,
       );

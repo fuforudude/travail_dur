@@ -53,6 +53,7 @@ body.cr-stage-open { overflow: hidden; }
 }
 
 .auto-play { display: inline-flex; flex-wrap: wrap; gap: 0.4rem; }
+.auto-play[hidden] { display: none; }
 .auto-play .auto-stop { border-color: var(--tone1, #e04a3a); }
 
 @media (max-width: 600px) {

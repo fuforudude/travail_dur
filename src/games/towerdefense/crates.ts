@@ -40,9 +40,28 @@ export function tdCratesView(root: HTMLElement): () => void {
     return skin ? `rar-${skin.finish.rarity}` : TIER_CLASS[crate.id] ?? '';
   };
 
-  /** Objet tiré au hasard pour le bandeau (selon les chances affichées). */
+  /**
+   * Contenu réel d'une caisse : celui du serveur (public.td_catalog) quand il est connu. Les boss du
+   * chapitre 2 n'y sont pas : sans ce filtre, un joueur qui a tout voyait « 200 / 220 » et une caisse jamais complète.
+   */
+  const contents = (crate: CrateDef) => {
+    const items = info.get(crate.id)?.items;
+    return items?.size ? crate.contents.filter((id) => items.has(id)) : crate.contents;
+  };
+  /** Ce qu'on peut encore gagner : héros pas au niveau max, skins pas encore obtenus (comme public.td_crate_open). */
+  const left = (crate: CrateDef) => contents(crate).filter((id) => (crate.kind === 'hero' ? heroLevel(id) < HERO_MAX_LEVEL : !meta.owned.has(id)));
+  const complete = (crate: CrateDef) => !left(crate).length;
+  /** Chances réelles : le serveur ne tire que parmi les raretés où il reste un skin à obtenir. */
+  const liveOdds = (crate: CrateDef): [Rarity, number][] => {
+    const rest = new Set(left(crate).map((id) => skinOf(id)?.finish.rarity));
+    return (info.get(crate.id)?.odds ?? []).filter(([r]) => rest.has(r));
+  };
+
+  /** Objet tiré au hasard pour le bandeau, parmi ce qu'on peut encore gagner (selon les chances réelles). */
   const randomItem = (crate: CrateDef) => {
-    const odds = info.get(crate.id)?.odds ?? [];
+    const rest = left(crate);
+    const pick = rest.length ? rest : contents(crate);
+    const odds = liveOdds(crate);
     if (crate.kind === 'skin' && odds.length) {
       let r = Math.random() * odds.reduce((a, [, w]) => a + w, 0);
       let rarity: Rarity = odds[0][0];
@@ -53,10 +72,10 @@ export function tdCratesView(root: HTMLElement): () => void {
           break;
         }
       }
-      const pool = crate.contents.filter((id) => skinOf(id)?.finish.rarity === rarity);
-      return pool[Math.floor(Math.random() * pool.length)];
+      const pool = pick.filter((id) => skinOf(id)?.finish.rarity === rarity);
+      if (pool.length) return pool[Math.floor(Math.random() * pool.length)];
     }
-    return crate.contents[Math.floor(Math.random() * crate.contents.length)];
+    return pick[Math.floor(Math.random() * pick.length)];
   };
 
   const cell = (crate: CrateDef, item: string) => h('div', { class: `cr-cell ${rarityClass(crate, item)}` }, previewItem(item, 52), h('span', {}, itemName(item)));
@@ -68,6 +87,7 @@ export function tdCratesView(root: HTMLElement): () => void {
       again: () => `Rouvrir · ◆ ${formatPoints(info.get(crate.id)?.price ?? 0)}`,
       filler: () => cell(crate, randomItem(crate)),
       onOpened: render,
+      soldOut: () => (complete(crate) ? 'Caisse complète ✓' : ''),
       draw: async () => {
         const r = await openCrate(crate.id);
         const hero = heroOf(r.item);
@@ -122,22 +142,41 @@ export function tdCratesView(root: HTMLElement): () => void {
 
   const crateCard = (c: CrateDef) => {
     const ci = info.get(c.id);
-    const got = c.contents.filter(has).length;
-    const complete = c.kind === 'hero' ? c.contents.every((id) => heroLevel(id) >= HERO_MAX_LEVEL) : got === c.contents.length;
+    const all = contents(c);
+    const got = all.filter(has).length;
+    const done = complete(c);
+    const maxed = c.kind === 'hero' ? all.filter((id) => heroLevel(id) >= HERO_MAX_LEVEL).length : 0;
     const locked = (ci?.minWave ?? 0) > meta.best;
-    const label = complete ? 'Complète' : locked ? `🔒 Vague ${ci?.minWave} à atteindre` : `Ouvrir · ◆ ${formatPoints(ci?.price ?? 0)}`;
-    const b = h('button', { class: 'field rl-spin', type: 'button', disabled: complete || locked || !ci, 'data-id': c.id }, label);
+    const label = done ? 'Complète ✓' : locked ? `🔒 Vague ${ci?.minWave} à atteindre` : `Ouvrir · ◆ ${formatPoints(ci?.price ?? 0)}`;
+    const b = h('button', { class: 'field rl-spin', type: 'button', disabled: done || locked || !ci, 'data-id': c.id }, label);
     b.addEventListener('click', () => open(c));
-    const total = ci?.odds.reduce((a, [, w]) => a + w, 0) ?? 0;
+    // Chances par rareté, recalculées sur ce qui reste ; une rareté terminée est cochée au lieu d'un pourcentage.
+    const live = liveOdds(c);
+    const total = live.reduce((a, [, w]) => a + w, 0);
+    const rows = (ci?.odds ?? []).map(([r]) => {
+      const pool = all.filter((id) => skinOf(id)?.finish.rarity === r);
+      const mine = pool.filter(has).length;
+      const w = live.find(([lr]) => lr === r)?.[1];
+      return h(
+        'li',
+        { class: `rar-${r}${w === undefined ? ' done' : ''}` },
+        h('span', {}, RARITY_NAMES[r], h('span', { class: 'muted' }, ` ${mine}/${pool.length}`)),
+        h('b', {}, w === undefined ? '✓' : percent(w, total)),
+      );
+    });
     return h(
       'div',
-      { class: `card cr-crate td-crate ${TIER_CLASS[c.id] ?? ''}` },
+      { class: `card cr-crate td-crate ${TIER_CLASS[c.id] ?? ''}${done ? ' complete' : ''}` },
       h('h2', {}, c.name),
       h('p', { class: 'muted small' }, c.text),
-      h('p', { class: 'small' }, `${got} / ${c.contents.length} obtenus`),
-      c.kind === 'skin' && total
-        ? h('ul', { class: 'cr-odds' }, ...ci!.odds.map(([r, w]) => h('li', { class: `rar-${r}` }, h('span', {}, RARITY_NAMES[r]), h('b', {}, percent(w, total)))))
-        : '',
+      h(
+        'p',
+        { class: 'small' },
+        done
+          ? c.kind === 'hero' ? `✓ Tous tes héros sont au niveau ${HERO_MAX_LEVEL}.` : '✓ Tu as tout obtenu.'
+          : `${got} / ${all.length} obtenus${maxed ? ` · ${maxed} au niveau ${HERO_MAX_LEVEL}` : ''}`,
+      ),
+      c.kind === 'skin' && rows.length && !done ? h('ul', { class: 'cr-odds' }, ...rows) : '',
       b,
     );
   };
