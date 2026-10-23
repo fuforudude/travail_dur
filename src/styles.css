@@ -1771,3 +1771,41 @@ button.field.danger:is(:hover, :focus, :active):not(:disabled) {
 .sp-pane .sl-window { max-width: 100%; }
 .sp-pane .sl-reel { width: min(4.5rem, 22vw); height: min(5.2rem, 26vw); font-size: min(2.6rem, 11vw); }
 @media (prefers-reduced-motion: reduce) { .sp-dot { animation: none; } }
+
+/* Fenêtre « Regarder » sur le côté (ui/spectateDock.ts) : sous l'écran « compte suspendu » (90). */
+.sp-dock {
+  position: fixed; right: 16px; bottom: 16px; z-index: 80;
+  width: min(15rem, calc(100vw - 32px));
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 25%);
+  overflow: hidden;
+  animation: sp-dock-in 0.25s ease-out;
+}
+@keyframes sp-dock-in { from { opacity: 0; transform: translateY(12px) scale(0.96); } }
+.sp-dock.drag { opacity: 0.85; box-shadow: 0 12px 36px rgb(0 0 0 / 35%); }
+.sp-dock-head { display: flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.4rem 0.35rem 0.6rem; background: var(--surface-2); cursor: grab; touch-action: none; user-select: none; }
+.sp-dock.drag .sp-dock-head { cursor: grabbing; }
+.sp-dock-name { flex: 1; min-width: 0; font-weight: 650; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-dock-last { font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sp-dock-last.win { color: var(--tone4); }
+.sp-dock-last.loss { color: var(--danger-text); }
+.sp-dock-last.flash { animation: sp-flash 0.6s ease-out; }
+@keyframes sp-flash { from { transform: scale(1.5); } }
+.sp-dock-btn { font: inherit; font-size: 0.8rem; line-height: 1; width: 1.6rem; height: 1.6rem; display: grid; place-items: center; padding: 0; color: inherit; background: transparent; border: 0; border-radius: 6px; }
+.sp-dock-btn:hover { background: var(--accent-soft); }
+.sp-dock-body { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; padding: 0.5rem; }
+.sp-dock.min .sp-dock-body { display: none; }
+.sp-dock.min { width: auto; max-width: min(15rem, calc(100vw - 32px)); border-radius: 999px; }
+.sp-dock-body .sp-status { margin: 0; min-height: 2.6em; font-size: 0.75rem; text-align: center; }
+.sp-dock-body .sp-pane { border: 0; padding: 0; opacity: 1; }
+.sp-dock-body .sp-pane:not(.on), .sp-dock-body .sp-pane h2 { display: none; }
+.sp-dock-body .rl-wheel-wrap { width: 8.5rem; }
+.sp-dock-body .rl-result { width: 2.2rem; height: 2.2rem; font-size: 1rem; }
+.sp-dock-body .sl-reel { width: 3.4rem; height: 4rem; font-size: 2rem; }
+@media (max-width: 600px) {
+  .sp-dock { width: min(12rem, calc(100vw - 32px)); }
+  .sp-dock-body .rl-wheel-wrap { width: 6.5rem; }
+  .sp-dock-body .sl-reel { width: 2.8rem; height: 3.3rem; font-size: 1.6rem; }
+}
+@media (prefers-reduced-motion: reduce) { .sp-dock, .sp-dock-last.flash { animation: none; } }

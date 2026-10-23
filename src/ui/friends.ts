@@ -15,6 +15,7 @@ import {
 } from '../net/friends';
 import { formatPoints, getWallet, givePoints } from '../net/points';
 import { multiConfigured } from '../net/supabase';
+import { openDock } from './spectateDock';
 import { navigate } from '../router';
 import { h, hints } from './dom';
 import { page } from './layout';
@@ -178,7 +179,10 @@ export function friendsView(root: HTMLElement, [param]: string[]): () => void {
                 render();
               });
               gift.setAttribute('aria-expanded', String(giftTo === f.id));
-              const line = row(f.id, f.username, gift, button('Regarder', () => navigate(`/regarder/${f.id}`)), button('Voir son appart', () => navigate(`/appart/${f.id}`)), remove);
+              const line = row(f.id, f.username, gift, button('Regarder', () => {
+                void openDock(f.id);
+                say(`${f.username} est sur le côté : continue à jouer, sa roulette te suit.`);
+              }), button('Voir son appart', () => navigate(`/appart/${f.id}`)), remove);
               return giftTo === f.id ? [line, giftForm(f)] : [line];
             }).flat(),
           )

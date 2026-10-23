@@ -4,6 +4,7 @@ import './polish.css';
 import { initPanic } from './core/panic';
 import { initPrank } from './core/prank';
 import { initSuspension } from './core/suspension';
+import { load } from './core/storage';
 import { applyTheme } from './core/settings';
 import { onStale, startUpdateChecks } from './core/update';
 import { initTouch } from './core/touch';
@@ -23,6 +24,8 @@ initTouch();
 initPanic();
 initPrank();
 initSuspension();
+// Fenêtre « Regarder » laissée ouverte : elle revient au chargement (module téléchargé seulement dans ce cas).
+if (load<unknown>('regarder:dock', null)) void import('./ui/spectateDock').then((m) => m.restoreDock());
 initPointsUi();
 initSocialUi();
 startUpdateChecks();

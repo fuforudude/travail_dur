@@ -2,6 +2,8 @@
 // noté par le serveur dans casino_spins, lisible par le joueur et ses amis, et suivi en direct.
 
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { ensureAccount } from './auth';
+import { friendList } from './friends';
 import { errorMessage, getSupabase } from './supabase';
 
 export interface Spin {
@@ -49,4 +51,11 @@ export async function playerName(uid: string): Promise<string> {
   const supabase = await getSupabase();
   const { data } = (await supabase?.from('profiles').select('username').eq('id', uid).maybeSingle()) ?? {};
   return (data as { username: string } | null)?.username ?? 'Joueur';
+}
+
+/** Seuls le joueur lui-même et ses amis voient ses tours (le serveur applique la même règle). */
+export async function canWatch(uid: string): Promise<boolean> {
+  const me = await ensureAccount();
+  if (!me) return false;
+  return me.id === uid || (await friendList().catch(() => [])).some((f) => f.id === uid && f.status === 'friend');
 }
