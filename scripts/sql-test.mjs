@@ -248,6 +248,24 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   await db.query(`insert into public.suspensions (user_id, until) values ($1, now() - interval '1 minute')`, [bad]);
   if (!(await throws(() => as(bad, `select public.request_check()`)))) ok('une suspension terminée ne bloque plus');
   else fail('une suspension expirée bloque encore');
+
+  // Revenus de l'appart (0046) : rien n'est gagné pendant la suspension, ni pendant qu'elle dure, ni après.
+  const rich = await newUser();
+  await db.query(`alter table public.apartments disable trigger apartment_rate_sync`);
+  await db.query(`insert into public.apartments (user_id, rate, banked, last_tick) values ($1, 100, 0, now() - interval '10 hours')`, [rich]);
+  await asAdmin('aal2', `select public.admin_suspend($1, 0, 'farm')`, [rich]);
+  const before = Number((await db.query(`select banked from public.apartments where user_id = $1`, [rich])).rows[0].banked);
+  // 6 h plus tard, toujours suspendu, puis levée au bout de 8 h, 2 h de jeu normal ensuite.
+  await db.query(`update public.apartments set last_tick = now() - interval '6 hours' where user_id = $1`, [rich]);
+  await db.query(`update public.suspensions set created_at = now() - interval '6 hours' where user_id = $1`, [rich]);
+  const during = Number((await db.query(`select (public.apartment_settle($1)).banked`, [rich])).rows[0].banked);
+  await db.query(`update public.apartments set last_tick = now() - interval '4 hours' where user_id = $1`, [rich]);
+  await db.query(`update public.suspensions set created_at = now() - interval '8 hours', until = now() - interval '2 hours' where user_id = $1`, [rich]);
+  const after = Number((await db.query(`select (public.apartment_settle($1)).banked`, [rich])).rows[0].banked);
+  await db.query(`alter table public.apartments enable trigger apartment_rate_sync`);
+  if (Math.round(before) === 1000 && Math.round(during) === 1000 && Math.round(after) === 1200)
+    ok('les revenus de l’appart s’arrêtent pendant une suspension (gagnés avant : gardés)');
+  else fail(`revenus : avant ${before}, pendant ${during}, après ${after} (attendu 1000, 1000, 1200)`);
 }
 
 // Grande échelle (0043) : la mise maximale suit le solde, les caisses chères donnent du Divin.
