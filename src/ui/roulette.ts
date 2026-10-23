@@ -8,15 +8,15 @@ import { h, hints } from './dom';
 import { page } from './layout';
 
 // Roulette européenne : ordre des cases sur la roue, et numéros rouges.
-const WHEEL = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
+export const WHEEL = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
 const REDS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
-const colorOf = (n: number) => (n === 0 ? 'green' : REDS.has(n) ? 'red' : 'black');
-const colorName = (n: number) => (n === 0 ? 'vert' : REDS.has(n) ? 'rouge' : 'noir');
+export const colorOf = (n: number) => (n === 0 ? 'green' : REDS.has(n) ? 'red' : 'black');
+export const colorName = (n: number) => (n === 0 ? 'vert' : REDS.has(n) ? 'rouge' : 'noir');
 
 export const ROULETTE_RULES = [
   'Roulette européenne : 37 cases, de 0 à 36. Le 0 est vert, les autres sont rouges ou noirs.',
   'Gains (mise comprise) : un numéro plein rapporte 36 fois la mise (le 0 vert aussi) ; une douzaine 3 fois ; rouge, noir, pair, impair, 1–18 ou 19–36 rapportent 2 fois. Sur le 0, toutes ces chances simples perdent.',
-  'On peut miser sur plusieurs cases à la fois, jusqu’à 20 % de son solde par tour (au moins 500 points, au plus 100 millions).',
+  'On peut miser sur plusieurs cases à la fois, jusqu’à tout son solde (« All in »).',
 ];
 
 /** Mise : clé du serveur (n0..n36, red, black, even, odd, low, high, d1..d3) et libellé. */
@@ -53,7 +53,7 @@ function layout(): Spot[] {
 }
 
 /** Roue en SVG : 37 secteurs, le 0 en haut quand la rotation est nulle. */
-function wheelSvg(): SVGSVGElement {
+export function wheelSvg(): SVGSVGElement {
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '-100 -100 200 200');

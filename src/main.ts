@@ -40,6 +40,7 @@ route(/^\/account(?:\?(\w+))?$/, lazy(() => import('./ui/account').then((m) => m
 route(/^\/points$/, lazy(() => import('./ui/points').then((m) => m.pointsView)));
 route(/^\/roulette$/, lazy(() => import('./ui/roulette').then((m) => m.rouletteView)));
 route(/^\/slots$/, lazy(() => import('./ui/slots').then((m) => m.slotsView)));
+route(/^\/regarder\/([0-9a-f-]{36})$/, lazy(() => import('./ui/spectate').then((m) => m.spectateView)));
 route(/^\/shop$/, lazy(() => import('./ui/shop').then((m) => m.shopView)));
 route(/^\/admin$/, lazy(() => import('./ui/admin').then((m) => m.adminView)));
 route(/^\/appart(?:\/([0-9a-f-]{36}))?$/, lazy(() => import('./ui/apartment').then((m) => m.apartmentView)));

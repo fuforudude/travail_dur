@@ -318,6 +318,24 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   else fail(`paliers : ${first} puis ${second} (attendu ${expected}), atteints ${done}`);
 }
 
+// Spectateur (0049) : les tours de casino d'un joueur sont visibles de ses amis, pas des autres.
+{
+  const player = await newUser();
+  const pal = await newUser();
+  const stranger = await newUser();
+  await db.query(`insert into public.friendships (a, b, requested_by, accepted) values (least($1::uuid, $2::uuid), greatest($1::uuid, $2::uuid), $1, true)`, [player, pal]);
+  await as(player, `select public.points_wallet()`);
+  await as(player, `select public.casino_roulette('{"red": 10}'::jsonb)`);
+  await as(player, `select public.casino_slots(5)`);
+  const seen = async (uid) => (await as(uid, `select game, detail from public.casino_spins where user_id = $1 order by id`, [player])).rows;
+  const mine = await seen(player);
+  const friend = await seen(pal);
+  const other = await seen(stranger);
+  if (mine.length === 2 && friend.length === 2 && other.length === 0 && Number.isInteger(friend[0].detail.number) && friend[1].detail.reels.length === 3)
+    ok('un ami voit les tours de roulette et de machine à sous, un inconnu non');
+  else fail(`tours vus : joueur ${mine.length}, ami ${friend.length}, inconnu ${other.length}, ${JSON.stringify(friend)}`);
+}
+
 // All in (0048) : plus de mise maximale, on peut miser tout son solde mais pas plus ;
 // les caisses chères donnent du Divin (0043).
 {

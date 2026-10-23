@@ -1756,3 +1756,18 @@ button.field.danger:is(:hover, :focus, :active):not(:disabled) {
 .pts-goal-game li.done .pts-amount { text-decoration: line-through; }
 .gift-form { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: -0.1rem 0 0.2rem 0.9rem; padding: 0.4rem 0.6rem; border-left: 2px solid var(--accent); }
 .gift-form .field { width: auto; flex: 1 1 7rem; min-width: 0; }
+
+/* Regarder un ami au casino (ui/spectate.ts). */
+.sp-live { display: flex; align-items: center; gap: 0.4rem; }
+.sp-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--danger); animation: sp-pulse 1.4s ease-in-out infinite; }
+@keyframes sp-pulse { 50% { opacity: 0.3; } }
+.sp-status { min-height: 1.4em; font-weight: 600; }
+.sp-stage { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.8rem; align-items: start; }
+.sp-pane { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 0.6rem; border: 1px solid var(--border); border-radius: 10px; opacity: 0.75; transition: opacity 0.2s, border-color 0.2s; }
+.sp-pane.on { opacity: 1; border-color: var(--accent); }
+.sp-pane h2 { margin: 0; font-size: 1rem; }
+.sp-pane .rl-wheel-wrap { max-width: 14rem; width: 100%; }
+.sp-pane { min-width: 0; }
+.sp-pane .sl-window { max-width: 100%; }
+.sp-pane .sl-reel { width: min(4.5rem, 22vw); height: min(5.2rem, 26vw); font-size: min(2.6rem, 11vw); }
+@media (prefers-reduced-motion: reduce) { .sp-dot { animation: none; } }

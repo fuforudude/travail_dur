@@ -178,7 +178,7 @@ export function friendsView(root: HTMLElement, [param]: string[]): () => void {
                 render();
               });
               gift.setAttribute('aria-expanded', String(giftTo === f.id));
-              const line = row(f.id, f.username, gift, button('Voir son appart', () => navigate(`/appart/${f.id}`)), remove);
+              const line = row(f.id, f.username, gift, button('Regarder', () => navigate(`/regarder/${f.id}`)), button('Voir son appart', () => navigate(`/appart/${f.id}`)), remove);
               return giftTo === f.id ? [line, giftForm(f)] : [line];
             }).flat(),
           )
