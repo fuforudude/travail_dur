@@ -180,7 +180,7 @@ export function friendsView(root: HTMLElement, [param]: string[]): () => void {
               });
               gift.setAttribute('aria-expanded', String(giftTo === f.id));
               const line = row(f.id, f.username, gift, button('Regarder', () => {
-                void openDock(f.id);
+                void openDock(f.id, false, f.username);
                 say(`${f.username} est sur le côté : continue à jouer, sa roulette te suit.`);
               }), button('Voir son appart', () => navigate(`/appart/${f.id}`)), remove);
               return giftTo === f.id ? [line, giftForm(f)] : [line];

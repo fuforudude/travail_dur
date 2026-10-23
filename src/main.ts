@@ -10,12 +10,14 @@ import { onStale, startUpdateChecks } from './core/update';
 import { initTouch } from './core/touch';
 import { consumeAuthRedirect, ensureAccount, onAccount } from './net/auth';
 import { startNotifications } from './net/friends';
+import { startOnline } from './net/online';
 import { startPoints } from './net/points';
 import { startIdleIncome } from './net/idle';
 import { syncServerClock } from './net/serverClock';
 import { multiConfigured } from './net/supabase';
 import { lazy, prefetchViews, route, startRouter } from './router';
 import { homeView } from './ui/home';
+import { initOnlineBadge } from './ui/layout';
 import { playView } from './ui/play';
 import { initPointsUi, initSocialUi, toast } from './ui/toast';
 
@@ -27,6 +29,7 @@ initSuspension();
 // Fenêtre « Regarder » laissée ouverte : elle revient au chargement (module téléchargé seulement dans ce cas).
 if (load<unknown>('regarder:dock', null)) void import('./ui/spectateDock').then((m) => m.restoreDock());
 initPointsUi();
+initOnlineBadge();
 initSocialUi();
 startUpdateChecks();
 onStale(() => toast('Nouvelle version du site : elle se charge à ton prochain changement de page.', 'info', { label: 'Recharger', run: () => location.reload() }));
@@ -43,6 +46,7 @@ route(/^\/account(?:\?(\w+))?$/, lazy(() => import('./ui/account').then((m) => m
 route(/^\/points$/, lazy(() => import('./ui/points').then((m) => m.pointsView)));
 route(/^\/roulette$/, lazy(() => import('./ui/roulette').then((m) => m.rouletteView)));
 route(/^\/slots$/, lazy(() => import('./ui/slots').then((m) => m.slotsView)));
+route(/^\/en-ligne$/, lazy(() => import('./ui/online').then((m) => m.onlineView)));
 route(/^\/regarder\/([0-9a-f-]{36})$/, lazy(() => import('./ui/spectate').then((m) => m.spectateView)));
 route(/^\/shop$/, lazy(() => import('./ui/shop').then((m) => m.shopView)));
 route(/^\/admin$/, lazy(() => import('./ui/admin').then((m) => m.adminView)));
@@ -84,6 +88,7 @@ consumeAuthRedirect().finally(() => {
       void syncServerClock(); // heure du serveur : changer l'heure de l'appareil ne change rien
       startIdleIncome(a.id); // revenus de l'appart, sur toutes les pages
       void startNotifications(a.id);
+      void startOnline(a.id); // joueurs connectés
       flushTdUploads(); // parties de tower defense pas encore arrivées au serveur
     });
   }

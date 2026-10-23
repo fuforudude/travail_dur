@@ -2,6 +2,7 @@ import { togglePanic } from '../core/panic';
 import { getSettings } from '../core/settings';
 import { getAccount, onAccount } from '../net/auth';
 import { nameEl } from '../net/cosmetics';
+import { onlinePlayers, onOnline } from '../net/online';
 import { formatPoints, getWallet } from '../net/points';
 import { navigate } from '../router';
 import { h } from './dom';
@@ -23,6 +24,7 @@ export function page(root: HTMLElement, title: string): HTMLElement {
       home,
       h('a', { class: 'brand', href: '#/' }, 'Notes'),
       h('span', { class: 'crumb' }, title),
+      onlineBadge(),
       pointsBadge(),
       whoEl(),
       panicButton(),
@@ -40,6 +42,27 @@ function panicButton(): HTMLElement {
     togglePanic();
   });
   return b;
+}
+
+const onlineText = (n: number) => [h('span', { class: 'online-dot' }), String(n), h('span', { class: 'online-label' }, ' en ligne')];
+
+/** Nombre de joueurs connectés ; un clic ouvre leur liste. */
+function onlineBadge(): HTMLElement {
+  const n = onlinePlayers().length;
+  const b = h('button', { class: 'online-badge', type: 'button', title: 'Joueurs connectés', hidden: !n }, ...onlineText(n));
+  b.addEventListener('mousedown', (e) => e.preventDefault());
+  b.addEventListener('click', () => navigate('/en-ligne'));
+  return b;
+}
+
+/** Tient à jour le nombre de joueurs connectés dans la barre du haut, sur toutes les pages. */
+export function initOnlineBadge(): void {
+  onOnline((list) =>
+    document.querySelectorAll<HTMLElement>('.online-badge').forEach((el) => {
+      el.hidden = !list.length;
+      el.replaceChildren(...onlineText(list.length));
+    }),
+  );
 }
 
 /** Solde de points dans la barre du haut (mis à jour par ui/toast.ts) ; un clic ouvre la page Points. */

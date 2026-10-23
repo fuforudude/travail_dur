@@ -49,7 +49,7 @@ export function closeDock(): void {
 }
 
 /** Ouvre (ou remplace) la fenêtre sur le côté pour cet ami. */
-export async function openDock(uid: string, min = false): Promise<void> {
+export async function openDock(uid: string, min = false, knownName?: string): Promise<void> {
   if (!multiConfigured) return;
   if (current?.uid === uid) {
     current.el.classList.toggle('min', false);
@@ -60,7 +60,7 @@ export async function openDock(uid: string, min = false): Promise<void> {
   closeDock();
   save(KEY, { uid, min, x: keep?.x, y: keep?.y });
   const ticket = ++opening;
-  const [allowed, name] = await Promise.all([canWatch(uid), playerName(uid)]);
+  const [allowed, name] = await Promise.all([canWatch(uid), knownName ?? playerName(uid)]);
   if (ticket !== opening) return;
   if (!allowed) {
     remove(KEY);
