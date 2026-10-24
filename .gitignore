@@ -6,7 +6,8 @@ dist
 .DS_Store
 # Documents de cours : protégés, jamais publiés avec le site
 *.pdf
-# Dossiers de travail temporaires de Claude Code
+# Dossiers de travail temporaires de Claude Code, et réglages propres à chaque poste
 .claude/worktrees/
+.claude/settings.local.json
 # Fichiers locaux de la CLI Supabase (projet lié)
 supabase/.temp/
