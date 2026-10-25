@@ -29,7 +29,8 @@ En bref :
 - La branche `backend` ne se fusionne pas tant que l'API n'est pas en ligne sur le VPS (voir `docs/adr/0001-backend-sur-vps.md`).
 
 ## Agents de l'équipe
-Ce projet utilise les plugins `socle` et `dev-supabase` du marketplace `equipe` :
-- `/socle:feature <description>` mène une fonctionnalité de bout en bout (spec, dev, revue, QA).
-- Agents : `chef-de-projet`, `dev`, `reviewer`, `qa`, `securite-supabase`.
+Ce projet utilise les plugins `socle` et `backend` du marketplace `equipe` (github.com/fuforudude/agents-equipe) :
+- Le chef de projet tient la session : entretien, spec validée, puis agents `dev`, `reviewer`, `architecte`, `securite-backend`, `qa`.
 - Toute nouvelle fonctionnalité a une spec dans `docs/specs/`, toute décision structurante un ADR dans `docs/adr/`.
+- Exception assumée au flux par PR : ce projet n'a pas de CI de fusion, on pousse directement sur `main` (`.claude/agents-equipe.json` l'autorise). Les garde-fous demandent l'accord de l'utilisateur pour tout push qui touche `supabase/migrations/` ou `supabase/functions/`, puisqu'il part en production.
+- Le site historique garde sa logique métier en SQL (fonctions `security definer`) : c'est l'écart aux règles `architecture-backend` que l'ADR 0001 prévoit de résorber. Le nouveau code backend (branche `backend`) suit les règles à la lettre.
