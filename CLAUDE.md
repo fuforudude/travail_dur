@@ -30,7 +30,7 @@ En bref :
 
 ## Agents de l'équipe
 Ce projet utilise les plugins `socle` et `backend` du marketplace `equipe` (github.com/fuforudude/agents-equipe) :
-- Le chef de projet tient la session : entretien, spec validée, puis agents `dev`, `reviewer`, `architecte`, `securite-backend`, `qa`.
+- Le mode se choisit à la création de chaque conversation (ou avec `/mode`) : en « Projet dev », le chef de projet mène l'entretien, fait valider la spec, puis pilote les agents `dev`, `reviewer`, `architecte`, `securite-backend`, `qa` ; en « Création d'assets », il pilote les créateurs 2D et 3D (assets suivis dans `.claude/assets.json`) ; « Simple » est Claude Code sans le plugin.
 - Toute nouvelle fonctionnalité a une spec dans `docs/specs/`, toute décision structurante un ADR dans `docs/adr/`.
 - Exception assumée au flux par PR : ce projet n'a pas de CI de fusion, on pousse directement sur `main` (`.claude/agents-equipe.json` l'autorise). Les garde-fous demandent l'accord de l'utilisateur pour tout push qui touche `supabase/migrations/` ou `supabase/functions/`, puisqu'il part en production.
 - Le site historique garde sa logique métier en SQL (fonctions `security definer`) : c'est l'écart aux règles `architecture-backend` que l'ADR 0001 prévoit de résorber. Le nouveau code backend (branche `backend`) suit les règles à la lettre.
