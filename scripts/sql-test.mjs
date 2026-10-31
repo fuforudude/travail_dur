@@ -367,6 +367,44 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   else fail('furniture_items est vide pour un joueur');
 }
 
+// Annonce et heures de connexion (0050).
+{
+  const byPlayer = await throws(() => as(a, `select public.admin_announce('pirate')`));
+  const noCode = await throws(() => asAdmin('aal1', `select public.admin_announce('sans code')`));
+  if (byPlayer?.includes('réservé aux admins') && noCode?.includes('double authentification')) ok('seul un admin avec double authentification publie une annonce');
+  else fail(`annonce : joueur → ${byPlayer ?? 'accepté'}, admin sans code → ${noCode ?? 'accepté'}`);
+  await asAdmin('aal2', `select public.admin_announce('  Maintenance ce soir  ')`);
+  await db.exec(`set role anon`);
+  const seen = (await db.query(`select body from public.announcement`)).rows[0]?.body;
+  await db.exec(`reset role`);
+  if (seen === 'Maintenance ce soir') ok('l’annonce est lue par tout le monde, même sans compte');
+  else fail(`annonce lue sans compte : ${seen ?? 'rien'}`);
+  await asAdmin('aal2', `select public.admin_announce('')`);
+  const left = (await db.query(`select count(*)::int as n from public.announcement`)).rows[0].n;
+  const logged = (await db.query(`select count(*)::int as n from public.admin_log where action = 'announce'`)).rows[0].n;
+  if (left === 0 && logged === 2) ok('un texte vide retire l’annonce ; publication et retrait sont au journal');
+  else fail(`retrait de l’annonce : ${left} ligne(s), ${logged} entrée(s) au journal`);
+
+  const visitor = await newUser();
+  await as(visitor, `select public.connection_ping()`);
+  await as(visitor, `select public.connection_ping()`);
+  const one = (await db.query(`select count(*)::int as n from public.connections where user_id = $1`, [visitor])).rows[0].n;
+  await db.query(`update public.connections set started_at = now() - interval '2 hours', last_at = now() - interval '1 hour' where user_id = $1`, [visitor]);
+  await db.query(`insert into public.connections (user_id, started_at, last_at) values ($1, now() - interval '100 days', now() - interval '100 days')`, [visitor]);
+  await as(visitor, `select public.connection_ping()`);
+  const after = (await db.query(`select count(*)::int as n from public.connections where user_id = $1`, [visitor])).rows[0].n;
+  if (one === 1 && after === 2) ok('une séance par visite : prolongée tant que le site est ouvert, nouvelle après 15 min, effacée après 90 jours');
+  else fail(`séances : ${one} après deux signes de vie (attendu 1), ${after} après une pause (attendu 2)`);
+  const peek = await throws(() => as(visitor, `select * from public.connections`));
+  const spy = await throws(() => as(visitor, `select * from public.admin_connections($1)`, [visitor]));
+  if (peek?.includes('permission denied') && spy?.includes('réservé aux admins')) ok('un joueur ne lit aucune séance, même les siennes');
+  else fail(`lecture des séances par un joueur : table → ${peek ?? 'permise'}, fonction → ${spy ?? 'permise'}`);
+  const list = (await asAdmin('aal2', `select * from public.admin_connections($1)`, [visitor])).rows.length;
+  const last = (await asAdmin('aal2', `select * from public.admin_last_seen($1)`, [[visitor]])).rows;
+  if (list === 2 && last.length === 1) ok('l’admin voit les séances d’un compte et sa dernière connexion');
+  else fail(`admin : ${list} séance(s), dernière connexion ${JSON.stringify(last)}`);
+}
+
 await db.close();
 if (failures) {
   console.error(`\n${failures} échec(s).`);

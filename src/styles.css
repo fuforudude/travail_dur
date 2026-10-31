@@ -149,6 +149,45 @@ kbd {
 }
 .crumb { color: var(--muted); }
 .crumb::before { content: '/ '; opacity: 0.6; }
+/* Lien vers le nouveau jeu, dans la barre du haut de toutes les pages */
+.pocharlume-link { color: var(--accent); text-decoration: none; white-space: nowrap; font-size: 0.85rem; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--accent-soft); }
+.pocharlume-link:hover { text-decoration: underline; }
+
+/* Annonce des admins : par-dessus le site (sous l'écran de la touche panique), fermée par la croix */
+.announce {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  display: flex;
+  justify-content: center;
+  padding: 0.65rem 3.2rem;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  text-align: center;
+  white-space: pre-line;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 22%);
+  animation: announce-in 0.25s ease-out;
+}
+@keyframes announce-in { from { transform: translateY(-100%); } }
+.announce-close {
+  position: absolute;
+  top: 50%;
+  right: 0.6rem;
+  transform: translateY(-50%);
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+.announce-close:hover { background: rgb(255 255 255 / 22%); }
+@media (prefers-reduced-motion: reduce) { .announce { animation: none; } }
 .who {
   margin-left: auto;
   color: var(--muted);
@@ -703,7 +742,7 @@ button[type='submit'].field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var
 }
 .home-btn:hover { background: color-mix(in srgb, var(--accent) 20%, var(--surface)); }
 @media (max-width: 480px) {
-  .topbar .crumb { display: none; }
+  .topbar .crumb, .pocharlume-prefix { display: none; }
 }
 .tone1 { --tone: var(--tone1); }
 .tone2 { --tone: var(--tone2); }
@@ -1551,6 +1590,8 @@ button.shop-item:hover:not(:disabled) { border-color: color-mix(in srgb, var(--a
 .small-btn { width: auto; padding: 0.2rem 0.6rem; font-size: 0.8rem; }
 .small-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .admin-players th:last-child { text-align: right; }
+.admin-sessions { margin: 0; padding-left: 1.1rem; max-height: 12rem; overflow-y: auto; display: grid; gap: 0.15rem; font-variant-numeric: tabular-nums; }
+.admin textarea.field { width: 100%; resize: vertical; margin-bottom: 0.5rem; font: inherit; }
 .small-btn.on { border-color: var(--danger-text); color: var(--danger-text); }
 .danger-tag { color: var(--danger-text); background: color-mix(in srgb, var(--danger-text) 12%, var(--surface)); }
 .admin-players .tag { margin-left: 0.4rem; }

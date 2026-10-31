@@ -1,6 +1,7 @@
 import './styles.css';
 import './mobile.css';
 import './polish.css';
+import { initAnnouncement } from './core/announcement';
 import { initPanic } from './core/panic';
 import { initPrank } from './core/prank';
 import { initSuspension } from './core/suspension';
@@ -9,6 +10,7 @@ import { applyTheme } from './core/settings';
 import { onStale, startUpdateChecks } from './core/update';
 import { initTouch } from './core/touch';
 import { consumeAuthRedirect, ensureAccount, onAccount } from './net/auth';
+import { startConnections } from './net/connections';
 import { startNotifications } from './net/friends';
 import { startOnline } from './net/online';
 import { startPoints } from './net/points';
@@ -26,6 +28,7 @@ initTouch();
 initPanic();
 initPrank();
 initSuspension();
+initAnnouncement(); // bandeau d'annonce des admins
 // Fenêtre « Regarder » laissée ouverte : elle revient au chargement (module téléchargé seulement dans ce cas).
 if (load<unknown>('regarder:dock', null)) void import('./ui/spectateDock').then((m) => m.restoreDock());
 initPointsUi();
@@ -89,6 +92,7 @@ consumeAuthRedirect().finally(() => {
       startIdleIncome(a.id); // revenus de l'appart, sur toutes les pages
       void startNotifications(a.id);
       void startOnline(a.id); // joueurs connectés
+      startConnections(); // heures de connexion, vues par les admins
       flushTdUploads(); // parties de tower defense pas encore arrivées au serveur
     });
   }

@@ -58,6 +58,23 @@ export const scareNow = (target: string) => rpc<void>('admin_scare', { target })
 export const deletePlayer = (target: string) => rpc<void>('admin_delete_player', { target });
 export const giveItem = (target: string, item: string) => rpc<void>('admin_give', { target, item });
 
+/** Annonce affichée à tous (0050_annonce_connexions.sql) ; texte vide : l'annonce est retirée. */
+export const announce = (body: string) => rpc<void>('admin_announce', { body });
+
+/** Séance de connexion d'un compte : arrivée et dernière activité. */
+export interface Connection {
+  started_at: string;
+  last_at: string;
+}
+/** Les 30 dernières séances d'un compte, la plus récente d'abord. */
+export const connectionsOf = (target: string) => rpc<Connection[]>('admin_connections', { target });
+/** Dernière activité connue de chacun de ces comptes (absent : jamais vu depuis la migration 0050). */
+export async function lastSeen(ids: string[]): Promise<Map<string, string>> {
+  if (!ids.length) return new Map();
+  const rows = await rpc<{ user_id: string; last_at: string }[]>('admin_last_seen', { ids });
+  return new Map(rows.map((r) => [r.user_id, r.last_at]));
+}
+
 /** Suspension en cours d'un joueur (0045_suspension.sql) ; `until` null : sans fin. */
 export interface Suspension {
   until: string | null;

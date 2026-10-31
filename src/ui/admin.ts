@@ -1,19 +1,24 @@
+import { currentAnnouncement, refreshAnnouncement } from '../core/announcement';
 import { isTyping, pushKeys } from '../core/input';
 import {
   addArtwork,
   adminLog,
+  announce,
+  connectionsOf,
   deleteArtwork,
   deletePlayer,
   findPlayers,
   givePoints,
   giveItem,
   isAdmin,
+  lastSeen,
   renamePlayer,
   scareNow,
   setCurse,
   suspendPlayer,
   suspensionsOf,
   unsuspendPlayer,
+  type Connection,
   type PlayerRow,
   type Suspension,
 } from '../net/admin';
@@ -31,6 +36,28 @@ const LEVELS = ['', 'rare (8 à 15 min)', 'normal (3 à 8 min)', 'fréquent (1 �
 /** Durées de suspension proposées, en heures (0 : sans fin). */
 const DURATIONS: [number, string][] = [[1, '1 heure'], [24, '1 jour'], [72, '3 jours'], [168, '1 semaine'], [720, '30 jours'], [0, 'Sans fin']];
 const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+const hm = (d: Date) => d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+/** Dernière connexion, lisible d'un coup d'œil : « en ligne », « il y a 25 min », « hier à 21:40 »… */
+const seenText = (iso: string) => {
+  const d = new Date(iso);
+  const min = Math.round((Date.now() - d.getTime()) / 60_000);
+  if (min < 10) return 'en ligne';
+  if (min < 60) return `il y a ${min} min`;
+  const yesterday = new Date(Date.now() - 86_400_000);
+  if (sameDay(d, new Date())) return `aujourd’hui à ${hm(d)}`;
+  if (sameDay(d, yesterday)) return `hier à ${hm(d)}`;
+  return when(iso);
+};
+/** Une séance : « jeu. 30/10 · 14:02 → 15:30 (1 h 28) ». */
+const sessionText = (c: Connection) => {
+  const start = new Date(c.started_at);
+  const end = new Date(c.last_at);
+  const min = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60_000));
+  const day = start.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+  const length = min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
+  return `${day} · ${hm(start)} → ${hm(end)} (${length})`;
+};
 const suspendedText = (s: Suspension) => (s.until ? `suspendu jusqu’au ${when(s.until)}` : 'suspendu sans fin');
 const ACTIONS: Record<string, string> = {
   points: 'Points',
@@ -44,6 +71,7 @@ const ACTIONS: Record<string, string> = {
   unsuspend: 'Fin de suspension',
   artwork_add: 'Photo ajoutée',
   artwork_delete: 'Photo supprimée',
+  announce: 'Annonce',
 };
 
 /** `#/admin` : réservé aux admins (le serveur refuse de toute façon chaque action à un non-admin). */
@@ -73,12 +101,14 @@ export function adminView(root: HTMLElement): () => void {
   const detail = h('div', { class: 'admin-detail card', hidden: true });
   let players: PlayerRow[] = [];
   let suspended = new Map<string, Suspension>();
+  let seen = new Map<string, string>();
   let selected: PlayerRow | null = null;
 
   const loadPlayers = async () => {
     try {
       players = await findPlayers(search.value.trim());
       suspended = await suspensionsOf(players.map((p) => p.id)).catch(() => new Map<string, Suspension>()); // migration 0045 pas encore passée
+      seen = await lastSeen(players.map((p) => p.id)).catch(() => new Map<string, string>()); // migration 0050 pas encore passée
       results.replaceChildren(
         ...players.map((p) => {
           // Les trois actions courantes, directement sur la ligne.
@@ -113,6 +143,7 @@ export function adminView(root: HTMLElement): () => void {
             { class: selected?.id === p.id ? 'me' : '' },
             h('td', {}, nameEl(p.id, p.username), p.is_admin ? h('span', { class: 'tag' }, ' admin') : '', p.verified ? '' : h('span', { class: 'muted small' }, ' invité')),
             h('td', {}, formatPoints(p.balance)),
+            h('td', { class: 'small' + (seen.has(p.id) && seenText(seen.get(p.id)!) === 'en ligne' ? '' : ' muted') }, seen.has(p.id) ? seenText(seen.get(p.id)!) : '—'),
             h(
               'td',
               {},
@@ -195,6 +226,12 @@ export function adminView(root: HTMLElement): () => void {
       if (await run(() => unsuspendPlayer(p.id), `${p.username} n’est plus suspendu.`)) void loadPlayers();
     });
 
+    // Heures de connexion : les 30 dernières séances (0050_annonce_connexions.sql).
+    const sessions = h('ol', { class: 'admin-sessions' }, h('li', { class: 'muted small' }, 'Chargement…'));
+    void connectionsOf(p.id)
+      .then((list) => sessions.replaceChildren(...(list.length ? list.map((c) => h('li', { class: 'small' }, sessionText(c))) : [h('li', { class: 'muted small' }, 'Aucune connexion enregistrée.')])))
+      .catch((e: Error) => sessions.replaceChildren(h('li', { class: 'notice' }, e.message)));
+
     const row = (label: string, ...controls: HTMLElement[]) => h('div', { class: 'admin-row' }, h('span', { class: 'muted small' }, label), h('div', { class: 'admin-controls' }, ...controls));
     detail.hidden = false;
     detail.replaceChildren(
@@ -208,6 +245,7 @@ export function adminView(root: HTMLElement): () => void {
         : susp
           ? row('Suspension', h('span', { class: 'tag danger-tag' }, suspendedText(susp)), ...(susp.reason ? [h('span', { class: 'small' }, `Raison : ${susp.reason}`)] : []), lift)
           : row('Suspension', duration, why, suspend),
+      row('Connexions', sessions),
       h('p', { class: 'muted small' }, `Identifiant : ${p.id}`),
     );
     results.querySelectorAll('tr').forEach((tr, i) => tr.classList.toggle('me', players[i]?.id === p.id));
@@ -252,6 +290,35 @@ export function adminView(root: HTMLElement): () => void {
       file.value = '';
       title.value = '';
       void loadGallery();
+    }
+  });
+
+  // --- Annonce -------------------------------------------------------------
+  const annText = h('textarea', { class: 'field', rows: 2, maxlength: 500, placeholder: 'Texte affiché en haut du site pour tout le monde', 'aria-label': 'Texte de l’annonce' });
+  const publish = h('button', { class: 'field', type: 'button' }, 'Publier');
+  const withdraw = h('button', { class: 'field', type: 'button' }, 'Retirer l’annonce');
+  const annState = h('p', { class: 'muted small' });
+  const loadAnnouncement = async () => {
+    const a = await currentAnnouncement();
+    annState.textContent = a ? `En ligne depuis le ${when(a.updated_at)}.` : 'Aucune annonce en ce moment.';
+    withdraw.disabled = !a;
+    if (a && !annText.value) annText.value = a.body;
+  };
+  publish.addEventListener('click', async () => {
+    const text = annText.value.trim();
+    if (!text) return say('Écris d’abord le texte de l’annonce.');
+    if (await run(() => announce(text), 'Annonce publiée : chacun la voit au plus tard dans 5 minutes.')) {
+      void loadAnnouncement();
+      void refreshAnnouncement();
+      void loadLog();
+    }
+  });
+  withdraw.addEventListener('click', async () => {
+    if (await run(() => announce(''), 'Annonce retirée.')) {
+      annText.value = '';
+      void loadAnnouncement();
+      void refreshAnnouncement();
+      void loadLog();
     }
   });
 
@@ -334,12 +401,14 @@ export function adminView(root: HTMLElement): () => void {
     wrap.replaceChildren(
       h('h1', {}, 'Administration'),
       notice,
-      h('section', { class: 'card' }, h('h2', {}, 'Joueurs'), search, h('table', { class: 'scores admin-players' }, h('thead', {}, h('tr', {}, h('th', {}, 'Joueur'), h('th', {}, 'Solde'), h('th', {}, ''), h('th', {}, 'Actions'))), results)),
+      h('section', { class: 'card' }, h('h2', {}, 'Joueurs'), search, h('table', { class: 'scores admin-players' }, h('thead', {}, h('tr', {}, h('th', {}, 'Joueur'), h('th', {}, 'Solde'), h('th', {}, 'Dernière connexion'), h('th', {}, ''), h('th', {}, 'Actions'))), results)),
       detail,
+      h('section', { class: 'card' }, h('h2', {}, 'Annonce'), annText, h('div', { class: 'admin-controls' }, publish, withdraw), annState),
       h('section', { class: 'card' }, h('h2', {}, 'Photos des cadres'), h('div', { class: 'admin-controls' }, file, title, upload), gallery),
       h('section', { class: 'card' }, h('h2', {}, 'Journal'), log),
     );
     void loadPlayers();
+    void loadAnnouncement();
     void loadGallery();
     void loadLog();
   };
