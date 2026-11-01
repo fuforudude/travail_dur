@@ -367,6 +367,20 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   else fail('furniture_items est vide pour un joueur');
 }
 
+// Classement du tower defense (0051) : l'histoire compte le chapitre 2, pas les défis bonus.
+{
+  const hero = await newUser();
+  await db.query(`update public.profiles set verified = true where id = $1`, [hero]);
+  const won = (level) => db.query(`insert into public.td_sessions (user_id, rules, mode, level, won, over) values ($1, 3, 'campaign', $2, true, true)`, [hero, level]);
+  await won(20);
+  await won(25); // défi bonus
+  const ch1 = (await db.query(`select level from public.leaderboard_td where user_id = $1`, [hero])).rows[0]?.level;
+  await won(37); // 12e niveau du chapitre 2
+  const ch2 = (await db.query(`select level from public.leaderboard_td where user_id = $1`, [hero])).rows[0]?.level;
+  if (ch1 === 20 && ch2 === 32) ok('le classement du tower defense compte le chapitre 2 de l’histoire, pas les défis bonus');
+  else fail(`classement TD : ${ch1} après le niveau 20 et un défi (attendu 20), ${ch2} après le niveau 37 (attendu 32)`);
+}
+
 // Annonce et heures de connexion (0050).
 {
   const byPlayer = await throws(() => as(a, `select public.admin_announce('pirate')`));

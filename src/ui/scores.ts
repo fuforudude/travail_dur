@@ -13,6 +13,14 @@ interface Board {
   columns: [string, string, ((v: string | number) => string)?][]; // [clé, en-tête, mise en forme]
 }
 
+// Avancement dans l'histoire du tower defense (colonne level, 0051_classement_td_chapitre2.sql) : 1 à 20
+// pour le chapitre 1, 21 à 70 pour le chapitre 2 (ses niveaux 26 à 75, après les défis bonus).
+const storyRank = (v: string | number) => {
+  const n = Number(v);
+  if (!n) return '—';
+  return n <= 20 ? `ch. 1 · niv. ${n} / 20` : `ch. 2 · niv. ${n - 20} / 50`;
+};
+
 const BOARDS: Board[] = [
   { title: 'Points', view: 'leaderboard_points', order: 'balance', columns: [['balance', 'Solde'], ['earned', 'Gagnés en jouant']] },
   { title: '2048', view: 'leaderboard_2048', order: 'best', columns: [['best', 'Record'], ['max_tile', 'Tuile'], ['games', 'Parties']] },
@@ -23,7 +31,7 @@ const BOARDS: Board[] = [
     title: 'Tower defense',
     view: 'leaderboard_td',
     order: ['level', 'stars', 'best'],
-    columns: [['level', 'Campagne', (v) => `niv. ${v} / 20`], ['stars', 'Étoiles', (v) => `★ ${v}`], ['best', 'Infini : vague max'], ['games', 'Parties']],
+    columns: [['level', 'Histoire', storyRank], ['stars', 'Étoiles', (v) => `★ ${v}`], ['best', 'Infini : vague max'], ['games', 'Parties']],
   },
   { title: 'Puissance 4', view: 'leaderboard_c4', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
   { title: 'Morpion', view: 'leaderboard_ttt', order: 'wins', columns: [['wins', 'Victoires'], ['losses', 'Défaites'], ['draws', 'Nuls']] },
