@@ -379,13 +379,19 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   await db.exec(`reset role`);
   if (seen === 'Maintenance ce soir') ok('l’annonce est lue par tout le monde, même sans compte');
   else fail(`annonce lue sans compte : ${seen ?? 'rien'}`);
-  await asAdmin('aal2', `select public.admin_announce('')`);
+  const forged = await throws(() => as(a, `insert into public.announcement (id, body) values (1, 'pirate') on conflict (id) do update set body = 'pirate'`));
+  const edited = await throws(() => as(a, `update public.announcement set body = 'pirate'`));
+  if (forged?.includes('permission denied') && edited?.includes('permission denied')) ok('un joueur n’écrit pas l’annonce directement');
+  else fail(`écriture directe de l’annonce : insert → ${forged ?? 'permis'}, update → ${edited ?? 'permis'}`);
+  await asAdmin('aal2', `select public.admin_announce(E'\r\n\t  ')`);
   const left = (await db.query(`select count(*)::int as n from public.announcement`)).rows[0].n;
   const logged = (await db.query(`select count(*)::int as n from public.admin_log where action = 'announce'`)).rows[0].n;
   if (left === 0 && logged === 2) ok('un texte vide retire l’annonce ; publication et retrait sont au journal');
   else fail(`retrait de l’annonce : ${left} ligne(s), ${logged} entrée(s) au journal`);
 
   const visitor = await newUser();
+  const gone = await newUser(); // venu il y a longtemps, jamais revenu
+  await db.query(`insert into public.connections (user_id, started_at, last_at) values ($1, now() - interval '120 days', now() - interval '120 days')`, [gone]);
   await as(visitor, `select public.connection_ping()`);
   await as(visitor, `select public.connection_ping()`);
   const one = (await db.query(`select count(*)::int as n from public.connections where user_id = $1`, [visitor])).rows[0].n;
@@ -393,15 +399,17 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   await db.query(`insert into public.connections (user_id, started_at, last_at) values ($1, now() - interval '100 days', now() - interval '100 days')`, [visitor]);
   await as(visitor, `select public.connection_ping()`);
   const after = (await db.query(`select count(*)::int as n from public.connections where user_id = $1`, [visitor])).rows[0].n;
-  if (one === 1 && after === 2) ok('une séance par visite : prolongée tant que le site est ouvert, nouvelle après 15 min, effacée après 90 jours');
-  else fail(`séances : ${one} après deux signes de vie (attendu 1), ${after} après une pause (attendu 2)`);
+  const stale = (await db.query(`select count(*)::int as n from public.connections where user_id = $1`, [gone])).rows[0].n;
+  if (one === 1 && after === 2 && stale === 0) ok('une séance par visite : prolongée tant que le site est ouvert, nouvelle après 15 min, effacée après 90 jours (même pour un compte qui ne revient pas)');
+  else fail(`séances : ${one} après deux signes de vie (attendu 1), ${after} après une pause (attendu 2), ${stale} vieille(s) séance(s) d’un compte parti (attendu 0)`);
   const peek = await throws(() => as(visitor, `select * from public.connections`));
   const spy = await throws(() => as(visitor, `select * from public.admin_connections($1)`, [visitor]));
   if (peek?.includes('permission denied') && spy?.includes('réservé aux admins')) ok('un joueur ne lit aucune séance, même les siennes');
   else fail(`lecture des séances par un joueur : table → ${peek ?? 'permise'}, fonction → ${spy ?? 'permise'}`);
   const list = (await asAdmin('aal2', `select * from public.admin_connections($1)`, [visitor])).rows.length;
   const last = (await asAdmin('aal2', `select * from public.admin_last_seen($1)`, [[visitor]])).rows;
-  if (list === 2 && last.length === 1) ok('l’admin voit les séances d’un compte et sa dernière connexion');
+  const newest = (await db.query(`select max(last_at) as m from public.connections where user_id = $1`, [visitor])).rows[0].m;
+  if (list === 2 && last.length === 1 && +new Date(last[0].last_at) === +new Date(newest)) ok('l’admin voit les séances d’un compte et sa dernière connexion');
   else fail(`admin : ${list} séance(s), dernière connexion ${JSON.stringify(last)}`);
 }
 

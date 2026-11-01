@@ -107,8 +107,11 @@ export function adminView(root: HTMLElement): () => void {
   const loadPlayers = async () => {
     try {
       players = await findPlayers(search.value.trim());
-      suspended = await suspensionsOf(players.map((p) => p.id)).catch(() => new Map<string, Suspension>()); // migration 0045 pas encore passée
-      seen = await lastSeen(players.map((p) => p.id)).catch(() => new Map<string, string>()); // migration 0050 pas encore passée
+      const ids = players.map((p) => p.id);
+      [suspended, seen] = await Promise.all([
+        suspensionsOf(ids).catch(() => new Map<string, Suspension>()), // migration 0045 pas encore passée
+        lastSeen(ids).catch(() => new Map<string, string>()), // migration 0050 pas encore passée
+      ]);
       results.replaceChildren(
         ...players.map((p) => {
           // Les trois actions courantes, directement sur la ligne.
@@ -300,6 +303,11 @@ export function adminView(root: HTMLElement): () => void {
   const annState = h('p', { class: 'muted small' });
   const loadAnnouncement = async () => {
     const a = await currentAnnouncement();
+    if (a === undefined) {
+      annState.textContent = 'Impossible de lire l’annonce en cours pour l’instant.';
+      withdraw.disabled = true;
+      return;
+    }
     annState.textContent = a ? `En ligne depuis le ${when(a.updated_at)}.` : 'Aucune annonce en ce moment.';
     withdraw.disabled = !a;
     if (a && !annText.value) annText.value = a.body;

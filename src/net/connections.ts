@@ -8,6 +8,7 @@ const PING_MS = 5 * 60_000;
 
 let timer: number | undefined;
 let lastPing = 0;
+let account = '';
 
 async function ping(): Promise<void> {
   if (document.visibilityState !== 'visible' || Date.now() - lastPing < 60_000) return;
@@ -16,10 +17,14 @@ async function ping(): Promise<void> {
   await supabase?.rpc('connection_ping'); // erreur ignorée : ce n'est qu'un relevé
 }
 
-/** À lancer quand le compte est connu (une seule fois par chargement du site). */
-export function startConnections(): void {
+/** À lancer quand le compte est connu, et à chaque changement de compte (invité qui se connecte). */
+export function startConnections(accountId: string): void {
+  if (accountId !== account) {
+    account = accountId;
+    lastPing = 0; // le nouveau compte a son signe de vie tout de suite
+    void ping();
+  }
   if (timer !== undefined) return;
-  void ping();
   timer = window.setInterval(() => void ping(), PING_MS);
   document.addEventListener('visibilitychange', () => void ping());
 }

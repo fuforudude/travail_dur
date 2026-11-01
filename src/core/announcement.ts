@@ -8,6 +8,7 @@ import { load, save } from './storage';
 
 const CLOSED_KEY = 'annonce:fermee';
 const REFRESH_MS = 5 * 60_000;
+const MIN_GAP_MS = 60_000; // retour sur l'onglet : pas plus d'une relecture par minute
 
 interface Announcement {
   body: string;
@@ -16,13 +17,18 @@ interface Announcement {
 
 let banner: HTMLElement | null = null;
 let shown = ''; // updated_at de l'annonce affichée
+let lastRead = 0;
 
-/** Annonce en cours, ou null (aucune, serveur injoignable ou migration pas encore passée). */
-export async function currentAnnouncement(): Promise<Announcement | null> {
+/** Annonce en cours, null s'il n'y en a pas, undefined si on n'a pas pu la lire (réseau, migration pas encore passée). */
+export async function currentAnnouncement(): Promise<Announcement | null | undefined> {
   const supabase = await getSupabase();
-  if (!supabase) return null;
-  const { data, error } = await supabase.from('announcement').select('body, updated_at').maybeSingle();
-  return error ? null : ((data as Announcement | null) ?? null);
+  if (!supabase) return undefined;
+  try {
+    const { data, error } = await supabase.from('announcement').select('body, updated_at').maybeSingle();
+    return error ? undefined : ((data as Announcement | null) ?? null);
+  } catch {
+    return undefined;
+  }
 }
 
 function hide(): void {
@@ -46,7 +52,9 @@ function show(a: Announcement): void {
 
 /** Relit l'annonce et met le bandeau à jour (aussi appelé par la page Administration après publication). */
 export async function refreshAnnouncement(): Promise<void> {
+  lastRead = Date.now();
   const a = await currentAnnouncement();
+  if (a === undefined) return; // lecture ratée : on garde le bandeau tel quel
   if (!a) return hide();
   if (load<string>(CLOSED_KEY, '') === a.updated_at) return hide();
   show(a);
@@ -56,5 +64,7 @@ export function initAnnouncement(): void {
   if (!multiConfigured) return;
   void refreshAnnouncement();
   window.setInterval(() => document.visibilityState === 'visible' && void refreshAnnouncement(), REFRESH_MS);
-  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && void refreshAnnouncement());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && Date.now() - lastRead >= MIN_GAP_MS) void refreshAnnouncement();
+  });
 }

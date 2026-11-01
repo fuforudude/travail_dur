@@ -25,11 +25,11 @@ create function public.admin_announce(body text) returns void
 language plpgsql security definer set search_path = '' as $$
 declare
   me uuid := public.admin_check();
-  text_ text := btrim(coalesce(body, ''));
+  text_ text := btrim(coalesce(body, ''), E' \t\r\n');
 begin
   if char_length(text_) > 500 then raise exception 'annonce trop longue (500 caractères au plus)' using errcode = '22023'; end if;
   if text_ = '' then
-    delete from public.announcement;
+    delete from public.announcement where id = 1;
     perform public.admin_note('announce', null, 'annonce retirée');
   else
     insert into public.announcement (id, body, updated_at, admin_id) values (1, text_, now(), me)
@@ -46,6 +46,7 @@ create table public.connections (
   last_at timestamptz not null default now()
 );
 create index connections_user_last on public.connections (user_id, last_at desc);
+create index connections_last on public.connections (last_at); -- purge des vieilles séances
 alter table public.connections enable row level security; -- aucune règle : personne ne lit la table directement
 revoke all on public.connections from anon, authenticated;
 
@@ -62,7 +63,8 @@ begin
    order by last_at desc limit 1;
   if cur is null then
     insert into public.connections (user_id) values (uid);
-    delete from public.connections where user_id = uid and last_at < now() - interval '90 days';
+    -- Purge de toutes les séances de plus de 90 jours, aussi celles des comptes qui ne reviennent pas.
+    delete from public.connections where last_at < now() - interval '90 days';
   else
     update public.connections set last_at = now() where id = cur;
   end if;

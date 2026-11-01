@@ -162,7 +162,7 @@ kbd {
   z-index: 90;
   display: flex;
   justify-content: center;
-  padding: 0.65rem 3.2rem;
+  padding: calc(0.65rem + env(safe-area-inset-top)) 3.2rem 0.65rem; /* appli installée sur iPhone : sous l'encoche */
   background: var(--accent);
   color: var(--accent-text);
   font-weight: 600;
@@ -174,7 +174,7 @@ kbd {
 @keyframes announce-in { from { transform: translateY(-100%); } }
 .announce-close {
   position: absolute;
-  top: 50%;
+  top: calc(50% + env(safe-area-inset-top) / 2);
   right: 0.6rem;
   transform: translateY(-50%);
   width: 2rem;

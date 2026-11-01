@@ -92,7 +92,7 @@ consumeAuthRedirect().finally(() => {
       startIdleIncome(a.id); // revenus de l'appart, sur toutes les pages
       void startNotifications(a.id);
       void startOnline(a.id); // joueurs connectés
-      startConnections(); // heures de connexion, vues par les admins
+      startConnections(a.id); // heures de connexion, vues par les admins
       flushTdUploads(); // parties de tower defense pas encore arrivées au serveur
     });
   }
