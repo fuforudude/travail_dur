@@ -8,6 +8,9 @@ Plateforme de mini-jeux jouables au clavier, en solo ou en ligne, avec points, c
 - Tester la base : `npm run test:sql` (rejoue toutes les migrations dans PGlite et vérifie droits et règles de sécurité)
 - Vérifier les types seuls : `npx tsc`
 
+## Reprise
+État vérifié du projet, écarts connus et priorités : [docs/REPRISE.md](docs/REPRISE.md). À lire au début d'une session.
+
 ## Architecture
 Voir [Plan.md](Plan.md) : architecture, invariants à préserver et repères de maintenance. Le descriptif fonctionnel est dans [README.md](README.md), l'audit dans [AUDIT.md](AUDIT.md). Les décisions structurantes sont dans `docs/adr/`, les specs dans `docs/specs/`.
 
