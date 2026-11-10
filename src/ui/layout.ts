@@ -24,7 +24,7 @@ export function page(root: HTMLElement, title: string): HTMLElement {
       home,
       h('a', { class: 'brand', href: '#/' }, 'Notes'),
       h('span', { class: 'crumb' }, title),
-      h('a', { class: 'pocharlume-link', href: 'https://pocharlume.fr', target: '_blank', rel: 'noopener', title: 'Pocharlume, notre nouveau jeu' }, h('span', { class: 'pocharlume-prefix' }, 'Nouveau jeu : '), h('b', {}, 'Pocharlume'), ' ↗'),
+      h('a', { class: 'pocharlume-link', href: 'https://pocharlume.pocharlumetravail.fr', target: '_blank', rel: 'noopener', title: 'Pocharlume, notre nouveau jeu' }, h('span', { class: 'pocharlume-prefix' }, 'Nouveau jeu : '), h('b', {}, 'Pocharlume'), ' ↗'),
       onlineBadge(),
       pointsBadge(),
       whoEl(),

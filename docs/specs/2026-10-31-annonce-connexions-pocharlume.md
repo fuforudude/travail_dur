@@ -4,7 +4,7 @@ Statut : livrée
 Date : 2026-10-31
 
 ## Besoin
-Les admins veulent prévenir tous les joueurs d'une nouveauté ou d'une maintenance, savoir quand chaque compte se connecte, et faire découvrir le nouveau jeu pocharlume.fr.
+Les admins veulent prévenir tous les joueurs d'une nouveauté ou d'une maintenance, savoir quand chaque compte se connecte, et faire découvrir le nouveau jeu pocharlume.pocharlumetravail.fr.
 
 ## Périmètre
 - Dedans :
@@ -23,7 +23,7 @@ Les admins veulent prévenir tous les joueurs d'une nouveauté ou d'une maintena
 - [ ] Dans Administration, la liste des joueurs montre la dernière connexion de chacun ; la fiche d'un joueur liste ses 30 dernières séances (date, heure d'arrivée, heure de fin, durée).
 - [ ] Un joueur ne lit jamais les séances des autres (ni les siennes) : seule la lecture admin est permise.
 - [ ] Les séances de plus de 90 jours sont effacées.
-- [ ] La barre du haut affiche un lien « Pocharlume ↗ » qui ouvre https://pocharlume.fr dans un nouvel onglet.
+- [ ] La barre du haut affiche un lien « Pocharlume ↗ » qui ouvre https://pocharlume.pocharlumetravail.fr dans un nouvel onglet.
 - [ ] Chaque publication ou retrait d'annonce apparaît dans le journal des admins.
 
 ## Tâches
