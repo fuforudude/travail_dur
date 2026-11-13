@@ -9,7 +9,7 @@ import { errorMessage, getSupabase } from './supabase';
 export interface Spin {
   id: number;
   game: 'roulette' | 'slots' | 'plinko';
-  detail: { number?: number; bets?: Record<string, number>; reels?: number[]; rows?: number; risk?: string; path?: number[]; slot?: number; mult_x100?: number };
+  detail: { number?: number; bets?: Record<string, number>; reels?: number[]; rows?: number; risk?: string; path?: number[]; slot?: number; mult_x100?: number; bet?: number; paths?: number[][]; slots?: number[]; mults_x100?: number[] };
   stake: number;
   payout: number;
   balance: number;
