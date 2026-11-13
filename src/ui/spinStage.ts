@@ -5,6 +5,7 @@ import { formatPoints, loadPlinkoPayouts } from '../net/points';
 import type { Spin } from '../net/spectate';
 import { h } from './dom';
 import { BIG_WIN_X100, createPlinkoBoard, multLabel } from './plinkoBoard';
+import { PER_SECOND } from './plinkoQueue';
 import { colorName, colorOf, WHEEL, wheelSvg } from './roulette';
 import { SYMBOLS } from './slots';
 
@@ -142,8 +143,9 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
         }
         if (shown === key && !disposed) {
           // L'effet doré reste (c'est ce que voit le joueur), sans son de jackpot.
-          // Billes d'un envoi décalées de 1/15 s (au plus ~1 s pour tout l'envoi), sans attendre leur arrivée.
-          const gap = Math.min(1000 / 15, 1000 / balls.length);
+          // Billes d'un envoi décalées de 1/10 s (au plus ~1 s pour tout l'envoi), sans attendre leur arrivée :
+          // même cadence que chez le joueur (PER_SECOND), pour que la fenêtre spectateur ne prenne pas de retard.
+          const gap = Math.min(1000 / PER_SECOND, 1000 / balls.length);
           const falling: Promise<number>[] = [];
           for (let i = 0; i < balls.length; i++) {
             if (i > 0) await wait(gap);

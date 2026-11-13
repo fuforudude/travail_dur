@@ -18,9 +18,10 @@ export const MIN_GAP_MS = 150;
 export const MAX_WAIT_MS = 400;
 
 /**
- * Retard maximal de l'égrenage des billes sur la réponse du serveur (voir `dropDelays`). Le site égrène les billes
- * exactement aussi vite que le joueur peut cliquer : sans plafond, le retard pris sur la première rafale ne se
- * rattrape jamais et des billes continuent de tomber une seconde après le dernier clic.
+ * Retard maximal de la **dernière** bille d'un envoi sur la réponse du serveur (voir `dropDelays`). Tout l'envoi tient
+ * dans cette fenêtre : l'écart entre deux billes est resserré s'il le faut. Sans ce plafond, le site égrènerait les
+ * billes exactement aussi vite que le joueur peut cliquer, le retard pris sur la première rafale ne se rattraperait
+ * jamais et des billes continueraient de tomber plus d'une seconde après le dernier clic.
  */
 export const MAX_LEAD_MS = 400;
 
@@ -46,14 +47,18 @@ export function tokenBucket(capacity = BURST, perSecond = PER_SECOND, now: () =>
 /**
  * Instants de chute de `count` billes qui viennent d'arriver, à `gapMs` d'écart, en repartant de `from` (le
  * « prochain lâcher possible », commun à tous les envois pour que deux envois à la suite restent espacés).
- * Le retard sur `now` est plafonné à `maxLeadMs`. Retourne l'attente de chaque bille et le nouveau `from`.
+ * Tout l'envoi tient dans `maxLeadMs` après `now` : l'écart est resserré pour les gros envois (10 billes s'égrènent
+ * sur 400 ms, soit 40 ms entre billes) et le départ est avancé d'autant, pour que la **dernière** bille parte au plus
+ * `maxLeadMs` après `now`. Un petit envoi garde l'écart nominal. Retourne l'attente de chaque bille et le `from` suivant.
  */
 export function dropDelays(from: number, now: number, count: number, gapMs: number, maxLeadMs = MAX_LEAD_MS) {
-  let at = Math.min(Math.max(from, now), now + maxLeadMs);
+  const gap = count > 1 ? Math.min(gapMs, maxLeadMs / count) : gapMs;
+  const span = Math.max(0, count - 1) * gap; // durée de l'égrenage, à réserver dans la fenêtre
+  let at = Math.min(Math.max(from, now), now + maxLeadMs - span);
   const delays: number[] = [];
   for (let i = 0; i < count; i++) {
     delays.push(at - now);
-    at += gapMs;
+    at += gap;
   }
   return { delays, next: at };
 }
@@ -72,14 +77,14 @@ export interface SendResult {
   refused?: number;
 }
 
-/** Pourquoi des mises sont rendues : bille abandonnée faute d'avoir pu partir à temps, ou refusée par le serveur. */
-export type RefundReason = 'expired' | 'refused';
-
 export interface QueueOptions {
-  /** Appelé après chaque réponse, une fois l'envoi suivant éventuel parti. */
+  /** Appelé après chaque réponse et après chaque abandon, une fois l'envoi suivant éventuel parti. */
   settled?: () => void;
-  /** Mises à rendre. `expired` est silencieux (rafale normale), `refused` vient d'un refus du serveur. */
-  refund?: (stake: number, balls: number, reason: RefundReason) => void;
+  /**
+   * Mises à rendre, toujours en silence : qu'une bille soit abandonnée faute d'avoir pu partir à temps ou refusée
+   * par le serveur, le joueur voit la même chose — un clic qui n'a rien coûté.
+   */
+  refund?: (stake: number, balls: number) => void;
   max?: number;
   gapMs?: number;
   maxWaitMs?: number;
@@ -127,9 +132,14 @@ export function batchQueue(send: (g: PlinkoGroup) => Promise<SendResult | void>,
     timer = 0;
   };
 
-  /** Abandonne les billes qui attendent depuis plus de `maxWaitMs` et rend leur mise, sans message. */
-  const expire = () => {
+  /**
+   * Abandonne les billes qui attendent depuis plus de `maxWaitMs` et rend leur mise, sans message. Dit par son
+   * retour s'il y a eu un remboursement : `pump` doit alors appeler `settled()`, sans quoi le solde rendu ne serait
+   * pas réaffiché (ça ne se voyait pas tant qu'un appel était toujours en vol au même moment).
+   */
+  const expire = (): boolean => {
     const limit = now() - maxWaitMs;
+    let any = false;
     for (let i = groups.length - 1; i >= 0; i--) {
       const g = groups[i];
       let n = 0;
@@ -137,8 +147,10 @@ export function batchQueue(send: (g: PlinkoGroup) => Promise<SendResult | void>,
       if (!n) continue;
       g.ts.splice(0, n);
       if (!g.ts.length) groups.splice(i, 1);
-      refund(n * g.bet, n, 'expired');
+      any = true;
+      refund(n * g.bet, n);
     }
+    return any;
   };
 
   const fire = () => {
@@ -156,15 +168,13 @@ export function batchQueue(send: (g: PlinkoGroup) => Promise<SendResult | void>,
       .then((res) => {
         flying = false;
         const refused = Math.min(n, Math.max(0, Math.floor((res && res.refused) || 0)));
-        if (mine === gen && refused) refund(refused * g.bet, refused, 'refused');
+        if (mine === gen && refused) refund(refused * g.bet, refused);
         pump();
         settled();
       });
   };
 
-  function pump() {
-    stop();
-    expire();
+  const schedule = () => {
     if (!groups.length) return;
     const t = now();
     const gap = flying ? Infinity : Math.max(0, lastSent + gapMs - t);
@@ -179,6 +189,13 @@ export function batchQueue(send: (g: PlinkoGroup) => Promise<SendResult | void>,
       timer = 0;
       pump();
     }, Math.min(gap, deadline));
+  };
+
+  function pump() {
+    stop();
+    const gone = expire();
+    schedule();
+    if (gone) settled(); // un abandon rend la mise : il faut le rendre visible, personne d'autre ne le fera
   }
 
   return {

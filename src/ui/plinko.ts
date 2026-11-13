@@ -87,14 +87,9 @@ export function plinkoView(root: HTMLElement): () => void {
   const bucket = tokenBucket();
   const queue = batchQueue((g) => sendGroup(g), {
     settled: () => settle(),
-    refund: (stake, balls, reason) => {
-      local += stake; // bille jamais partie : la mise revient au solde local
-      // Une bille abandonnée faute d'avoir pu partir à temps est silencieuse : c'est le fonctionnement normal d'une
-      // rafale. Un refus du serveur se dit, mais seulement quand la rafale est finie, pour ne pas clignoter.
-      if (reason === 'refused' && !queue.waiting() && !queue.inFlight()) {
-        message = `${balls} bille${balls > 1 ? 's' : ''} annulée${balls > 1 ? 's' : ''}, le serveur était saturé.`;
-      }
-    },
+    // Bille jamais partie (abandonnée faute d'avoir pu partir à temps, ou refusée par le serveur) : la mise revient
+    // au solde local, sans message. Pour le joueur c'est un clic qui n'a rien coûté, comme un clic en trop.
+    refund: (stake) => (local += stake),
   });
   const busy = () => queue.waiting() > 0 || queue.inFlight() || air > 0;
   const shownBalance = () => (hold ? local : (getWallet()?.balance ?? 0));

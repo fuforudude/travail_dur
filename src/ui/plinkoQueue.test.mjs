@@ -126,12 +126,26 @@ test('égrenage : les billes d’un envoi tombent à GAP_MS d’écart, en repar
   assert.deepEqual(b.delays, [3 * gap - 150, 4 * gap - 150]);
 });
 
-test('égrenage : le retard sur la réponse du serveur est plafonné', () => {
+test('égrenage : tout l’envoi tient dans le plafond, dernière bille comprise', () => {
   const gap = 1000 / PER_SECOND;
   // Sans plafond, une file d'attente d'égrenage de 2 s ferait tomber des billes 2 s après le dernier clic.
   const r = dropDelays(5000, 3000, 2, gap);
-  assert.equal(r.delays[0], MAX_LEAD_MS, 'la première bille ne peut pas attendre plus que le plafond');
-  assert.equal(r.delays[1], MAX_LEAD_MS + gap);
+  assert.equal(r.delays[1], MAX_LEAD_MS, 'c’est la dernière bille que le plafond borne, pas la première');
+  assert.equal(r.delays[0], MAX_LEAD_MS - gap, 'un petit envoi garde l’écart nominal');
+});
+
+test('égrenage : l’écart est resserré pour un gros envoi, jamais au-delà du plafond', () => {
+  const gap = 1000 / PER_SECOND;
+  for (const count of [1, 2, 5, BURST]) {
+    const r = dropDelays(10000, 0, count, gap); // « prochain lâcher » très loin : le plafond s'applique
+    assert.equal(r.delays[count - 1], MAX_LEAD_MS, `${count} billes : la dernière part au plafond`);
+    for (let i = 1; i < count; i++) {
+      assert.ok(r.delays[i] - r.delays[i - 1] <= gap + 1e-9, `${count} billes : écart resserré, jamais élargi`);
+    }
+  }
+  // 10 billes s'égrènent sur 400 ms, soit 40 ms entre billes.
+  const dix = dropDelays(10000, 0, BURST, gap);
+  assert.equal(Math.round(dix.delays[1] - dix.delays[0]), MAX_LEAD_MS / BURST);
 });
 
 // ---------------------------------------------------------------- file d'envoi
@@ -226,22 +240,23 @@ test('file : les billes refusées par le serveur sont remboursées, jamais relan
       await sleep(clock, 20);
       return ++calls === 2 ? { refused: 4 } : undefined; // 4 billes du 2e envoi refusées
     },
-    { refund: (stake, balls, reason) => refunds.push({ stake, balls, reason }), maxWaitMs: 100000 },
+    { refund: (stake, balls) => refunds.push({ stake, balls }), maxWaitMs: 100000 },
   );
   for (let i = 0; i < 6; i++) queue.push(10, 12, 'medium');
   await clock.advance(5000);
   assert.deepEqual(sends.map((s) => s.n), [1, 5], 'les 4 billes refusées ne repartent pas');
-  assert.deepEqual(refunds, [{ stake: 40, balls: 4, reason: 'refused' }]);
+  assert.deepEqual(refunds, [{ stake: 40, balls: 4 }]);
   assert.equal(queue.waiting(), 0);
 });
 
 test('file : une bille qui n’a pas pu partir à temps est abandonnée et remboursée en silence', async () => {
   const clock = makeClock();
   const refunds = [];
+  let settles = 0;
   const { queue, sends } = makeQueue(
     clock,
     () => sleep(clock, 2000), // appel très long : rien d'autre ne peut partir
-    { refund: (stake, balls, reason) => refunds.push({ stake, balls, reason }) },
+    { refund: (stake, balls) => refunds.push({ stake, balls }), settled: () => settles++ },
   );
   queue.push(10, 12, 'medium'); // part tout de suite
   await clock.advance(10);
@@ -249,9 +264,48 @@ test('file : une bille qui n’a pas pu partir à temps est abandonnée et rembo
   assert.equal(queue.waiting(), 1);
   await clock.advance(MAX_WAIT_MS + 1);
   assert.equal(queue.waiting(), 0, 'abandonnée au bout de l’attente maximale, sans attendre la réponse');
-  assert.deepEqual(refunds, [{ stake: 10, balls: 1, reason: 'expired' }]);
+  assert.deepEqual(refunds, [{ stake: 10, balls: 1 }]);
+  assert.ok(settles >= 1, 'un abandon appelle settled() : sans ça la mise rendue ne serait pas réaffichée');
   await clock.advance(5000);
   assert.equal(total(sends), 1, 'elle ne part jamais');
+});
+
+test('file : dans un groupe, seules les billes trop vieilles sont abandonnées', async () => {
+  const clock = makeClock();
+  const refunds = [];
+  const { queue } = makeQueue(clock, () => sleep(clock, 2000), { refund: (stake, balls) => refunds.push({ stake, balls }) });
+  queue.push(10, 12, 'medium'); // part tout de suite, l'appel dure 2 s : la suite attend derrière
+  await clock.advance(10);
+  for (let i = 0; i < 3; i++) {
+    queue.push(10, 12, 'medium'); // même mise : un seul groupe, trois instants de clic (10, 110, 210)
+    await clock.advance(100);
+  }
+  await clock.advance(105); // t = 415 : seule la bille de t = 10 a dépassé l'attente maximale
+  assert.deepEqual(refunds, [{ stake: 10, balls: 1 }], 'un groupe partiellement expiré ne part pas en entier');
+  assert.equal(queue.waiting(), 2, 'les deux plus récentes attendent encore leur tour');
+  await clock.advance(100); // t = 515 : celle de t = 110 expire à son tour
+  assert.deepEqual(refunds, [{ stake: 10, balls: 1 }, { stake: 10, balls: 1 }]);
+  assert.equal(queue.waiting(), 1);
+});
+
+test('file : clear() pendant un appel en vol empêche le double remboursement de sa réponse', async () => {
+  const clock = makeClock();
+  const refunds = [];
+  const { queue, sends } = makeQueue(clock, async () => (await sleep(clock, 300), { refused: 1 }), {
+    refund: (stake, balls) => refunds.push({ stake, balls }),
+  });
+  queue.push(10, 12, 'medium'); // part tout de suite ; le serveur la refusera
+  await clock.advance(10);
+  for (let i = 0; i < 3; i++) queue.push(10, 12, 'medium');
+  assert.equal(queue.inFlight(), true);
+  assert.equal(queue.clear(), 30, 'clear() rend les 3 billes encore en file');
+  await clock.advance(2000);
+  // La page rend elle-même la mise du groupe en vol (sendGroup) avant d'appeler clear() : si la file la rendait
+  // aussi à la réponse, le joueur serait remboursé deux fois. C'est ce que protège le compteur `gen`.
+  assert.deepEqual(refunds, [], 'la réponse d’un appel d’avant clear() ne rembourse plus rien');
+  assert.equal(sends.length, 1, 'rien ne repart après clear()');
+  assert.equal(queue.inFlight(), false);
+  assert.equal(queue.waiting(), 0);
 });
 
 // ---------------------------------------------------------------- simulation bout en bout
@@ -293,16 +347,30 @@ function fakeServer(clock, { latency, callsPerSecond = 8, balance = 1_000_000, r
   };
 }
 
-/** Un joueur qui clique à `clicksPerSecond`, avec le seau du site, la file et le faux serveur branchés ensemble. */
+/**
+ * Un joueur qui clique, avec le seau du site, la file, l'égrenage (`dropDelays`, comme `sendGroup` dans la page) et
+ * le faux serveur branchés ensemble. `drops` est ce que le joueur voit vraiment : l'instant où chaque bille est
+ * lâchée sur le plateau. C'est ce que mesure le critère « après le dernier clic, plus rien ne part ».
+ */
 function makePlayer(clock, { latency, callsPerSecond } = {}) {
   const srv = fakeServer(clock, { latency, callsPerSecond });
   const bucket = tokenBucket(BURST, PER_SECOND, clock.now);
-  const state = { local: srv.balance, clicked: 0, srv };
+  const gap = 1000 / PER_SECOND;
+  const state = { local: srv.balance, clicked: 0, lastClick: 0, drops: [], srv };
+  let nextDrop = 0; // « prochain lâcher possible », commun aux envois, comme dans la page
+  /** Égrène les `count` billes d'une réponse, exactement comme la page. */
+  const schedule = (count) => {
+    const t0 = clock.now();
+    const s = dropDelays(nextDrop, t0, count, gap);
+    nextDrop = s.next;
+    for (const d of s.delays) state.drops.push(t0 + d);
+  };
   const { queue, sends } = makeQueue(
     clock,
     async (g) => {
       try {
         const r = await srv.spin(g);
+        schedule(g.n - r.refused);
         return r.refused ? { refused: r.refused } : undefined;
       } catch {
         return { refused: g.n }; // « doucement » : plus de réessai, le groupe est rendu
@@ -316,6 +384,7 @@ function makePlayer(clock, { latency, callsPerSecond } = {}) {
   state.click = () => {
     if (!bucket.take()) return false;
     state.clicked++;
+    state.lastClick = clock.now();
     state.local -= 10;
     queue.push(10, 12, 'medium');
     return true;
@@ -330,6 +399,48 @@ function makePlayer(clock, { latency, callsPerSecond } = {}) {
   return state;
 }
 
+/**
+ * Retard de la **dernière bille lâchée** sur le **dernier clic** : le critère que juge le joueur. Les autres tests
+ * mesurent les envois au serveur, pas les lâchers ; c'est pourquoi ils passaient aussi quand la dernière bille d'un
+ * envoi de 10 tombait 1,3 s après le dernier clic.
+ */
+async function retardDeLaDerniereBille(roundTrip, jouer) {
+  const clock = makeClock();
+  const p = makePlayer(clock, { latency: [roundTrip / 2, roundTrip / 2] }); // aller-retour fixe : mesure reproductible
+  await jouer(clock, p);
+  await clock.advance(5000);
+  assert.ok(p.drops.length, 'des billes ont bien été lâchées');
+  return { retard: Math.max(...p.drops) - p.lastClick, p };
+}
+
+/** Seau plein, 10 clics en 50 ms, puis plus rien. */
+const seauPlein = async (clock, p) => {
+  for (let i = 0; i < BURST; i++) {
+    p.click();
+    await clock.advance(5);
+  }
+};
+/** Rafale soutenue : 10 clics par seconde pendant 4 s. */
+const rafale = (clock, p) => p.spam(4);
+
+/**
+ * Budget du retard : l'appel déjà en vol (un aller-retour), l'envoi suivant (écart minimal + un aller-retour) et
+ * la fenêtre d'égrenage. Rien d'autre n'a le droit de s'ajouter — surtout pas un égrenage qui déborde.
+ */
+const budgetRetard = (roundTrip) => MAX_LEAD_MS + MIN_GAP_MS + 2 * roundTrip;
+
+test('bout en bout : après le dernier clic, la dernière bille tombe dans le budget', async () => {
+  for (const roundTrip of [50, 250, 600]) {
+    for (const [nom, jouer] of [['seau plein', seauPlein], ['rafale de 4 s', rafale]]) {
+      const { retard } = await retardDeLaDerniereBille(roundTrip, jouer);
+      const budget = budgetRetard(roundTrip);
+      // Repères (aller-retour 50 / 250 / 600 ms) : seau plein 511 / 811 / 555 ms, rafale 200 / 500 / 900 ms.
+      // Avant l'égrenage resserré, le seau plein donnait 955 et 1255 ms : ce test échouait.
+      assert.ok(retard <= budget, `${nom}, aller-retour ${roundTrip} ms : dernière bille ${Math.round(retard)} ms après le dernier clic (budget ${budget} ms)`);
+    }
+  }
+});
+
 test('scénario du joueur : rafale, arrêt, puis un seul clic → une seule bille part', async () => {
   const clock = makeClock();
   const p = makePlayer(clock, { latency: [30, 300] });
@@ -338,7 +449,11 @@ test('scénario du joueur : rafale, arrêt, puis un seul clic → une seule bill
   const atStop = total(p.sends);
   await clock.advance(MAX_WAIT_MS + 400);
   const after = total(p.sends) - atStop;
-  assert.ok(after <= 2 * BURST, `${after} billes parties après le dernier clic : au plus l’appel en vol et l’envoi suivant`);
+  // Borne mesurée : 2 billes avec cette graine. On s'autorise un envoi complet (10), pas deux : l'appel en vol se
+  // termine, l'envoi en préparation part, et tout ce qui reste est abandonné avant un troisième départ.
+  assert.ok(after <= BURST, `${after} billes parties après le dernier clic : au plus l’envoi en préparation`);
+  const retard = Math.max(...p.drops) - p.lastClick;
+  assert.ok(retard <= budgetRetard(600), `dernière bille lâchée ${Math.round(retard)} ms après le dernier clic`);
   assert.equal(p.queue.waiting(), 0, 'rien n’est gardé en file');
   const settled = total(p.sends);
 
