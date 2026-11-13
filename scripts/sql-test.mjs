@@ -427,6 +427,122 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   else fail(`admin : ${list} séance(s), dernière connexion ${JSON.stringify(last)}`);
 }
 
+// Plinko (0052) : tables justes, refus sans débit, billes conformes au contrat.
+{
+  // Retour exact de chaque table, par la loi binomiale : P(case k) = C(n, k) / 2^n.
+  const table = (await db.query(`select rows, risk, slot, mult_x100 from public.plinko_payouts order by rows, risk, slot`)).rows;
+  const mults = new Map(); // « 16 high » → [mult case 0, mult case 1, …]
+  for (const r of table) {
+    const key = `${r.rows} ${r.risk}`;
+    if (!mults.has(key)) mults.set(key, []);
+    mults.get(key)[r.slot] = r.mult_x100;
+  }
+  const choose = (n, k) => {
+    let c = 1;
+    for (let i = 1; i <= k; i++) c = (c * (n - i + 1)) / i;
+    return c;
+  };
+  const wrong = [];
+  for (let n = 8; n <= 16; n++) {
+    for (const risk of ['low', 'medium', 'high']) {
+      const m = mults.get(`${n} ${risk}`) ?? [];
+      const slots = m.filter((v) => v !== undefined).length;
+      if (slots !== n + 1 || m.length !== n + 1) {
+        wrong.push(`${n} rangées ${risk} : ${slots} cases au lieu de ${n + 1}`);
+        continue;
+      }
+      if (m.some((v, k) => v !== m[n - k])) wrong.push(`${n} rangées ${risk} : table non symétrique`);
+      const rtp = m.reduce((s, v, k) => s + (choose(n, k) / 2 ** n) * (v / 100), 0);
+      if (rtp < 0.965 || rtp > 0.975) wrong.push(`${n} rangées ${risk} : retour ${(rtp * 100).toFixed(2)} %`);
+    }
+  }
+  if (!wrong.length && mults.size === 27) ok('Plinko : 27 tables complètes, symétriques, retour au joueur entre 96,5 % et 97,5 %');
+  else fail(`tables du Plinko (${mults.size} combinaisons) : ${wrong.join(' ; ') || 'combinaisons en trop'}`);
+
+  // Lecture pour tous, écriture pour personne.
+  await db.exec(`set role anon`);
+  const seen = (await db.query(`select count(*)::int as n from public.plinko_payouts`)).rows[0].n;
+  await db.exec(`reset role`);
+  const player = await newUser();
+  const forged = await throws(() => as(player, `insert into public.plinko_payouts (rows, risk, slot, mult_x100) values (8, 'low', 9, 100000)`));
+  const edited = await throws(() => as(player, `update public.plinko_payouts set mult_x100 = 100000`));
+  if (seen === table.length && forged?.includes('permission denied') && edited?.includes('permission denied')) ok('Plinko : la table des multiplicateurs se lit sans compte, aucun joueur ne l’écrit');
+  else fail(`table du Plinko : ${seen} ligne(s) lue(s) sans compte, insert → ${forged ?? 'permis'}, update → ${edited ?? 'permis'}`);
+
+  // Refus avant tout débit.
+  await as(player, `select public.casino_slots(1)`); // ouvre le portefeuille
+  await db.query(`update public.wallets set balance = 1000 where user_id = $1`, [player]);
+  const resetBurst = () => db.query(`delete from public.point_events where user_id = $1 and kind = 'casino'`, [player]);
+  await resetBurst();
+  const balance = async () => Number((await db.query(`select balance from public.wallets where user_id = $1`, [player])).rows[0].balance);
+  const refusals = [
+    await throws(() => as(player, `select public.casino_plinko(10, 7, 'low')`)),
+    await throws(() => as(player, `select public.casino_plinko(10, 17, 'low')`)),
+    await throws(() => as(player, `select public.casino_plinko(10, 8, 'extrême')`)),
+    await throws(() => as(player, `select public.casino_plinko(0, 8, 'low')`)),
+    await throws(() => as(player, `select public.casino_plinko(-5, 8, 'low')`)),
+    await throws(() => as(player, `select public.casino_plinko(1001, 8, 'low')`)),
+  ];
+  if (refusals.every(Boolean) && (await balance()) === 1000) ok('Plinko : rangées hors 8–16, risque inconnu, mise nulle, négative ou trop grosse refusés, solde inchangé');
+  else fail(`refus du Plinko : ${refusals.map((r) => r ?? 'accepté').join(' | ')} ; solde ${await balance()} (attendu 1000)`);
+
+  // Une vingtaine de billes : chaque réponse suit le contrat et le solde suit les gains.
+  const shots = [];
+  const settings = [[8, 'low'], [12, 'medium'], [16, 'high'], [9, 'high'], [15, 'low']];
+  for (let i = 0; i < 20; i++) {
+    if (i % 10 === 0) await resetBurst(); // limite de 12 mises par 10 s
+    const [n, risk] = settings[i % settings.length];
+    const bet = 10 + i;
+    const res = (await as(player, `select public.casino_plinko($1, $2, $3) as r`, [bet, n, risk])).rows[0].r;
+    shots.push({ n, risk, bet, res });
+  }
+  const bad = shots.filter(({ n, risk, bet, res }) => {
+    const mult = mults.get(`${n} ${risk}`)[res.slot];
+    return (
+      res.path.length !== n ||
+      res.path.some((b) => b !== 0 && b !== 1) ||
+      res.slot !== res.path.reduce((s, b) => s + b, 0) ||
+      res.mult_x100 !== mult ||
+      res.stake !== bet ||
+      res.payout !== Math.floor((bet * mult) / 100)
+    );
+  });
+  const expected = 1000 - shots.reduce((s, x) => s + x.bet, 0) + shots.reduce((s, x) => s + x.res.payout, 0);
+  const last = shots.at(-1).res.balance;
+  const logged = (await db.query(`select count(*)::int as n from public.casino_spins where user_id = $1 and game = 'plinko'`, [player])).rows[0].n;
+  const detail = (await db.query(`select detail from public.casino_spins where user_id = $1 and game = 'plinko' order by id desc limit 1`, [player])).rows[0]?.detail;
+  const lastShot = shots.at(-1);
+  const reasons = (await db.query(`select reason from public.point_events where user_id = $1 and kind = 'casino'`, [player])).rows.map((r) => r.reason);
+  const label = (m) => `Plinko : ×${m % 100 === 0 ? m / 100 : String(m / 100).replace('.', ',')}`;
+  const labelsOk = reasons.length === 10 && shots.slice(10).every((x) => reasons.includes(label(x.res.mult_x100)));
+  if (labelsOk) ok('Plinko : le relevé de points dit « Plinko : ×… » avec le multiplicateur lisible');
+  else fail(`raisons du Plinko : ${JSON.stringify(reasons)}`);
+  if (
+    !bad.length &&
+    (await balance()) === expected &&
+    last === expected &&
+    logged === 20 &&
+    detail?.rows === lastShot.n &&
+    detail?.risk === lastShot.risk &&
+    detail?.slot === lastShot.res.slot &&
+    detail?.mult_x100 === lastShot.res.mult_x100 &&
+    JSON.stringify(detail?.path) === JSON.stringify(lastShot.res.path)
+  )
+    ok('Plinko : 20 billes conformes (chemin, case, multiplicateur, gain arrondi), solde exact, chacune notée pour les spectateurs');
+  else fail(`billes du Plinko : ${bad.length} réponse(s) fausse(s) ${JSON.stringify(bad[0] ?? '')}, solde ${await balance()} / renvoyé ${last} (attendu ${expected}), ${logged} ligne(s) au journal, détail ${JSON.stringify(detail)}`);
+
+  // Limite commune au casino : la 13ᵉ mise en 10 secondes est refusée sans débit.
+  await resetBurst();
+  await db.query(
+    `insert into public.point_events (user_id, amount, reason, kind) select $1, 0, 'test', 'casino' from generate_series(1, 12)`,
+    [player],
+  );
+  const before = await balance();
+  const flood = await throws(() => as(player, `select public.casino_plinko(1, 8, 'low')`));
+  if (flood?.includes('doucement') && (await balance()) === before) ok('Plinko : la 13ᵉ mise en 10 secondes est refusée, sans débit');
+  else fail(`limite du Plinko : ${flood ?? 'acceptée'}, solde ${before} → ${await balance()}`);
+}
+
 await db.close();
 if (failures) {
   console.error(`\n${failures} échec(s).`);
