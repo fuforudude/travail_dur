@@ -579,6 +579,152 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   else fail(`table incomplète du Plinko : ${removed.length} ligne(s) retirée(s), ${restored} remise(s), refus → ${broken ?? 'accepté'}`);
 }
 
+// Plinko en rafale (0053) : seau à jetons de 15 billes/s, envois groupés, refus sans effet.
+{
+  const mults = new Map(); // « 16 high » → [mult case 0, mult case 1, …]
+  for (const r of (await db.query(`select rows, risk, slot, mult_x100 from public.plinko_payouts`)).rows) {
+    const key = `${r.rows} ${r.risk}`;
+    if (!mults.has(key)) mults.set(key, []);
+    mults.get(key)[r.slot] = r.mult_x100;
+  }
+  const player = await newUser();
+  await db.query(`select public.points_open($1)`, [player]);
+  const setBalance = (v) => db.query(`update public.wallets set balance = $2 where user_id = $1`, [player, v]);
+  const balance = async () => Number((await db.query(`select balance from public.wallets where user_id = $1`, [player])).rows[0].balance);
+  const bucket = async () => (await db.query(`select tokens::text as tokens, at::text as at from public.plinko_rate where user_id = $1`, [player])).rows[0] ?? null;
+  const batch = async (bet, rows, risk, n) => (await as(player, `select public.casino_plinko_batch($1, $2, $3, $4) as r`, [bet, rows, risk, n])).rows[0].r;
+  const rewind = () => db.query(`update public.plinko_rate set at = at - interval '1 second' where user_id = $1`, [player]);
+  const conforms = (res, bet, rows, risk) =>
+    res.paths.length === res.slots.length &&
+    res.slots.length === res.mults_x100.length &&
+    res.paths.every((p, i) => p.length === rows && p.every((b) => b === 0 || b === 1) && res.slots[i] === p.reduce((s, b) => s + b, 0)) &&
+    res.mults_x100.every((m, i) => m === mults.get(`${rows} ${risk}`)[res.slots[i]]) &&
+    res.stake === bet * res.slots.length &&
+    res.payout === res.mults_x100.reduce((s, m) => s + Math.floor((bet * m) / 100), 0);
+
+  // Validations : refus avec message, solde inchangé, aucune ligne de seau créée.
+  await setBalance(1000);
+  const invalid = [
+    [await throws(() => batch(10, 8, 'low', 0)), 'billes'],
+    [await throws(() => batch(10, 8, 'low', 16)), 'billes'],
+    [await throws(() => batch(10, 7, 'low', 1)), 'rangées'],
+    [await throws(() => batch(10, 8, 'extrême', 1)), 'risque inconnu'],
+    [await throws(() => batch(0, 8, 'low', 1)), 'mise invalide'],
+  ];
+  if (invalid.every(([msg, want]) => msg?.includes(want)) && (await balance()) === 1000 && (await bucket()) === null)
+    ok('Plinko en rafale : nombre 0 ou 16, 7 rangées, risque inconnu, mise nulle refusés avant tout effet');
+  else fail(`refus du Plinko en rafale : ${invalid.map(([m]) => m ?? 'accepté').join(' | ')} ; solde ${await balance()}, seau ${JSON.stringify(await bucket())}`);
+  // Une fois le seau créé, un refus de validation ne le touche pas non plus.
+  await batch(1, 8, 'low', 1);
+  const seeded = await bucket();
+  const lateRefusal = await throws(() => batch(10, 17, 'low', 3));
+  if (lateRefusal?.includes('rangées') && JSON.stringify(await bucket()) === JSON.stringify(seeded)) ok('Plinko en rafale : un refus de validation laisse le seau intact');
+  else fail(`seau après refus : ${JSON.stringify(seeded)} → ${JSON.stringify(await bucket())} (${lateRefusal ?? 'accepté'})`);
+
+  // Seau : 15 d'un coup, la 16ᵉ refusée sans débit, 15 de nouveau une seconde plus tard.
+  await db.query(`delete from public.plinko_rate where user_id = $1`, [player]);
+  await setBalance(10000);
+  const burst = await batch(10, 8, 'low', 15);
+  const afterBurst = await balance();
+  let extra;
+  try {
+    extra = await batch(10, 8, 'low', 1);
+  } catch (e) {
+    extra = e.message;
+  }
+  const extraOk = (typeof extra === 'string' && extra.includes('doucement')) || extra?.refused === 1;
+  const afterExtra = await balance();
+  await rewind();
+  const again = await batch(10, 8, 'low', 15);
+  if (burst.refused === 0 && burst.slots.length === 15 && extraOk && afterExtra === afterBurst && again.refused === 0 && again.slots.length === 15)
+    ok('Plinko en rafale : 15 billes d’un coup, la 16ᵉ refusée sans débit, 15 de nouveau une seconde plus tard');
+  else fail(`seau du Plinko : rafale refused ${burst.refused}, 16ᵉ → ${JSON.stringify(extra)}, solde ${afterBurst} → ${afterExtra}, après 1 s refused ${again.refused}`);
+  // 4 jetons restants : sur 10 demandées, 4 tirées, 6 refusées, seules 4 mises débitées.
+  await db.query(`update public.plinko_rate set tokens = 4, at = clock_timestamp() where user_id = $1`, [player]);
+  const before4 = await balance();
+  const four = await batch(10, 8, 'low', 10);
+  if (four.slots.length === 4 && four.refused === 6 && four.stake === 40 && (await balance()) === before4 - 40 + four.payout)
+    ok('Plinko en rafale : 10 demandées avec 4 jetons → 4 tirées, 6 refusées, 4 mises débitées');
+  else fail(`4 jetons : ${four.slots.length} tirée(s), refused ${four.refused}, mise ${four.stake}, solde ${before4} → ${await balance()}`);
+
+  // Solde : 35 points à 10 la bille → 3 tirées ; 5 points → « pas assez de points », seau inchangé.
+  await db.query(`update public.plinko_rate set tokens = 15, at = clock_timestamp() where user_id = $1`, [player]);
+  await setBalance(35);
+  const poor = await batch(10, 8, 'low', 5);
+  const short = poor.slots.length === 3 && poor.refused === 2 && poor.stake === 30 && poor.balance === 5 + poor.payout && (await balance()) === poor.balance;
+  await setBalance(5);
+  const seau = await bucket();
+  const broke = await throws(() => batch(10, 8, 'low', 1));
+  if (short && broke?.includes('pas assez de points') && (await balance()) === 5 && JSON.stringify(await bucket()) === JSON.stringify(seau))
+    ok('Plinko en rafale : le solde borne le nombre de billes ; sans solde, « pas assez de points », rien débité, seau inchangé');
+  else fail(`solde du Plinko en rafale : ${JSON.stringify(poor)} ; à 5 points → ${broke ?? 'accepté'}, solde ${await balance()}, seau ${JSON.stringify(seau)} → ${JSON.stringify(await bucket())}`);
+
+  // Un envoi de 15 : billes conformes, totaux et solde exacts, une ligne d'historique, une ligne spectateur.
+  await db.query(`delete from public.point_events where user_id = $1`, [player]);
+  await db.query(`delete from public.casino_spins where user_id = $1`, [player]);
+  await setBalance(100000);
+  await rewind();
+  const full = await batch(37, 16, 'high', 15);
+  const events = (await db.query(`select amount, reason from public.point_events where user_id = $1`, [player])).rows;
+  const spins = (await db.query(`select game, detail, stake, payout, balance from public.casino_spins where user_id = $1`, [player])).rows;
+  const d = spins[0]?.detail;
+  if (
+    full.refused === 0 &&
+    full.slots.length === 15 &&
+    conforms(full, 37, 16, 'high') &&
+    full.balance === 100000 - full.stake + full.payout &&
+    (await balance()) === full.balance &&
+    events.length === 1 &&
+    Number(events[0].amount) === full.payout - full.stake &&
+    events[0].reason === `Plinko : 15 billes, misé ${full.stake}, gagné ${full.payout}` &&
+    spins.length === 1 &&
+    spins[0].game === 'plinko' &&
+    Number(spins[0].stake) === full.stake &&
+    Number(spins[0].payout) === full.payout &&
+    d?.rows === 16 &&
+    d?.risk === 'high' &&
+    d?.bet === 37 &&
+    JSON.stringify(d?.paths) === JSON.stringify(full.paths) &&
+    JSON.stringify(d?.slots) === JSON.stringify(full.slots) &&
+    JSON.stringify(d?.mults_x100) === JSON.stringify(full.mults_x100)
+  )
+    ok('Plinko en rafale : 15 billes conformes, totaux et solde exacts, une seule ligne d’historique et une seule ligne spectateur');
+  else fail(`envoi de 15 : ${JSON.stringify(full)} ; historique ${JSON.stringify(events)} ; spectateur ${spins.length} ligne(s) ${JSON.stringify(d)}`);
+  // Une seule bille : libellé au singulier.
+  await rewind();
+  const one = await batch(10, 8, 'medium', 1);
+  const oneReason = (await db.query(`select reason from public.point_events where user_id = $1 order by id desc limit 1`, [player])).rows[0]?.reason;
+  if (oneReason === `Plinko : 1 bille, misé 10, gagné ${one.payout}`) ok('Plinko en rafale : « 1 bille » au singulier dans l’historique');
+  else fail(`libellé d’une bille : ${oneReason}`);
+
+  // Longue série : 40 envois de 15, une seconde simulée entre chacun → 600 billes, aucune refusée, solde exact.
+  await setBalance(1000000);
+  let expected = 1000000;
+  let refused = 0;
+  let drawn = 0;
+  let wrong = 0;
+  for (let i = 0; i < 40; i++) {
+    await rewind();
+    const res = await batch(5, 12, 'medium', 15);
+    refused += res.refused;
+    drawn += res.slots.length;
+    if (!conforms(res, 5, 12, 'medium')) wrong++;
+    expected += res.payout - res.stake;
+  }
+  if (drawn === 600 && refused === 0 && !wrong && (await balance()) === expected) ok('Plinko en rafale : 40 envois de 15 à une seconde d’écart, 600 billes, aucune refusée, solde exact');
+  else fail(`longue série : ${drawn} billes, ${refused} refusée(s), ${wrong} envoi(s) faux, solde ${await balance()} (attendu ${expected})`);
+
+  // Le seau n'est ni lisible ni modifiable par un joueur ; l'ancienne fonction marche toujours.
+  const read = await throws(() => as(player, `select * from public.plinko_rate`));
+  const write = await throws(() => as(player, `update public.plinko_rate set tokens = 1000`));
+  const forge = await throws(() => as(player, `insert into public.plinko_rate (user_id, tokens, at) values ($1, 1000, now())`, [player]));
+  await db.query(`delete from public.point_events where user_id = $1 and kind = 'casino'`, [player]);
+  const legacy = await throws(() => as(player, `select public.casino_plinko(10, 8, 'low')`));
+  if ([read, write, forge].every((m) => m?.includes('permission denied')) && legacy === null)
+    ok('Plinko en rafale : le seau est interdit aux joueurs, l’ancienne casino_plinko marche toujours');
+  else fail(`droits du seau : lecture → ${read ?? 'permise'}, update → ${write ?? 'permis'}, insert → ${forge ?? 'permis'} ; casino_plinko → ${legacy ?? 'ok'}`);
+}
+
 await db.close();
 if (failures) {
   console.error(`\n${failures} échec(s).`);
