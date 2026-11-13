@@ -196,18 +196,23 @@ export async function spinSlots(bet: number): Promise<SlotsResult> {
 
 export type PlinkoRisk = 'low' | 'medium' | 'high';
 
-export interface PlinkoResult {
-  /** Un élément par rangée : 0 = la bille part à gauche, 1 = à droite. */
-  path: number[];
-  slot: number;
-  mult_x100: number;
+/** Un envoi groupé : autant d'éléments dans `paths`, `slots` et `mults_x100` que de billes tirées (`n − refused`). */
+export interface PlinkoBatchResult {
+  /** Un chemin par bille, un élément par rangée : 0 = la bille part à gauche, 1 = à droite. */
+  paths: number[][];
+  slots: number[];
+  mults_x100: number[];
+  /** Billes refusées par le serveur (limite de 15 billes par seconde ou solde insuffisant) : rien n'est débité pour elles. */
+  refused: number;
+  /** Totaux de l'envoi. */
   stake: number;
   payout: number;
   balance: number;
 }
 
-export async function spinPlinko(bet: number, rows: number, risk: PlinkoRisk): Promise<PlinkoResult> {
-  const r = await rpc<PlinkoResult>('casino_plinko', { bet, rows, risk }, '0052_plinko.sql');
+/** Lâche `n` billes (1 à 15) d'un coup, à la même mise, avec les mêmes rangées et le même risque. */
+export async function spinPlinkoBatch(bet: number, rows: number, risk: PlinkoRisk, n: number): Promise<PlinkoBatchResult> {
+  const r = await rpc<PlinkoBatchResult>('casino_plinko_batch', { bet, rows, risk, n }, '0053_plinko_rafale.sql');
   setWallet({ balance: r.balance, earned: wallet?.earned ?? 0 });
   return r;
 }
