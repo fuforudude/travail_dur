@@ -1843,10 +1843,12 @@ button.field.danger:is(:hover, :focus, :active):not(:disabled) {
 .sp-dock-body .sp-pane:not(.on), .sp-dock-body .sp-pane h2 { display: none; }
 .sp-dock-body .rl-wheel-wrap { width: 8.5rem; }
 .sp-dock-body .rl-result { width: 2.2rem; height: 2.2rem; font-size: 1rem; }
+.sp-dock-body .pk-board { width: 13rem; }
 .sp-dock-body .sl-reel { width: 3.4rem; height: 4rem; font-size: 2rem; }
 @media (max-width: 600px) {
   .sp-dock { width: min(12rem, calc(100vw - 32px)); }
   .sp-dock-body .rl-wheel-wrap { width: 6.5rem; }
+  .sp-dock-body .pk-board { width: 10rem; }
   .sp-dock-body .sl-reel { width: 2.8rem; height: 3.3rem; font-size: 1.6rem; }
 }
 @media (prefers-reduced-motion: reduce) { .sp-dock, .sp-dock-last.flash { animation: none; } }

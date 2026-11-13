@@ -6,7 +6,7 @@ import { navigate } from '../router';
 import { autoPlay } from './autoplay';
 import { h, hints } from './dom';
 import { page } from './layout';
-import { createPlinkoBoard, multLabel } from './plinkoBoard';
+import { BIG_WIN_X100, createPlinkoBoard, multLabel } from './plinkoBoard';
 
 export const MIN_ROWS = 8;
 export const MAX_ROWS = 16;
@@ -15,8 +15,6 @@ export const RISKS: [PlinkoRisk, string][] = [
   ['medium', 'Moyen'],
   ['high', 'Haut'],
 ];
-/** Gain à partir duquel la case est dorée et le son de jackpot joué (×100, en centièmes). */
-export const BIG_WIN_X100 = 10000;
 
 export const PLINKO_RULES = [
   'La bille tombe d’en haut et rebondit à gauche ou à droite, une chance sur deux, à chaque rangée de clous ; la case où elle s’arrête multiplie la mise.',

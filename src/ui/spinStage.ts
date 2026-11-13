@@ -3,7 +3,9 @@
 import { blip } from '../core/sound';
 import { formatPoints } from '../net/points';
 import type { Spin } from '../net/spectate';
+import { loadPlinkoPayouts } from '../net/points';
 import { h } from './dom';
+import { BIG_WIN_X100, createPlinkoBoard, multLabel } from './plinkoBoard';
 import { colorName, colorOf, WHEEL, wheelSvg } from './roulette';
 import { SYMBOLS } from './slots';
 
@@ -17,13 +19,21 @@ export const net = (s: Spin) => s.payout - s.stake;
 export const signed = (n: number) => (n > 0 ? '+' : '') + formatPoints(n);
 
 export function outcome(s: Spin): string {
-  const what = s.game === 'roulette' ? `${s.detail.number} ${colorName(s.detail.number ?? 0)}` : (s.detail.reels ?? []).map((r) => SYMBOLS[r]).join(' ');
+  const what =
+    s.game === 'roulette'
+      ? `${s.detail.number} ${colorName(s.detail.number ?? 0)}`
+      : s.game === 'plinko'
+        ? multLabel(s.detail.mult_x100 ?? 0)
+        : (s.detail.reels ?? []).map((r) => SYMBOLS[r]).join(' ');
   return `${what} : ${s.payout ? `gagné ${formatPoints(s.payout)} (${signed(net(s))})` : `perdu ${formatPoints(s.stake)}`}${s.payout === 0 && s.balance === 0 ? ' · tout perdu 💀' : ''}`;
 }
+
+export const gameName = (g: Spin['game']) => (g === 'roulette' ? 'Roulette' : g === 'plinko' ? 'Plinko' : 'Machine à sous');
 
 export interface SpinStage {
   roulette: HTMLElement;
   slots: HTMLElement;
+  plinko: HTMLElement;
   status: HTMLElement;
   /** Ajoute un tour à rejouer (en file : en mode auto, les animations accélèrent pour rattraper). */
   push(s: Spin): void;
@@ -38,6 +48,9 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
   const reels = [4, 5, 3].map((s) => h('div', { class: 'sl-reel' }, h('span', {}, SYMBOLS[s])));
   const roulette = h('div', { class: 'sp-pane on' }, h('h2', {}, 'Roulette'), h('div', { class: 'rl-wheel-wrap' }, h('div', { class: 'rl-pointer' }), svg), result);
   const slots = h('div', { class: 'sp-pane' }, h('h2', {}, 'Machine à sous'), h('div', { class: 'sl-window' }, ...reels));
+  const board = createPlinkoBoard();
+  const plinko = h('div', { class: 'sp-pane' }, h('h2', {}, 'Plinko'), board.el);
+  let shown = '';
   let rotation = 0;
   let disposed = false;
   let playing = false;
@@ -48,6 +61,7 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
     opts.onStart?.(s);
     roulette.classList.toggle('on', s.game === 'roulette');
     slots.classList.toggle('on', s.game === 'slots');
+    plinko.classList.toggle('on', s.game === 'plinko');
     if (s.game === 'roulette') {
       const bets = Object.entries(s.detail.bets ?? {}).map(([k, v]) => `${betName(k)} ${formatPoints(v)}`).join(' · ');
       status.textContent = `Mise ${formatPoints(s.stake)} : ${bets}. Rien ne va plus…`;
@@ -62,6 +76,18 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
       await wait(fast ? 1400 : 3600);
       result.textContent = String(s.detail.number);
       result.className = `rl-result ${colorOf(s.detail.number ?? 0)}`;
+    } else if (s.game === 'plinko') {
+      status.textContent = `Mise ${formatPoints(s.stake)}…`;
+      const { rows, risk, path } = s.detail;
+      if (rows && risk && path) {
+        // Le tour précédent est fini (file en série) : on peut changer le plateau sans toucher une bille en l'air.
+        const mults = (await loadPlinkoPayouts().catch(() => null))?.get(`${rows}:${risk}`);
+        if (mults && !disposed && !board.busy() && shown !== `${rows}:${risk}`) {
+          board.setBoard(rows, mults);
+          shown = `${rows}:${risk}`;
+        }
+        if (shown === `${rows}:${risk}` && !disposed) await board.drop(path, { big: (s.detail.mult_x100 ?? 0) >= BIG_WIN_X100 });
+      }
     } else {
       status.textContent = `Mise ${formatPoints(s.stake)}…`;
       reels.forEach((el) => el.classList.remove('win'));
@@ -81,7 +107,7 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
       }
       reels.forEach((el) => el.classList.toggle('win', s.payout > 0));
     }
-    status.textContent = `${s.game === 'roulette' ? 'Roulette' : 'Machine à sous'} · ${outcome(s)}`;
+    status.textContent = `${gameName(s.game)} · ${outcome(s)}`;
     if (opts.sound && s.payout) blip(s.payout / s.stake >= 36 ? 1200 : 880);
     opts.onPlayed?.(s);
   };
@@ -100,6 +126,7 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
   return {
     roulette,
     slots,
+    plinko,
     status,
     push(s) {
       queue.push(s);
@@ -107,6 +134,7 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
     },
     dispose() {
       disposed = true;
+      board.destroy();
       timers.forEach(clearInterval);
     },
   };

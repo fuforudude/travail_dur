@@ -37,6 +37,9 @@ interface Colors {
   accent: string;
 }
 
+/** Gain à partir duquel la case est dorée et le son de jackpot joué (×100, en centièmes). */
+export const BIG_WIN_X100 = 10000;
+
 /** Multiplicateur en français : « ×0,2 », « ×1000 ». */
 export const multLabel = (x100: number) => `×${(x100 / 100).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}`;
 

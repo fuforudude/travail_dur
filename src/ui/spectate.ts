@@ -6,9 +6,9 @@ import { navigate } from '../router';
 import { h, hints } from './dom';
 import { page } from './layout';
 import { openDock } from './spectateDock';
-import { net, outcome, signed, spinStage } from './spinStage';
+import { gameName, net, outcome, signed, spinStage } from './spinStage';
 
-/** `#/regarder/<id>` : la roulette et la machine à sous d'un ami, en direct. */
+/** `#/regarder/<id>` : la roulette, la machine à sous et le Plinko d'un ami, en direct. */
 export function spectateView(root: HTMLElement, [uid]: string[]): () => void {
   const content = page(root, 'Regarder');
   const title = h('h1', {}, 'Casino');
@@ -24,7 +24,7 @@ export function spectateView(root: HTMLElement, [uid]: string[]): () => void {
   const showBalance = (s: Spin) => balanceEl.replaceChildren('Solde ', h('b', {}, formatPoints(s.balance)));
   const stage = spinStage({
     sound: true,
-    onStart: (s) => (s.game === 'roulette' ? stage.roulette : stage.slots).scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
+    onStart: (s) => (s.game === 'roulette' ? stage.roulette : s.game === 'plinko' ? stage.plinko : stage.slots).scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
     onPlayed: (s) => {
       showBalance(s);
       history.unshift(s);
@@ -38,7 +38,7 @@ export function spectateView(root: HTMLElement, [uid]: string[]): () => void {
       { class: 'card' },
       h('div', { class: 'pts-head' }, h('div', {}, title, live, side), balanceEl),
       stage.status,
-      h('div', { class: 'sp-stage' }, stage.roulette, stage.slots),
+      h('div', { class: 'sp-stage' }, stage.roulette, stage.slots, stage.plinko),
       h('h2', {}, 'Derniers tours'),
       list,
     ),
@@ -63,7 +63,7 @@ export function spectateView(root: HTMLElement, [uid]: string[]): () => void {
               'li',
               { class: 'ev-casino' },
               h('span', { class: 'pts-amount' + (net(s) < 0 ? ' neg' : '') }, signed(net(s))),
-              h('span', {}, `${s.game === 'roulette' ? 'Roulette' : 'Machine à sous'} · ${outcome(s)}`),
+              h('span', {}, `${gameName(s.game)} · ${outcome(s)}`),
               h('span', { class: 'muted small push' }, new Date(s.created_at).toLocaleTimeString('fr-FR', { timeStyle: 'short' })),
             ),
           )

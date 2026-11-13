@@ -76,7 +76,7 @@ export async function openDock(uid: string, min = false, knownName?: string): Pr
   };
   const stage = spinStage({
     sound: false,
-    onStart: (s) => flash(s.game === 'roulette' ? '🎡 …' : '🎰 …', ''),
+    onStart: (s) => flash(s.game === 'roulette' ? '🎡 …' : s.game === 'plinko' ? '🔴 …' : '🎰 …', ''),
     onPlayed: (s) => flash(signed(net(s)), net(s) > 0 ? 'win' : net(s) < 0 ? 'loss' : ''),
   });
 
@@ -103,7 +103,7 @@ export async function openDock(uid: string, min = false, knownName?: string): Pr
       }),
       btn('✕', 'Arrêter de regarder', closeDock),
     ),
-    h('div', { class: 'sp-dock-body' }, stage.status, stage.roulette, stage.slots),
+    h('div', { class: 'sp-dock-body' }, stage.status, stage.roulette, stage.slots, stage.plinko),
   );
   document.body.append(el);
   const pos = saved();

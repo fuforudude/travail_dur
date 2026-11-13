@@ -45,7 +45,7 @@ export function activityLabel(at: string): string {
 }
 
 /** Les pages où l'on peut regarder le joueur en direct (net/spectate.ts). */
-export const atCasino = (at: string) => at === 'roulette' || at === 'slots';
+export const atCasino = (at: string) => at === 'roulette' || at === 'slots' || at === 'plinko';
 
 function activity(): string {
   const path = location.hash.replace(/^#/, '') || '/';
@@ -54,7 +54,7 @@ function activity(): string {
   if (path === '/') return 'home';
   if (path.startsWith('/td/caisses') || path === '/caisses') return 'crates';
   const first = path.split('/')[1];
-  const map: Record<string, string> = { roulette: 'roulette', slots: 'slots', points: 'points', shop: 'shop', appart: 'appart', amis: 'friends', scores: 'scores', room: 'room', join: 'room', regarder: 'watch' };
+  const map: Record<string, string> = { roulette: 'roulette', slots: 'slots', plinko: 'plinko', points: 'points', shop: 'shop', appart: 'appart', amis: 'friends', scores: 'scores', room: 'room', join: 'room', regarder: 'watch' };
   return map[first] ?? 'other';
 }
 
