@@ -42,15 +42,15 @@
       "Bash(git fetch*)",
       "Bash(git pull*)",
       "Bash(git push*)",
-      "Bash(git worktree*)",
-      "Bash(gh pr *)",
-      "Bash(gh run *)",
-      "Bash(gh issue *)"
+      "Bash(git worktree*)"
     ],
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",
-      "Read(**/secrets/**)"
+      "Read(**/secrets/**)",
+      "Bash(git reset --hard*)",
+      "Bash(git worktree remove --force*)",
+      "Bash(git checkout -- *)"
     ]
   }
 }
