@@ -23,9 +23,9 @@ Les tarifs et quotas cités sont des ordres de grandeur, à revérifier sur les 
   - Correctif : lire via une fonction `room_messages(code)`, ou passer la discussion en Realtime Broadcast, sans stockage.
 - [x] **Double authentification (TOTP) pour les admins.** *Fait (`0037_securite.sql`, `src/net/mfa.ts`) : `admin_check()` exige `aal2` ; la page Administration fait scanner un QR code la première fois, puis demande le code.* Aujourd'hui, le compte admin n'est protégé que par un lien par email.
   - Correctif : exiger `aal2` dans `admin_check()`.
-- [x] **Sauvegardes de la base.** *Fait : workflow « Sauvegarde de la base » (`.github/workflows/backup.yml`), chaque nuit, copie chiffrée (GPG, secret `BACKUP_PASSPHRASE`) gardée 30 jours en artefact.* À ma connaissance, l'offre gratuite n'en a pas.
+- [ ] **Sauvegardes de la base.** *Workflow écrit, mais pas en service : « Sauvegarde de la base » (`.github/workflows/backup.yml`) échoue chaque nuit depuis le 2026-10-22 faute du secret GitHub `BACKUP_PASSPHRASE` (étape « Phrase secrète présente ? »). Aucune sauvegarde n'existe. À faire : ajouter le secret, lancer le workflow à la main, vérifier l'artefact. Une fois fait : copie chiffrée (GPG) gardée 30 jours en artefact.* À ma connaissance, l'offre gratuite n'en a pas.
   - Correctif : un `pg_dump` chiffré et automatique vers un stockage privé, jamais dans le dépôt, qui est public.
-- [x] **Migrations suivies et automatiques** *Fait : workflow « Supabase » (`.github/workflows/supabase.yml`) : tests SQL, `supabase db push`, puis redéploiement de la fonction `td`. Historique du serveur réparé (0001 à 0037 marquées appliquées).*, au lieu du copier-coller dans l'éditeur SQL.
+- [x] **Migrations suivies et automatiques** *Fait : workflow « Supabase » (`.github/workflows/supabase.yml`) : tests SQL, `supabase db push`, puis redéploiement des fonctions `td` et `board4`. Historique du serveur réparé (0001 à 0037 marquées appliquées).*, au lieu du copier-coller dans l'éditeur SQL.
   - Correctif : `supabase db push` dans GitHub Actions.
 - [x] **Tests SQL en CI** *Fait : `npm run test:sql` (`scripts/sql-test.mjs`, workflow `Tests`) rejoue les migrations dans PGlite, compare les fonctions appelables par les joueurs à `supabase/tests/public-functions.txt` et teste la discussion, la suppression de compte, la double authentification. Il a trouvé l'ancien tower defense SQL (`td_start`, `td_wave`) encore appelable : fermé dans `0037`.*, avec PGlite comme pour les migrations de l'appart. Ils vérifient en particulier qu'aucune fonction interne n'est exécutable par `anon` ou `authenticated`.
 - [x] **Suppression de compte par le joueur lui-même.** *Fait : page Compte, confirmation par le pseudo (`account_delete`, `0037_securite.sql`).* C'est une obligation RGPD.
@@ -41,7 +41,7 @@ Les tarifs et quotas cités sont des ordres de grandeur, à revérifier sur les 
   - Correctif : passer par Broadcast depuis la base (`realtime.broadcast_changes`), ou relire à la demande.
   - Limite à garder en tête : environ 200 connexions Realtime simultanées en gratuit, soit environ 200 onglets ouverts.
 - [x] **Récolte automatique de l'appart toutes les 5 minutes** *Fait.* au lieu de chaque minute (`EVERY` dans `src/net/idle.ts`). Le compteur défile déjà en local, donc ça ne se verra pas.
-- [ ] **Politiques RLS en `(select auth.uid())`** au lieu de `auth.uid()`, qui est recalculé à chaque ligne.
+- [x] **Politiques RLS en `(select auth.uid())`** *Fait (`0044_conseiller_supabase.sql`)* au lieu de `auth.uid()`, qui est recalculé à chaque ligne.
   - Lancer aussi *Security Advisor* et *Performance Advisor* dans le tableau de bord Supabase.
 - [ ] **Photos compressées avant l'envoi.** Les réduire en WebP (environ 200 ko max) dans le navigateur, côté admin, pour préserver le quota de bande passante.
 - [ ] **Ménage automatique avec `pg_cron`** :

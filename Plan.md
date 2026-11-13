@@ -14,7 +14,8 @@ les commandes de lancement, le déploiement et la configuration Supabase sont da
 - **Réseau** : `src/net/` regroupe le client Supabase, les comptes, salons, classements, amis et
   autres services en ligne. Sans configuration Supabase, les fonctions solo restent disponibles.
 - **Serveur** : les migrations `supabase/migrations/` définissent le schéma, les politiques RLS et
-  les fonctions SQL d’autorité. La fonction Edge Tower Defense est dans `supabase/functions/td/`.
+  les fonctions SQL d’autorité. Deux fonctions Edge : `supabase/functions/td/` (rejeu des vagues du
+  tower defense) et `supabase/functions/board4/` (coups des jeux à 4 : échecs à 4, corridor à 4).
 
 ## Invariants à préserver
 
@@ -23,10 +24,11 @@ les commandes de lancement, le déploiement et la configuration Supabase sont da
 - Les règles des jeux en ligne existent parfois en double, en TypeScript et en SQL. En particulier,
   les jeux de plateau côté client doivent rester cohérents avec `match_play` dans
   `supabase/migrations/0006_plateaux.sql`.
-- Le moteur Tower Defense est une exception au code dupliqué : le serveur embarque une copie générée
-  du moteur navigateur. Modifier `src/games/towerdefense/engine/`, puis exécuter
-  `npm run td:sync` (également fait par `npm run build`). Ne pas modifier directement la copie dans
-  `supabase/functions/td/engine/`.
+- Les moteurs du Tower Defense et des jeux à 4 sont une exception au code dupliqué : le serveur
+  embarque une copie générée du moteur navigateur. Modifier `src/games/towerdefense/engine/` ou
+  `src/games/four/engine/`, puis exécuter `npm run td:sync` (également fait par `npm run build`,
+  voir `scripts/td-sync.mjs`). Ne pas modifier directement les copies dans
+  `supabase/functions/td/engine/` et `supabase/functions/board4/engine/`.
 - Une migration déjà appliquée en production ne se réécrit pas : toute évolution de schéma ou de
   fonction SQL passe par un nouveau fichier numéroté dans `supabase/migrations/`. Le README détaille
   l’ordre d’application et les opérations de déploiement.
@@ -35,10 +37,20 @@ les commandes de lancement, le déploiement et la configuration Supabase sont da
 
 ## Vérification avant livraison
 
-- `npm run build` synchronise le moteur Tower Defense, vérifie les types TypeScript puis construit le
-  site dans `dist/`.
-- `package.json` ne définit actuellement pas de commande de tests automatisés ; compléter le build
-  par des tests manuels des parcours touchés, notamment les modes hors ligne et Supabase concernés.
-- Après une modification du moteur ou de la fonction Tower Defense, vérifier également que la
-  fonction Edge déployée correspond au moteur synchronisé (`npm run td:sync`, puis déploiement
-  `supabase functions deploy td`, voir le README).
+- `npm run build` synchronise les moteurs partagés (`td:sync`), vérifie les types TypeScript puis
+  construit le site dans `dist/`.
+- `npm run test:sql` rejoue toutes les migrations dans PGlite et vérifie les droits et les règles de
+  sécurité (`scripts/sql-test.mjs`). `npm run test:site` lance les tests des fonctions pures du site
+  (`src/**/*.test.mjs`). Il n'y a pas de lint ni de commande unique `verifier`.
+- La CI (`.github/workflows/tests.yml`) exécute `test:sql`, `test:site`, vérifie que la copie des
+  moteurs est à jour (`npm run td:sync` puis `git diff --exit-code supabase/functions`) et lance
+  `npx tsc`, sur chaque push et chaque PR.
+- Le déploiement des fonctions Edge est automatique : à chaque push sur `main` qui touche `supabase/`
+  ou un moteur partagé, `.github/workflows/supabase.yml` lance `test:sql`, applique les migrations
+  (`supabase db push --linked --include-all`), puis redéploie `td` et `board4`. Un parcours manuel
+  reste utile pour les parcours d'interface touchés (modes hors ligne et Supabase), et pour la CSP :
+  vérifier sur le build de production (`npm run build`, puis `npx vite preview`).
+
+## Décisions structurantes
+
+Les décisions d'architecture sont consignées dans `docs/adr/`.

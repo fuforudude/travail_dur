@@ -1,0 +1,56 @@
+{
+  "extraKnownMarketplaces": {
+    "equipe": {
+      "source": {
+        "source": "github",
+        "repo": "fuforudude/agents-equipe"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "socle@equipe": true,
+    "backend@equipe": true
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npm test*)",
+      "Bash(npm ci*)",
+      "Bash(npm install*)",
+      "Bash(npx tsc*)",
+      "Bash(npx vite preview*)",
+      "Bash(node *)",
+      "Bash(lourd npm run *)",
+      "Bash(lourd npm test*)",
+      "Bash(lourd npx tsc*)",
+      "Bash(lourd node *)",
+      "Bash(lourd --etat)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git switch*)",
+      "Bash(git checkout*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git merge*)",
+      "Bash(git rebase*)",
+      "Bash(git reset*)",
+      "Bash(git stash*)",
+      "Bash(git fetch*)",
+      "Bash(git pull*)",
+      "Bash(git push*)",
+      "Bash(git worktree*)",
+      "Bash(gh pr *)",
+      "Bash(gh run *)",
+      "Bash(gh issue *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/secrets/**)"
+    ]
+  }
+}
