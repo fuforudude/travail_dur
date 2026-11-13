@@ -8,7 +8,6 @@ import * as quoridor from './engine/quoridor4';
 import { type Seat } from './engine/types';
 
 export const COLORS = ['#d9473f', '#3f7fd9', '#e0b52c', '#3fae6a'];
-export const COLOR_NAMES = ['Rouge', 'Bleu', 'Jaune', 'Vert'];
 const GREY = '#9aa0ae';
 
 export interface SeatInfo {

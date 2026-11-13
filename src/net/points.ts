@@ -259,9 +259,6 @@ export function loadPlinkoPayouts(): Promise<Map<string, number[]>> {
 export const shortPoints = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toLocaleString('fr-FR')} M` : n >= 1e4 ? `${(n / 1e3).toLocaleString('fr-FR')} k` : formatPoints(n);
 
-/** Plus de mise maximale au casino (0048_all_in.sql) : on peut miser tout son solde. */
-export const casinoMax = (balance: number) => Math.max(0, balance);
-
 const STAKES = [1, 5, ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].flatMap((e) => [1, 2.5, 5].map((k) => k * 10 ** e))];
 
 /** Jetons proposés au casino : les plus gros montants (1, 5, 10, 25, 50, 100, 250…) sous le solde, puis le solde entier (« all in »), `n` en tout. */
