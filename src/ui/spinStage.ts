@@ -13,6 +13,8 @@ const BET_NAMES: Record<string, string> = {
 };
 const betName = (k: string) => BET_NAMES[k] ?? k.slice(1);
 const wait = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+/** Au-delà de ce nombre de tours en attente, les plus vieux passent sans animation (retour au direct). */
+const MAX_BEHIND = 8;
 
 export const net = (s: Spin) => s.payout - s.stake;
 export const signed = (n: number) => (n > 0 ? '+' : '') + formatPoints(n);
@@ -20,7 +22,7 @@ export const signed = (n: number) => (n > 0 ? '+' : '') + formatPoints(n);
 /** Billes d'un tour Plinko : un envoi groupé (paths) ou l'ancien format à une seule bille (path). */
 function plinkoBalls(s: Spin): { path: number[]; mult: number }[] {
   const d = s.detail;
-  if (d.paths) return d.paths.map((path, i) => ({ path, mult: d.mults_x100?.[i] ?? 0 }));
+  if (Array.isArray(d.paths)) return d.paths.map((path, i) => ({ path, mult: d.mults_x100?.[i] ?? 0 }));
   return d.path ? [{ path: d.path, mult: d.mult_x100 ?? 0 }] : [];
 }
 
@@ -65,17 +67,30 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
   let playing = false;
   const queue: Spin[] = [];
   const timers = new Set<number>();
+  /** Vrai au retour sur l'onglet : les tours en retard passent sans animation. */
+  let skip = false;
 
   /** Résultat affiché et son : au Plinko, le son de gain seulement si la bille rapporte plus que la mise. */
-  const finish = (s: Spin) => {
+  const finish = (s: Spin, sound = true) => {
     if (disposed) return;
     status.textContent = `${gameName(s.game)} · ${outcome(s)}`;
-    if (opts.sound) {
+    if (opts.sound && sound) {
       if (s.game === 'plinko') blip(s.payout > s.stake ? 880 : 300);
       else if (s.payout) blip(s.payout / s.stake >= 36 ? 1200 : 880);
     }
     opts.onPlayed?.(s);
   };
+
+  /**
+   * Résultats affichés dans l'ordre des envois, même quand les billes de plusieurs envois tombent en même temps :
+   * chaque résultat attend le précédent, puis l'arrivée de ses propres billes.
+   */
+  let done: Promise<void> = Promise.resolve();
+  const chain = (s: Spin, falling: Promise<number>[] = [], sound = true) =>
+    (done = done
+      .then(() => Promise.all(falling))
+      .then(() => finish(s, sound))
+      .catch((e: unknown) => console.error(e)));
 
   /** Attend que plus aucune bille ne tombe (avant de changer de plateau). */
   const settled = async () => {
@@ -87,12 +102,12 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
 
   const play = async (s: Spin, fast: boolean) => {
     released = false;
-    opts.onStart?.(s);
     // Roulette et machine à sous masquent le plateau : les billes en rattrapage finissent d'abord leur chute.
     if (s.game !== 'plinko') {
       await settled();
       if (disposed) return;
     }
+    opts.onStart?.(s);
     roulette.classList.toggle('on', s.game === 'roulette');
     slots.classList.toggle('on', s.game === 'slots');
     plinko.classList.toggle('on', s.game === 'plinko');
@@ -137,12 +152,13 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
           }
           if (balls.length > 1 || fast) {
             // Un seul son et résultat pour l'envoi, à l'arrivée de la dernière bille ; on passe au tour suivant sans pause.
-            void Promise.all(falling).then(() => !disposed && finish(s));
+            void chain(s, falling);
             released = true;
             if (balls.length === 1) await wait(200);
             return;
           }
-          await falling[0];
+          await chain(s, falling);
+          return;
         }
       }
     } else {
@@ -164,21 +180,35 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
       }
       reels.forEach((el) => el.classList.toggle('win', s.payout > 0));
     }
-    finish(s);
+    await chain(s);
   };
 
   const next = async () => {
     if (playing) return;
     playing = true;
-    while (queue.length && !disposed) {
-      const s = queue.shift()!;
-      const fast = queue.length > 0;
-      await play(s, fast);
-      // Après des billes lâchées sans attendre, pas de pause de plus : l'écart est déjà fait.
-      await wait(queue.length && !released ? 300 : 0);
+    try {
+      while (queue.length && !disposed) {
+        // Trop en retard (onglet caché, rafale) : les tours en attente vont au texte et à l'historique sans animation
+        // ni son, dans l'ordre ; seul le dernier est rejoué.
+        if (queue.length > MAX_BEHIND || skip) {
+          while (queue.length > 1) void chain(queue.shift()!, [], false);
+        }
+        skip = false;
+        const s = queue.shift()!;
+        const fast = queue.length > 0;
+        await play(s, fast);
+        // Après des billes lâchées sans attendre, pas de pause de plus : l'écart est déjà fait.
+        await wait(queue.length && !released ? 300 : 0);
+      }
+    } finally {
+      playing = false;
     }
-    playing = false;
   };
+
+  const onVisible = () => {
+    if (document.visibilityState === 'visible' && queue.length) skip = true;
+  };
+  document.addEventListener('visibilitychange', onVisible);
 
   return {
     roulette,
@@ -191,6 +221,7 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
     },
     dispose() {
       disposed = true;
+      document.removeEventListener('visibilitychange', onVisible);
       board.destroy();
       timers.forEach(clearInterval);
     },

@@ -6,7 +6,7 @@ import { navigate } from '../router';
 import { autoPlay } from './autoplay';
 import { h, hints } from './dom';
 import { page } from './layout';
-import { BIG_WIN_X100, createPlinkoBoard, multLabel } from './plinkoBoard';
+import { BIG_WIN_X100, createPlinkoBoard, multLabel, slotColor } from './plinkoBoard';
 import { batchQueue, PER_SECOND, type PlinkoGroup, tokenBucket } from './plinkoQueue';
 
 export const MIN_ROWS = 8;
@@ -25,6 +25,10 @@ export const PLINKO_RULES = [
 
 /** Écart entre deux billes d'un même envoi, et rythme de la rafale (Espace maintenue, auto rapide). */
 const GAP_MS = 1000 / PER_SECOND;
+/** Pastilles gardées dans le fil des derniers multiplicateurs. */
+const FEED_MAX = 12;
+/** Rythme de mise à jour du compteur de billes en jeu. */
+const AIR_MS = 250;
 
 type Click = 'ok' | 'token' | 'poor' | 'off';
 
@@ -55,6 +59,7 @@ export function plinkoView(root: HTMLElement): () => void {
   let burstStake = 0;
   let burstWon = 0;
   let spaceTimer = 0;
+  let airTimer = 0;
   let destroyed = false;
   const timers = new Set<number>();
   const later = (fn: () => void, ms: number) => {
@@ -81,6 +86,8 @@ export function plinkoView(root: HTMLElement): () => void {
   const status = h('p', { class: 'status pk-status', 'aria-live': 'polite' });
   const balanceEl = h('span', { class: 'stat' });
   const bigEl = h('div', { class: 'pk-big', hidden: true });
+  const airEl = h('div', { class: 'pk-air muted small', 'aria-hidden': 'true' });
+  const feedEl = h('div', { class: 'pk-feed', 'aria-hidden': 'true' });
   const drop = h('button', { class: 'field rl-spin', type: 'button' }, 'Lâcher la bille (Espace)');
   drop.addEventListener('mousedown', (e) => e.preventDefault());
   drop.addEventListener('click', () => void click(true)); // chaque clic = une bille, le seau ignore le spam en trop
@@ -120,7 +127,7 @@ export function plinkoView(root: HTMLElement): () => void {
       h(
         'div',
         { class: 'pk-layout' },
-        h('div', { class: 'pk-machine' }, h('div', { class: 'pk-stage' }, board.el, bigEl)),
+        h('div', { class: 'pk-machine' }, h('div', { class: 'pk-stage' }, board.el, airEl, feedEl, bigEl)),
         h(
           'div',
           { class: 'pk-side' },
@@ -207,6 +214,29 @@ export function plinkoView(root: HTMLElement): () => void {
     if (!destroyed) render();
   };
 
+  /** Compteur « N billes en jeu » : un seul texte, relu quelques fois par seconde tant que des billes tombent. */
+  const showAir = () => {
+    const n = board.inFlight();
+    const text = n ? `${n} bille${n > 1 ? 's' : ''} en jeu` : '';
+    if (airEl.textContent !== text) airEl.textContent = text;
+    if (!n && airTimer) {
+      clearInterval(airTimer);
+      airTimer = 0;
+    }
+  };
+  const watchAir = () => {
+    showAir();
+    if (!airTimer) airTimer = window.setInterval(showAir, AIR_MS);
+  };
+
+  /** Fil des derniers multiplicateurs : la pastille la plus récente en premier, couleur de sa case. */
+  const addFeed = (mult: number, slot: number, rowCount: number) => {
+    const pill = h('span', { class: 'pk-pill' }, multLabel(mult));
+    pill.style.background = slotColor(slot, rowCount);
+    feedEl.prepend(pill);
+    while (feedEl.childElementCount > FEED_MAX) feedEl.lastElementChild!.remove();
+  };
+
   const stopSpace = () => {
     if (spaceTimer) clearInterval(spaceTimer);
     spaceTimer = 0;
@@ -248,10 +278,12 @@ export function plinkoView(root: HTMLElement): () => void {
   };
 
   /** Une bille arrive dans sa case : son gain entre dans le solde local. */
-  const land = (stake: number, mult: number, payout: number, big: boolean) => {
+  const land = (stake: number, mult: number, payout: number, big: boolean, slot: number, rowCount: number) => {
     if (destroyed) return;
     local += payout;
     air--;
+    addFeed(mult, slot, rowCount);
+    showAir();
     burstBalls++;
     burstStake += stake;
     burstWon += payout;
@@ -322,7 +354,9 @@ export function plinkoView(root: HTMLElement): () => void {
       }
       air++;
       later(() => {
-        if (!destroyed) void board.drop(path, { big: mult >= BIG_WIN_X100 }).then(() => land(g.bet, mult, gain, mult >= BIG_WIN_X100));
+        if (destroyed) return;
+        void board.drop(path, { big: mult >= BIG_WIN_X100 }).then((slot) => land(g.bet, mult, gain, mult >= BIG_WIN_X100, slot, g.rows));
+        watchAir();
       }, shown++ * GAP_MS);
     }
     if (bad) message = 'Réponse du serveur illisible : une bille n’est pas affichée, ton solde est à jour.';
@@ -385,6 +419,7 @@ export function plinkoView(root: HTMLElement): () => void {
   return () => {
     destroyed = true;
     stopSpace();
+    if (airTimer) clearInterval(airTimer);
     auto.stop();
     queue.clear();
     board.destroy();
