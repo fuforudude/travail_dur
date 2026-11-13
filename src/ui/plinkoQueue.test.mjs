@@ -356,7 +356,7 @@ function makePlayer(clock, { latency, callsPerSecond } = {}) {
   const srv = fakeServer(clock, { latency, callsPerSecond });
   const bucket = tokenBucket(BURST, PER_SECOND, clock.now);
   const gap = 1000 / PER_SECOND;
-  const state = { local: srv.balance, clicked: 0, lastClick: 0, drops: [], srv };
+  const state = { local: srv.balance, clicked: 0, lastClick: 0, drops: [], onRefund: () => {}, srv };
   let nextDrop = 0; // « prochain lâcher possible », commun aux envois, comme dans la page
   /** Égrène les `count` billes d'une réponse, exactement comme la page. */
   const schedule = (count) => {
@@ -376,7 +376,12 @@ function makePlayer(clock, { latency, callsPerSecond } = {}) {
         return { refused: g.n }; // « doucement » : plus de réessai, le groupe est rendu
       }
     },
-    { refund: (stake) => (state.local += stake) },
+    {
+      refund: (stake, balls) => {
+        state.local += stake;
+        state.onRefund(balls); // le mode auto en fait une dette (voir `autoRapide`)
+      },
+    },
   );
   state.queue = queue;
   state.sends = sends;
@@ -438,6 +443,50 @@ test('bout en bout : après le dernier clic, la dernière bille tombe dans le bu
       // Avant l'égrenage resserré, le seau plein donnait 955 et 1255 ms : ce test échouait.
       assert.ok(retard <= budget, `${nom}, aller-retour ${roundTrip} ms : dernière bille ${Math.round(retard)} ms après le dernier clic (budget ${budget} ms)`);
     }
+  }
+});
+
+/**
+ * Mode auto en vitesse rapide, calqué sur la boucle de `plinko.ts` (qui ne s'importe pas ici : elle tient au DOM).
+ * `dettes` reproduit le compteur `owed` : une bille payée au clic mais jamais tombée (abandonnée dans la file ou
+ * refusée par le serveur) rend son tour, au lieu de le consommer. Sans lui, « Auto ×N » joue moins de N billes.
+ */
+async function autoRapide(clock, p, tours, { dettes = true } = {}) {
+  let owed = 0;
+  p.onRefund = (balls) => (owed += balls);
+  const fin = clock.now() + 120000; // garde-fou : un test ne doit jamais tourner sans fin
+  let left = tours;
+  while (left > 0 && clock.now() < fin) {
+    left--;
+    for (;;) {
+      if (p.click()) {
+        await clock.advance(1000 / PER_SECOND);
+        // Dernier tour : on laisse tout retomber avant de conclure, sinon une bille abandonnée au tout dernier
+        // moment n'aurait plus de tour pour être rejouée.
+        if (dettes && !owed && !left) {
+          while ((p.queue.waiting() || p.queue.inFlight()) && clock.now() < fin) await clock.advance(20);
+        }
+        if (!dettes || !owed) break; // le tour est joué
+        owed--; // ce clic remplace une bille qui n'est jamais tombée
+      } else {
+        await clock.advance(20); // plus de jeton : on attend au lieu d'arrêter l'auto
+      }
+      if (clock.now() >= fin) break;
+    }
+  }
+  await clock.advance(5000); // tout retombe
+  return { duree: Math.round(clock.now()) };
+}
+
+test('auto : « ×100 » joue 100 billes, quelle que soit la connexion', async () => {
+  for (const roundTrip of [100, 400, 800]) {
+    const clock = makeClock();
+    const p = makePlayer(clock, { latency: [roundTrip / 2, roundTrip / 2] });
+    await autoRapide(clock, p, 100);
+    // Sans le compteur de dettes : 100 / 76 / 37 billes jouées à 100 / 400 / 800 ms d'aller-retour.
+    assert.equal(p.srv.accepted, 100, `aller-retour ${roundTrip} ms : ${p.srv.accepted} billes jouées sur 100 demandées`);
+    assert.equal(p.local, p.srv.balance, `aller-retour ${roundTrip} ms : le solde local retombe sur celui du serveur`);
+    assert.equal(p.queue.waiting(), 0);
   }
 });
 

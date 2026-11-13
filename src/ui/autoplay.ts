@@ -3,6 +3,8 @@ import { h } from './dom';
 export interface AutoPlay {
   el: HTMLElement;
   running(): boolean;
+  /** Tours restants **après** celui en cours : 0 pendant le dernier tour de la série. */
+  left(): number;
   start(n: number): Promise<void>;
   stop(): void;
   /** Grise les boutons « Auto » (pendant un tour lancé à la main). */
@@ -37,6 +39,7 @@ export function autoPlay(counts: number[], step: () => Promise<boolean>, onChang
   const api: AutoPlay = {
     el,
     running: () => running,
+    left: () => left,
     async start(n: number) {
       if (running || disabled) return;
       running = true;

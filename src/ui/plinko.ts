@@ -54,6 +54,11 @@ export function plinkoView(root: HTMLElement): () => void {
   let message = 'Choisis ta mise, puis lâche la bille.';
   let autoNet = 0;
   let autoBalls = 0;
+  // Billes dues au mode auto : une bille payée au clic mais jamais tombée (abandonnée faute d'avoir pu partir à
+  // temps, ou refusée par le serveur) n'a pas joué le tour qu'elle a consommé. Tant qu'il reste des dettes, un clic
+  // réussi en solde une au lieu de consommer un tour, pour qu'« Auto ×N » joue bien N billes même sur un réseau
+  // lent (la série dure juste plus longtemps). Les dettes sont oubliées dès que l'auto s'arrête.
+  let owed = 0;
   // Bilan de la rafale en cours (depuis le dernier moment où plus rien ne tombait)
   let burstBalls = 0;
   let burstStake = 0;
@@ -89,7 +94,11 @@ export function plinkoView(root: HTMLElement): () => void {
     settled: () => settle(),
     // Bille jamais partie (abandonnée faute d'avoir pu partir à temps, ou refusée par le serveur) : la mise revient
     // au solde local, sans message. Pour le joueur c'est un clic qui n'a rien coûté, comme un clic en trop.
-    refund: (stake) => (local += stake),
+    // Pendant l'auto, elle devient une dette : le tour qu'elle avait consommé sera rejoué.
+    refund: (stake, balls) => {
+      local += stake;
+      if (auto.running()) owed += balls;
+    },
   });
   const busy = () => queue.waiting() > 0 || queue.inFlight() || air > 0;
   const shownBalance = () => (hold ? local : (getWallet()?.balance ?? 0));
@@ -119,24 +128,32 @@ export function plinkoView(root: HTMLElement): () => void {
     async () => {
       for (;;) {
         const r = click(true);
-        if (r === 'ok') break;
         if (r === 'off') return false;
         if (r === 'poor' && !busy()) {
           // Le solde manque et plus rien n'est en file, en vol ni en l'air : aucun gain ne viendra le renflouer.
+          // Les dettes restantes sont oubliées : l'auto s'arrête, il ne tourne pas en boucle pour les solder.
           message = 'Plus assez de points pour cette mise : auto arrêté.';
           return false;
         }
-        await wait(20); // plus de jeton, ou gains encore en route : on attend au lieu d'arrêter l'auto
+        if (r === 'ok') {
+          await wait(fast ? GAP_MS : 1000);
+          // Dernier tour de la série : on laisse tout retomber avant de conclure, sinon une bille abandonnée au
+          // tout dernier moment n'aurait plus de tour pour être rejouée et « ×100 » s'arrêterait à 99.
+          if (!owed && !auto.left()) while (busy() && auto.running() && !destroyed) await wait(20);
+          if (!owed) return !destroyed; // le tour est joué
+          owed--; // ce clic remplace une bille qui n'est jamais tombée : le tour n'est pas consommé
+        } else {
+          await wait(20); // plus de jeton, ou gains encore en route : on attend au lieu d'arrêter l'auto
+        }
         if (destroyed || !auto.running()) return false;
       }
-      await wait(fast ? GAP_MS : 1000);
-      return !destroyed;
     },
     () => {
       if (auto.running()) {
         stopSpace(); // l'auto et la touche Espace maintenue ne cliquent pas en même temps
         autoNet = 0;
         autoBalls = 0;
+        owed = 0;
       }
       render();
     },
