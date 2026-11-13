@@ -71,6 +71,16 @@ Le Plinko n'a d'intérêt que si l'on peut lâcher des billes en rafale. Aujourd
 | Montrer qu'il y a plusieurs billes | Fil des multiplicateurs ; case qui rebondit ; variation des trajectoires ; compteur | Les quatre | Lisibilité d'une rafale |
 | Limiter le nombre d'appels au serveur | Second seau 8 appels/s ; écart minimal de 100 ms | Second seau à 8 appels/s, refus avant toute écriture ; plus un index `casino_spins (user_id, created_at)` | Un script ne peut plus multiplier les appels coûteux ; le site (~4 appels/s) n'est jamais gêné |
 
+### Décisions prises après la revue du site et la QA
+| Question | Options envisagées | Choix | Raison |
+|---|---|---|---|
+| Rythme des appels du site (le serveur limite à 8/s) | Écart minimal de 150 ms + réessai ; écart seul | Écart de 150 ms entre deux envois (≈ 6,7 appels/s) **et** réessai 150 ms plus tard si le serveur répond « trop d'appels » | Sur un réseau rapide, le site faisait >8 appels/s et perdait jusqu'à 35 % des billes en silence |
+| Mise pendant une rafale | Ne jamais changer seule ; jetons calculés sur le solde du serveur | La mise reste celle choisie tant que des billes sont en jeu ; un clic que le solde local ne permet pas est ignoré en silence ; « All in » inchangé | La liste des jetons suivait le solde local, qui tombe à 0 pendant la rafale : la mise s'effondrait à 1 et n'y remontait plus |
+| Billes refusées par le serveur (décalage des deux seaux) | Les remettre en file ; seau local à 14/s | Remises en file, envoyées dans l'envoi suivant | Toute bille acceptée au clic finit par tomber |
+| Tests automatiques côté site | Lanceur intégré de Node ; aucun | `node --test` sur `src/ui/plinkoQueue.ts`, commande `npm run test:site`, ajoutée à la CI | Les scénarios de la QA deviennent permanents, sans nouvelle dépendance |
+
+Appliqué sans décision (corrections évidentes) : l'auto rapide attend au lieu de s'arrêter tant que des billes tombent ; le plateau suit un changement de hauteur de la fenêtre ; démarrer l'auto arrête la rafale de la touche Espace ; recalage du badge sur le solde du dernier appel ; moins de reconstruction de l'interface pendant une rafale ; bandeau de gros gain non écourté par un second ; écart régulier entre les billes de deux envois successifs.
+
 ## Décisions du besoin (entretien)
 Limite propre au Plinko (roulette et machine à sous inchangées) ; clics en trop ignorés sans message ; une ligne d'historique par envoi groupé ; mode auto avec vitesse normale ou rapide ; réglages dans une colonne à droite et plateau au centre, sans défilement.
 
