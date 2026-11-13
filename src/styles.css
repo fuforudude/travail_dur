@@ -1869,23 +1869,53 @@ button.field.danger:is(:hover, :focus, :active):not(:disabled) {
 /* ---------------------------------------------------------------------------
    Plinko
    --------------------------------------------------------------------------- */
+/* Page : plateau au centre, réglages dessous (téléphone) ou dans une colonne à droite (ordinateur, voir plus bas). */
+.pk-game { width: 100%; }
+.pk-layout { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; width: 100%; }
 .pk-machine {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.9rem;
-  padding: 1rem;
+  justify-content: center;
+  width: 100%;
+  padding: 0.75rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 18px;
   box-shadow: var(--shadow);
 }
 .pk-stage { position: relative; width: min(100%, 560px); }
-.pk-board { width: 100%; }
+/* Le canvas prend la largeur de .pk-board sans dépasser son max-height (taille calculée par plinkoBoard.ts). */
+.pk-board { width: 100%; display: flex; justify-content: center; }
 .pk-canvas { display: block; width: 100%; height: auto; }
+.pk-side { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; width: 100%; max-width: 30rem; }
+.pk-side .sl-bet { max-width: none; }
+.pk-side .hints { margin-top: 0.2rem; line-height: 1.7; }
+.pk-side .pk-rules { width: 100%; padding: 0.8rem 1rem; }
+.pk-auto { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
+.pk-auto .auto-play { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3rem; }
+.pk-status { min-height: 3em; }
 .pk-settings { display: grid; grid-template-columns: auto auto; align-items: center; gap: 0.4rem 0.8rem; }
 .pk-choice { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .pk-rows { min-width: 1.6rem; text-align: center; font-size: 1.1rem; }
+/* Ordinateur : deux colonnes, tout visible sans faire défiler (le plateau se limite à la hauteur de l'écran). */
+@media (min-width: 900px) {
+  .content.pk-page { max-width: 1280px; padding-top: 0.75rem; padding-bottom: 0.75rem; }
+  .pk-layout { display: grid; grid-template-columns: minmax(0, 1fr) 290px; align-items: start; gap: 1rem; }
+  .pk-stage { width: 100%; }
+  /* hauteur visible − barre du haut (~3.5rem) − marges de la page (1.5rem) − marges du cadre (1.5rem) */
+  .pk-board { max-height: calc(100dvh - 6.75rem); }
+  .pk-side {
+    max-width: none;
+    max-height: calc(100dvh - 5rem);
+    overflow-y: auto;
+    padding: 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+  }
+  .pk-side .rl-buttons { width: 100%; }
+  .pk-side .rl-spin { flex: 1; }
+}
 .pk-big {
   position: absolute;
   inset: 30% 0 auto 0;
