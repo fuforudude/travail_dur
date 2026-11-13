@@ -9,6 +9,8 @@ export interface PlinkoBoard {
   drop(path: number[], opts?: { big?: boolean }): Promise<number>;
   /** Vrai tant qu'une bille est en l'air. */
   busy(): boolean;
+  /** Nombre de billes en l'air. */
+  inFlight(): number;
   destroy(): void;
 }
 
@@ -19,6 +21,10 @@ const SLOT_H = 30;
 const STEP_MS = 115; // une rangée
 const FLASH_MS = 650;
 const FLASH_BIG_MS = 1600;
+const BOUNCE_MS = 200; // la case touchée s'enfonce et s'allume
+const BOUNCE_PX = 4;
+const JITTER = 0.12; // décalage visuel de départ d'une bille, en écarts entre clous (s'estompe jusqu'à la case)
+const SPEED_JITTER = 0.08; // variation de vitesse d'une bille
 
 interface Ball {
   path: number[];
@@ -26,6 +32,10 @@ interface Ball {
   right: number[];
   slot: number;
   start: number;
+  /** Durée d'une rangée pour cette bille (STEP_MS ± SPEED_JITTER). */
+  step: number;
+  /** Décalage horizontal de départ, en écarts entre clous. */
+  jx: number;
   big: boolean;
   done: (slot: number) => void;
 }
@@ -45,6 +55,18 @@ export const BIG_WIN_X100 = 10000;
 
 /** Multiplicateur en français : « ×0,2 », « ×1000 » (sans espace des milliers, pour tenir dans les cases étroites). */
 export const multLabel = (x100: number) => `×${(x100 / 100).toLocaleString('fr-FR', { maximumFractionDigits: 2, useGrouping: false })}`;
+
+/** Couleur de la case `k` sur `rows` rangées : du centre (froid) aux bords (chaud). */
+export const slotColor = (k: number, rows: number) => {
+  const edge = Math.abs(k - rows / 2) / (rows / 2);
+  return `hsl(${Math.round(210 - 210 * edge)} 70% 46%)`;
+};
+
+/**
+ * Décalage horizontal (en écarts entre clous) d'une bille partie avec le décalage `jx`, après `t` rangées sur `len` :
+ * il décroît jusqu'à 0 à l'arrivée (t = len + 1), pour que la bille finisse au centre de la case donnée par le serveur.
+ */
+export const jitterAt = (jx: number, t: number, len: number) => jx * Math.max(0, 1 - t / (len + 1));
 
 export function createPlinkoBoard(): PlinkoBoard {
   const canvas = h('canvas', { class: 'pk-canvas' });
@@ -78,12 +100,6 @@ export function createPlinkoBoard(): PlinkoBoard {
   const ballR = () => Math.max(3.5, dx * 0.24);
   const pegR = () => Math.max(2, dx * 0.1);
 
-  /** Du centre (froid) aux bords (chaud). */
-  const slotColor = (k: number) => {
-    const edge = Math.abs(k - rows / 2) / (rows / 2);
-    return `hsl(${Math.round(210 - 210 * edge)} 70% 46%)`;
-  };
-
   /**
    * Point de contact n° k : la bille posée sur le clou de la rangée k (k < rangées), ou au fond de sa case (k = rangées).
    * Après k rebonds dont r à droite, elle est à r − k/2 écarts du centre : exactement au-dessus du clou de la rangée k.
@@ -93,21 +109,22 @@ export function createPlinkoBoard(): PlinkoBoard {
 
   /** Position de la bille à l'instant `now`, écrite dans `pos`. */
   const ballPos = (b: Ball, now: number) => {
-    const t = Math.max(0, (now - b.start) / STEP_MS); // une image peut porter une heure antérieure au lâcher
+    const t = Math.max(0, (now - b.start) / b.step); // une image peut porter une heure antérieure au lâcher
     const seg = Math.floor(t);
     const f = t - seg;
+    const jitter = jitterAt(b.jx, t, b.path.length) * dx;
     // seg 0 : chute depuis le haut jusqu'au premier clou ; puis un rebond (petit arc) par rangée ; le dernier tombe dans la case
     if (seg === 0) {
       const toY = contactY(b, 0);
       const fromY = TOP - dy * 0.9;
-      pos.x = contactX(b, 0);
+      pos.x = contactX(b, 0) + jitter;
       pos.y = fromY + (toY - fromY) * f * f;
       return;
     }
     const k = Math.min(seg, b.path.length);
     const fx = contactX(b, k - 1);
     const fy = contactY(b, k - 1);
-    pos.x = fx + (contactX(b, k) - fx) * f;
+    pos.x = fx + (contactX(b, k) - fx) * f + jitter;
     pos.y = fy + (contactY(b, k) - fy) * f - 4 * f * (1 - f) * dy * 0.38;
   };
 
@@ -136,10 +153,13 @@ export function createPlinkoBoard(): PlinkoBoard {
     ctx.textBaseline = 'middle';
     for (let k = 0; k <= rows; k++) {
       const x = slotX(k) - sw / 2;
-      const y = slotTop();
       let fl: Flash | undefined;
       for (const f of flashes) if (f.slot === k) fl = f;
       const a = fl ? Math.max(0, 1 - (now - fl.start) / (fl.big ? FLASH_BIG_MS : FLASH_MS)) : 0;
+      // Rebond : la case s'enfonce puis remonte, et s'allume un peu plus pendant ce temps
+      const tb = fl ? (now - fl.start) / BOUNCE_MS : 1;
+      const bounce = tb >= 0 && tb < 1 ? Math.sin(Math.PI * tb) : 0;
+      const y = slotTop() + BOUNCE_PX * bounce;
       if (fl?.big && a > 0) {
         ctx.save();
         ctx.shadowColor = '#ffc933';
@@ -148,12 +168,12 @@ export function createPlinkoBoard(): PlinkoBoard {
         ctx.fillRect(x, y, sw, SLOT_H);
         ctx.restore();
       }
-      ctx.fillStyle = slotColor(k);
+      ctx.fillStyle = slotColor(k, rows);
       ctx.beginPath();
       ctx.roundRect(x, y, sw, SLOT_H, 5);
       ctx.fill();
       if (fl && a > 0) {
-        ctx.fillStyle = fl.big ? `rgba(255, 214, 80, ${0.9 * a})` : `rgba(255, 255, 255, ${0.7 * a})`;
+        ctx.fillStyle = fl.big ? `rgba(255, 214, 80, ${0.9 * a})` : `rgba(255, 255, 255, ${Math.min(0.9, 0.55 * a + 0.35 * bounce)})`;
         ctx.beginPath();
         ctx.roundRect(x, y, sw, SLOT_H, 5);
         ctx.fill();
@@ -181,7 +201,7 @@ export function createPlinkoBoard(): PlinkoBoard {
     let arrived: Ball[] | null = null;
     let kept = 0;
     for (const b of balls) {
-      if (now - b.start >= (b.path.length + 1) * STEP_MS) {
+      if (now - b.start >= (b.path.length + 1) * b.step) {
         (arrived ??= []).push(b);
         let n = 0;
         for (const f of flashes) if (f.slot !== b.slot) flashes[n++] = f;
@@ -245,11 +265,15 @@ export function createPlinkoBoard(): PlinkoBoard {
       const right = [0];
       for (let i = 0; i < path.length; i++) right.push(right[i] + path[i]);
       return new Promise<number>((done) => {
-        balls.push({ path, right, slot: right[path.length], start: performance.now(), big: !!opts.big, done });
+        // Légère variation visuelle (départ décalé, vitesse) : la case d'arrivée reste celle du chemin.
+        const step = STEP_MS * (1 + (Math.random() * 2 - 1) * SPEED_JITTER);
+        const jx = (Math.random() * 2 - 1) * JITTER;
+        balls.push({ path, right, slot: right[path.length], start: performance.now(), step, jx, big: !!opts.big, done });
         kick();
       });
     },
     busy: () => balls.length > 0,
+    inFlight: () => balls.length,
     destroy() {
       observer?.disconnect();
       if (raf) cancelAnimationFrame(raf);

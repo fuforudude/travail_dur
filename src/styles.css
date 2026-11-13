@@ -1927,3 +1927,27 @@ button.field.danger:is(:hover, :focus, :active):not(:disabled) {
   pointer-events: none;
 }
 .pk-big[hidden] { display: none; }
+/* Billes en jeu : en haut à gauche du plateau (coin vide, au-dessus du triangle de clous). */
+.pk-air { position: absolute; top: 0; left: 0.2rem; pointer-events: none; }
+/* Derniers multiplicateurs : rangée compacte sous le plateau (téléphone), colonne à droite du plateau (ordinateur). */
+.pk-feed { display: flex; gap: 0.25rem; overflow: hidden; height: 1.4rem; margin-top: 0.4rem; justify-content: center; }
+.pk-feed:empty { visibility: hidden; }
+.pk-pill {
+  flex: none;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2rem;
+  white-space: nowrap;
+  animation: pk-pill-in 0.2s ease-out;
+}
+@keyframes pk-pill-in { from { opacity: 0; transform: scale(0.6); } }
+@media (min-width: 900px) {
+  /* Hors du flux : la colonne se pose dans la marge à droite du canvas, sans changer la hauteur de la page. */
+  .pk-feed { position: absolute; top: 0; right: 0; flex-direction: column; align-items: flex-end; height: auto; margin: 0; pointer-events: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pk-pill { animation: none; }
+}
