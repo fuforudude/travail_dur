@@ -6,10 +6,10 @@
 |---|---|---|
 | [CLAUDE.md](../CLAUDE.md) | Règles pour toutes les sessions et tous les agents | À jour (liste des worktrees corrigée le 2026-11-13) |
 | [README.md](../README.md) | Descriptif fonctionnel, configuration Supabase, liste des migrations | À jour |
-| [Plan.md](../Plan.md) | Architecture et invariants | Invariants justes ; la partie « Vérification avant livraison » est périmée (voir § 6) |
-| [AUDIT.md](../AUDIT.md) | Audit d'octobre et tâches P0 à P4 | Une case non cochée est faite, le reste est valable (voir § 6) |
+| [Plan.md](../Plan.md) | Architecture et invariants | À jour (invariants, fonctions Edge et « Vérification avant livraison » corrigés le 2026-11-13) |
+| [AUDIT.md](../AUDIT.md) | Audit d'octobre et tâches P0 à P4 | À jour (RLS cochée, sauvegarde décochée le 2026-11-13) ; le reste est valable |
 | [docs/adr/](adr/) | Décisions structurantes | 0001 (backend sur VPS) et 0002 à 0007, décisions déjà prises consignées après coup |
-| [docs/specs/](specs/) | Specs de fonctionnalités | Une seule : annonce, connexions, lien Pocharlume (livrée) |
+| [docs/specs/](specs/) | Specs de fonctionnalités | Trois : annonce, connexions, lien Pocharlume (livrée) ; Plinko ; Plinko en rafale |
 
 ---
 
@@ -73,17 +73,6 @@ Nettoyage fait le 2026-11-13 : les worktrees et branches fusionnés ont été su
 
 Avant de supprimer un worktree, lancer `git status` dedans. Pour la suppression, suivre la mémoire « Jonction node_modules des worktrees » : retirer la jonction `node_modules` avant `git worktree remove`, jamais `--force`. Je n'ai pas vérifié branche par branche lesquelles des `origin/agents/*` sont fusionnées.
 
----|---|---|
-| `main` (dossier `Multiplay`) | — | Branche de référence |
-| `backend` (`../Multiplay-backend`) | 1 (`b32aabd`, API de l'appart), et 14 commits de retard sur `main` | À garder (voir § 5) ; à remettre à jour depuis `main` avant toute reprise : conflits probables dans `src/net/apartment.ts`, `src/net/furniture.ts`, `src/ui/apartment.ts` (réserve en piles arrivée depuis) |
-| `appart`, `mobile`, `perf-rls`, `td-sauvegarde` (worktrees `../Multiplay-*`) | 0 | Fusionnées : supprimer les worktrees puis les branches |
-| `amis`, `jeux`, `td-campagne`, `feat/meubles-3d` | 0 | Fusionnées : supprimer (locales et sur GitHub) |
-| `format` | 1, mais déjà présent sur `main` sous un autre identifiant (`git cherry` : équivalent) | Supprimer |
-| 13 worktrees `.claude/worktrees/agent-*` et leurs branches `worktree-agent-*` | 0 | Restes d'agents : supprimer |
-| `worktree-merge-tout` (ce worktree) | 0 | Supprimer une fois la reprise faite |
-
-Je n'ai pas pu vérifier depuis cette session s'il reste des fichiers non commités dans les dossiers `../Multiplay-*` (isolation des worktrees). **Avant de supprimer un worktree**, lancer `git status` dedans. Pour la suppression, suivre la mémoire « Jonction node_modules des worktrees » : retirer la jonction `node_modules` avant `git worktree remove`, jamais `--force`.
-
 ---
 
 ## 5. Le chantier backend sur VPS (ADR 0001)
@@ -102,13 +91,13 @@ C'est la prochaine **fonctionnalité** à mener avec le flux complet (§ 7) : il
 
 | Où | Ce qui est écrit | La réalité |
 |---|---|---|
-| `Plan.md`, « Vérification avant livraison » | « `package.json` ne définit pas de commande de tests » et déploiement manuel de la fonction `td` | `npm run test:sql` existe et tourne en CI ; `td` et `board4` sont redéployées par le workflow Supabase |
-| `Plan.md`, « Serveur » | Une seule fonction Edge (`td`) | Deux : `td` et `board4` (jeux à 4) |
-| `AUDIT.md`, P1 | « Politiques RLS en `(select auth.uid())` » non coché | Fait par `0044_conseiller_supabase.sql` (branche `perf-rls`, fusionnée) |
-| `AUDIT.md`, P0 | « Sauvegardes de la base » coché | Le workflow existe, mais n'a jamais réussi (secret manquant, § 2) |
+| `Plan.md`, « Vérification avant livraison » | « `package.json` ne définit pas de commande de tests » et déploiement manuel de la fonction `td` | `npm run test:sql` existe et tourne en CI ; `td` et `board4` sont redéployées par le workflow Supabase. **Corrigé le 2026-11-13** |
+| `Plan.md`, « Serveur » | Une seule fonction Edge (`td`) | Deux : `td` et `board4` (jeux à 4). **Corrigé le 2026-11-13** |
+| `AUDIT.md`, P1 | « Politiques RLS en `(select auth.uid())` » non coché | Fait par `0044_conseiller_supabase.sql` (branche `perf-rls`, fusionnée). **Corrigé le 2026-11-13** |
+| `AUDIT.md`, P0 | « Sauvegardes de la base » coché | Le workflow existe, mais n'a jamais réussi (secret manquant, § 2). **Corrigé le 2026-11-13** : case décochée |
 | `CLAUDE.md`, « Git et déploiement » (corrigé le 2026-11-13) | Liste de 5 worktrees en parallèle | Toutes ces branches sont fusionnées sauf `backend` (§ 4) |
-| `README.md`, liste des migrations | `0037_securite.sql` citée en dernier | Simple ordre d'écriture ; le workflow applique tout dans l'ordre des numéros |
-| `.github/workflows/supabase.yml` | `--include-all --include-all` | Drapeau en double, sans effet : à nettoyer |
+| `README.md`, liste des migrations | `0037_securite.sql` citée en dernier | Simple ordre d'écriture ; le workflow applique tout dans l'ordre des numéros. **Corrigé le 2026-11-13** : liste complétée jusqu'à 0053 |
+| `.github/workflows/supabase.yml` | `--include-all --include-all` | Drapeau en double, sans effet. **Corrigé** (commit `9460c20`, 2026-11-13) |
 | Mémoire « Worktrees en parallèle » | Worktrees appart, mobile, td, perf en cours | Tous fusionnés |
 
 Ces corrections sont des petites tâches de documentation, sans risque (aucune ne touche `supabase/migrations/`).
@@ -168,7 +157,7 @@ Pour démarrer une fonctionnalité depuis n'importe quel mode : `/feature <descr
 1. **Sauvegardes** (urgent, action de l'utilisateur) : secret `BACKUP_PASSPHRASE`, puis un lancement manuel du workflow pour vérifier.
 2. **Photos des cadres listables par tous** (`AUDIT.md`, P0, toujours ouvert) : bucket `artworks` privé et liens signés pour les photos possédées. Petite fonctionnalité avec migration : `dev`, puis `reviewer` et `securite-backend`.
 3. **Ménage** : fait en grande partie le 2026-11-13 ; reste le tri décrit au § 4 (branches locales `worktree-agent-*`, branches distantes, worktrees Plinko et monétisation).
-4. **Documentation** : corriger les écarts du § 6, créer `.claude/settings.json`, écrire les ADR manquants (§ 7). Pour le gros du texte, un agent `redacteur`.
+4. **Documentation** : faite sur la branche `agents/doc-reprise` (écarts du § 6 corrigés, ADR 0002 à 0007 écrits, `.claude/settings.json` créé), en attente de fusion. Reste la décision sur `npm run verifier` et la CI de fusion (§ 7).
 5. **Backend sur VPS** : remettre `backend` à jour depuis `main`, puis flux complet (`/feature`) pour la mise en ligne de l'API de l'appart.
 6. **Suite de l'audit** : P1 (hébergement, ménage automatique `pg_cron`, photos compressées), puis P2 (défis du jour, replays, saisons…), P3 et P4 avant toute monétisation.
 

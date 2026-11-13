@@ -4,7 +4,7 @@ Date : 2026-10-20 (tower defense), étendu le 2026-10-21 (jeux à 4) ; consigné
 Statut : acceptée
 
 ## Contexte
-Le serveur doit valider un tower defense en rejouant les vagues, et les coups des jeux à 4 (échecs à 4, corridor à 4), avec exactement les mêmes règles que le site. Réécrire ces moteurs en SQL doublerait un code long et en évolution constante ; les écrire deux fois en TypeScript risquerait des divergences qui invalideraient des parties légitimes.
+Le serveur doit valider un tower defense en rejouant les vagues, et les coups des jeux à 4 (échecs à 4, corridor à 4), avec exactement les mêmes règles que le site (commentaire de `scripts/td-sync.mjs` : « pour que le serveur valide avec exactement le même code que le site »). Le reste du raisonnement est déduit, non écrit à l'époque : réécrire ces moteurs en SQL doublerait un code long et évolutif, et les écrire deux fois en TypeScript risquerait des divergences qui invalideraient des parties légitimes.
 
 ## Décision
 Le moteur vit une seule fois, dans le site : `src/games/towerdefense/engine/` et `src/games/four/engine/`. Le script `scripts/td-sync.mjs` en copie les fichiers `.ts` dans `supabase/functions/td/engine/` et `supabase/functions/board4/engine/`, avec un en-tête « ne pas modifier ici ». On modifie uniquement la source.
@@ -13,7 +13,7 @@ Le moteur vit une seule fois, dans le site : `src/games/towerdefense/engine/` et
 - Un push sur `main` touchant un moteur ou `supabase/` redéploie `td` et `board4` (`.github/workflows/supabase.yml`), pour qu'un moteur modifié n'invalide pas les parties en cours.
 
 ## Options écartées
-- Réécrire les règles en SQL : raison non consignée à l'époque (la duplication TS/SQL existe pourtant ailleurs, voir ADR 0002).
+- Réécrire les règles en SQL : raison non consignée à l'époque (la duplication TS/SQL existe pourtant ailleurs, voir ADR 0002). Éviter une deuxième copie à maintenir est une raison déduite, non écrite.
 - Dossier partagé importé directement par les fonctions Edge : raison non consignée ; la copie est le choix visible dans le code.
 
 ## Conséquences
