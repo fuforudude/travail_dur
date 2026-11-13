@@ -1,6 +1,6 @@
 import { isTyping, pushKeys } from '../core/input';
 import { blip } from '../core/sound';
-import { formatPoints, getWallet, holdWallet, keepStake, loadPlinkoPayouts, onWallet, type PlinkoRisk, spinPlinkoBatch, stakeLabel, stakeSteps, syncWallet } from '../net/points';
+import { formatPoints, getWallet, holdWallet, keepStake, loadPlinkoPayouts, onWallet, type PlinkoRisk, signedShortPoints, spinPlinkoBatch, stakeLabel, stakeSteps, syncWallet } from '../net/points';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { autoPlay } from './autoplay';
@@ -58,6 +58,7 @@ export function plinkoView(root: HTMLElement): () => void {
   let burstBalls = 0;
   let burstStake = 0;
   let burstWon = 0;
+  let shownStatus = ''; // dernier contenu de la ligne d'état : on ne la reconstruit que s'il change
   let spaceTimer = 0;
   let airTimer = 0;
   let bigTimer = 0;
@@ -243,10 +244,15 @@ export function plinkoView(root: HTMLElement): () => void {
       speedEl.replaceChildren(token('Normale', !fast, running, () => (setFast(false), render())), token('Rapide', fast, running, () => (setFast(true), render())));
     }
     drop.disabled = !payouts || running;
-    let line = message;
-    if (autoBalls) line += ` · Auto : ${autoBalls} bille${autoBalls > 1 ? 's' : ''}, bilan ${autoNet >= 0 ? '+' : ''}${formatPoints(autoNet)}`;
-    else if (burstBalls > 1) line += ` · Rafale : ${burstBalls} billes, misé ${formatPoints(burstStake)}, gagné ${formatPoints(burstWon)}`;
-    status.textContent = line;
+    // Pendant une rafale ou l'auto : le bilan net seul (le résultat de chaque bille changerait 15 fois par seconde).
+    const net = autoBalls ? autoNet : burstWon - burstStake;
+    const summary = autoBalls ? `Auto : ${autoBalls} bille${autoBalls > 1 ? 's' : ''} · ` : burstBalls > 1 ? `Rafale : ${burstBalls} billes · ` : '';
+    const key = summary ? `${summary}${net}` : message;
+    if (key !== shownStatus) {
+      shownStatus = key;
+      if (summary) status.replaceChildren(summary, h('b', { class: net > 0 ? 'pk-net gain' : net < 0 ? 'pk-net perte' : 'pk-net' }, signedShortPoints(net)));
+      else status.textContent = message;
+    }
   };
 
   /** Quand plus rien n'est en file, en vol ni en l'air : le badge est relâché et le solde exact du serveur revient. */

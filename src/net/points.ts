@@ -255,9 +255,8 @@ export function loadPlinkoPayouts(): Promise<Map<string, number[]>> {
 }
 
 
-/** Montant court pour les jetons : 2,5 k, 10 M… */
-export const shortPoints = (n: number) =>
-  n >= 1e6 ? `${(n / 1e6).toLocaleString('fr-FR')} M` : n >= 1e4 ? `${(n / 1e3).toLocaleString('fr-FR')} k` : formatPoints(n);
+import { shortPoints } from './shortPoints';
+export { shortPoints, signedShortPoints } from './shortPoints';
 
 const STAKES = [1, 5, ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].flatMap((e) => [1, 2.5, 5].map((k) => k * 10 ** e))];
 

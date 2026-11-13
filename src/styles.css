@@ -1893,6 +1893,8 @@ button.field.danger:is(:hover, :focus, :active):not(:disabled) {
 .pk-auto { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
 .pk-auto .auto-play { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3rem; }
 .pk-status { min-height: 3em; }
+.pk-net.gain { color: #1d8a55; } /* vert déjà utilisé par la roulette */
+.pk-net.perte { color: var(--danger-text); }
 .pk-settings { display: grid; grid-template-columns: auto auto; align-items: center; gap: 0.4rem 0.8rem; }
 .pk-choice { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .pk-rows { min-width: 1.6rem; text-align: center; font-size: 1.1rem; }
