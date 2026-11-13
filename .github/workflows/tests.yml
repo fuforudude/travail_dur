@@ -20,6 +20,8 @@ jobs:
       - run: npm ci
       # Migrations rejouées dans PGlite, droits des fonctions, règles de sécurité (scripts/sql-test.mjs).
       - run: npm run test:sql
+      # Fonctions pures du site (seau à jetons et file d'envoi du Plinko), lanceur intégré de Node.
+      - run: npm run test:site
       # Le moteur du tower defense copié dans la fonction serveur doit être à jour, et le code doit compiler.
       - run: npm run td:sync && git diff --exit-code supabase/functions
       - run: npx tsc

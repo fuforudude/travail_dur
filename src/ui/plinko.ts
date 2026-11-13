@@ -1,13 +1,13 @@
 import { isTyping, pushKeys } from '../core/input';
 import { blip } from '../core/sound';
-import { formatPoints, getWallet, holdWallet, keepStake, loadPlinkoPayouts, onWallet, type PlinkoRisk, spinPlinkoBatch, stakeLabel, stakeSteps } from '../net/points';
+import { formatPoints, getWallet, holdWallet, keepStake, loadPlinkoPayouts, onWallet, type PlinkoRisk, spinPlinkoBatch, stakeLabel, stakeSteps, syncWallet } from '../net/points';
 import { multiConfigured } from '../net/supabase';
 import { navigate } from '../router';
 import { autoPlay } from './autoplay';
 import { h, hints } from './dom';
 import { page } from './layout';
 import { BIG_WIN_X100, createPlinkoBoard, multLabel, slotColor } from './plinkoBoard';
-import { batchQueue, PER_SECOND, type PlinkoGroup, tokenBucket } from './plinkoQueue';
+import { batchQueue, PER_SECOND, type PlinkoGroup, type SendResult, tokenBucket } from './plinkoQueue';
 
 export const MIN_ROWS = 8;
 export const MAX_ROWS = 16;
@@ -60,7 +60,16 @@ export function plinkoView(root: HTMLElement): () => void {
   let burstWon = 0;
   let spaceTimer = 0;
   let airTimer = 0;
+  let bigTimer = 0;
   let destroyed = false;
+  // Solde du dernier appel réussi : il fait foi quand le badge est relâché (un événement temps réel en retard peut
+  // porter un solde périmé).
+  let serverBalance: number | null = null;
+  // Prochain instant où une bille peut être lâchée : commun aux envois, pour garder 1/15 s entre deux billes.
+  let nextDrop = 0;
+  // Signatures de ce qui est déjà affiché : on ne reconstruit un groupe de boutons que s'il change vraiment.
+  let shownBets = '';
+  let shownCtrl = '';
   const timers = new Set<number>();
   const later = (fn: () => void, ms: number) => {
     const id = window.setTimeout(() => {
@@ -72,7 +81,12 @@ export function plinkoView(root: HTMLElement): () => void {
   const wait = (ms: number) => new Promise<void>((ok) => later(ok, ms));
 
   const bucket = tokenBucket();
-  const queue = batchQueue((g) => sendGroup(g), () => settle());
+  const queue = batchQueue((g) => sendGroup(g), {
+    settled: () => settle(),
+    refund: (stake) => {
+      local += stake; // groupe abandonné après trois réessais : la mise revient au solde local
+    },
+  });
   const busy = () => queue.waiting() > 0 || queue.inFlight() || air > 0;
   const shownBalance = () => (hold ? local : (getWallet()?.balance ?? 0));
   const bets = () => stakeSteps(shownBalance(), 8);
@@ -102,9 +116,13 @@ export function plinkoView(root: HTMLElement): () => void {
       for (;;) {
         const r = click(true);
         if (r === 'ok') break;
-        if (r === 'poor') message = 'Plus assez de points pour cette mise : auto arrêté.';
-        if (r !== 'token') return false;
-        await wait(20); // plus de jeton : on attend le suivant au lieu d'arrêter l'auto
+        if (r === 'off') return false;
+        if (r === 'poor' && !busy()) {
+          // Le solde manque et plus rien n'est en file, en vol ni en l'air : aucun gain ne viendra le renflouer.
+          message = 'Plus assez de points pour cette mise : auto arrêté.';
+          return false;
+        }
+        await wait(20); // plus de jeton, ou gains encore en route : on attend au lieu d'arrêter l'auto
         if (destroyed || !auto.running()) return false;
       }
       await wait(fast ? GAP_MS : 1000);
@@ -112,6 +130,7 @@ export function plinkoView(root: HTMLElement): () => void {
     },
     () => {
       if (auto.running()) {
+        stopSpace(); // l'auto et la touche Espace maintenue ne cliquent pas en même temps
         autoNet = 0;
         autoBalls = 0;
       }
@@ -174,30 +193,46 @@ export function plinkoView(root: HTMLElement): () => void {
 
   const points = (n: number) => `${formatPoints(n)} point${n > 1 ? 's' : ''}`;
 
+  /**
+   * Redessine la page. En rafale, `render` est appelé à chaque clic et à chaque arrivée (≈ 30 fois/s) : les groupes de
+   * boutons ne sont reconstruits que quand leur contenu change vraiment ; le solde, la ligne d'état et le compteur
+   * sont de simples textes, mis à jour à chaque fois.
+   */
   const render = () => {
     const w = getWallet();
     const balance = shownBalance();
     balanceEl.replaceChildren('Solde ', h('b', {}, w ? formatPoints(balance) : '…'));
     const list = bets();
-    bet = allIn ? list[list.length - 1] : keepStake(list, bet); // le solde a pu changer
-    betEl.replaceChildren(
-      ...list.map((v) =>
-        token(stakeLabel(v, balance), v === bet, false, () => {
-          bet = v;
-          allIn = v === balance;
-          render();
-        }, v === balance ? ' all-in' : ''),
-      ),
-    );
+    // Tant que des billes sont en file, en vol ou en l'air, la mise ne bouge pas : le solde local tombe à 0 pendant
+    // une rafale (les gains n'arrivent qu'à l'atterrissage) et la mise s'effondrerait à 1 sans y remonter.
+    if (!busy()) bet = allIn ? list[list.length - 1] : keepStake(list, bet);
+    const betsKey = `${list.join(',')}|${bet}`;
+    if (betsKey !== shownBets) {
+      shownBets = betsKey;
+      betEl.replaceChildren(
+        ...list.map((v) =>
+          token(stakeLabel(v, balance), v === bet, false, () => {
+            bet = v;
+            allIn = v === balance;
+            render();
+          }, v === balance ? ' all-in' : ''),
+        ),
+      );
+    }
     const locked = busy();
-    rowsEl.replaceChildren(
-      token('−', false, locked || rows <= MIN_ROWS, () => (setRows(rows - 1), render())),
-      h('b', { class: 'pk-rows' }, String(rows)),
-      token('+', false, locked || rows >= MAX_ROWS, () => (setRows(rows + 1), render())),
-    );
-    riskEl.replaceChildren(...RISKS.map(([, label], i) => token(label, i === riskIdx, locked, () => (setRisk(i), render()))));
-    speedEl.replaceChildren(token('Normale', !fast, auto.running(), () => (setFast(false), render())), token('Rapide', fast, auto.running(), () => (setFast(true), render())));
-    drop.disabled = !payouts || auto.running();
+    const running = auto.running();
+    const ctrlKey = `${locked}|${rows}|${riskIdx}|${fast}|${running}`;
+    if (ctrlKey !== shownCtrl) {
+      shownCtrl = ctrlKey;
+      rowsEl.replaceChildren(
+        token('−', false, locked || rows <= MIN_ROWS, () => (setRows(rows - 1), render())),
+        h('b', { class: 'pk-rows' }, String(rows)),
+        token('+', false, locked || rows >= MAX_ROWS, () => (setRows(rows + 1), render())),
+      );
+      riskEl.replaceChildren(...RISKS.map(([, label], i) => token(label, i === riskIdx, locked, () => (setRisk(i), render()))));
+      speedEl.replaceChildren(token('Normale', !fast, running, () => (setFast(false), render())), token('Rapide', fast, running, () => (setFast(true), render())));
+    }
+    drop.disabled = !payouts || running;
     let line = message;
     if (autoBalls) line += ` · Auto : ${autoBalls} bille${autoBalls > 1 ? 's' : ''}, bilan ${autoNet >= 0 ? '+' : ''}${formatPoints(autoNet)}`;
     else if (burstBalls > 1) line += ` · Rafale : ${burstBalls} billes, misé ${formatPoints(burstStake)}, gagné ${formatPoints(burstWon)}`;
@@ -209,6 +244,8 @@ export function plinkoView(root: HTMLElement): () => void {
     if (!busy() && hold) {
       const release = hold;
       hold = null;
+      // Le solde du dernier appel réussi fait foi : un événement temps réel arrivé entre-temps peut être périmé.
+      if (serverBalance !== null) syncWallet(serverBalance);
       release();
     }
     if (!destroyed) render();
@@ -245,7 +282,11 @@ export function plinkoView(root: HTMLElement): () => void {
   const showBig = (text: string) => {
     bigEl.textContent = text;
     bigEl.hidden = false;
-    later(() => (bigEl.hidden = true), 3500);
+    if (bigTimer) clearTimeout(bigTimer); // deux gros gains rapprochés : le second bandeau garde ses 3,5 s
+    bigTimer = window.setTimeout(() => {
+      bigTimer = 0;
+      bigEl.hidden = true;
+    }, 3500);
     [660, 880, 1100, 1320, 1760].forEach((f, i) => later(() => blip(f, 0.09), i * 90));
   };
 
@@ -299,28 +340,29 @@ export function plinkoView(root: HTMLElement): () => void {
 
   /**
    * Un envoi groupé (appelé par la file, un seul à la fois). Le serveur fait autorité : une bille dont le chemin est
-   * incohérent n'est pas animée mais son gain compte ; les billes refusées sont rendues au solde local.
+   * incohérent n'est pas animée mais son gain compte ; les billes refusées repartent dans l'envoi suivant.
    */
-  const sendGroup = async (g: PlinkoGroup): Promise<void> => {
+  const sendGroup = async (g: PlinkoGroup): Promise<SendResult | void> => {
     let r;
     try {
       r = await spinPlinkoBatch(g.bet, g.rows, g.risk, g.n);
     } catch (e) {
       if (destroyed) return;
-      local += g.n * g.bet; // mises rendues : le serveur ne les a pas prises
       const text = (e as Error).message;
       if (/^doucement/i.test(text)) {
-        if (!spaceTimer && !auto.running() && !queue.waiting() && !air) message = text; // silencieux en rafale
-      } else {
-        // Erreur franche (réseau, solde, migration) : on n'envoie pas la suite, on arrête la rafale et l'auto.
-        local += queue.clear();
-        stopSpace();
-        auto.stop();
-        message = text;
+        // Trop d'appels : le groupe repart un peu plus tard, les mises restent retirées du solde local.
+        return { retry: true };
       }
+      // Erreur franche (réseau, solde, migration) : on n'envoie pas la suite, on arrête la rafale et l'auto.
+      local += g.n * g.bet; // mises rendues : le serveur ne les a pas prises
+      local += queue.clear();
+      stopSpace();
+      auto.stop();
+      message = text;
       return;
     }
     if (destroyed) return;
+    serverBalance = Number(r.balance);
     const refused = Number(r?.refused) || 0;
     const count = g.n - refused;
     const ok =
@@ -337,12 +379,12 @@ export function plinkoView(root: HTMLElement): () => void {
       message = 'Réponse du serveur illisible : les billes ne sont pas affichées, ton solde est à jour.';
       return;
     }
-    local += refused * g.bet;
     // Gain de chaque bille ; l'écart d'arrondi éventuel avec le total du serveur va à la dernière.
     const gains = r.mults_x100.map((m) => Math.floor((g.bet * m) / 100));
     if (count) gains[count - 1] += (Number(r.payout) || 0) - gains.reduce((t, v) => t + v, 0);
-    let shown = 0;
     let bad = false;
+    const t0 = performance.now();
+    if (nextDrop < t0) nextDrop = t0; // « prochain lâcher possible » commun : deux envois à la suite restent espacés
     for (let i = 0; i < count; i++) {
       const path = r.paths[i];
       const mult = r.mults_x100[i];
@@ -353,14 +395,17 @@ export function plinkoView(root: HTMLElement): () => void {
         continue;
       }
       air++;
+      const delay = nextDrop - t0;
+      nextDrop += GAP_MS;
       later(() => {
         if (destroyed) return;
         void board.drop(path, { big: mult >= BIG_WIN_X100 }).then((slot) => land(g.bet, mult, gain, mult >= BIG_WIN_X100, slot, g.rows));
         watchAir();
-      }, shown++ * GAP_MS);
+      }, delay);
     }
     if (bad) message = 'Réponse du serveur illisible : une bille n’est pas affichée, ton solde est à jour.';
     else if (count) message = '…';
+    return refused ? { requeue: refused } : undefined;
   };
 
   const onKeyUp = (e: KeyboardEvent) => {
@@ -420,6 +465,7 @@ export function plinkoView(root: HTMLElement): () => void {
     destroyed = true;
     stopSpace();
     if (airTimer) clearInterval(airTimer);
+    if (bigTimer) clearTimeout(bigTimer);
     auto.stop();
     queue.clear();
     board.destroy();

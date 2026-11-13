@@ -8,7 +8,8 @@
     "build": "node scripts/td-sync.mjs && tsc && vite build",
     "preview": "vite preview",
     "td:sync": "node scripts/td-sync.mjs",
-    "test:sql": "node scripts/sql-test.mjs"
+    "test:sql": "node scripts/sql-test.mjs",
+    "test:site": "node --test \"src/**/*.test.mjs\""
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.2.17",

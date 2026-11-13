@@ -6,6 +6,7 @@ Plateforme de mini-jeux jouables au clavier, en solo ou en ligne, avec points, c
 - Lancer : `npm run dev`
 - Compiler : `npm run build` (synchronise d'abord le moteur du tower defense, puis `tsc` et `vite build`)
 - Tester la base : `npm run test:sql` (rejoue toutes les migrations dans PGlite et vérifie droits et règles de sécurité)
+- Tester le site : `npm run test:site` (lanceur intégré de Node sur les `src/**/*.test.mjs` : fonctions pures du site, sans navigateur ni serveur)
 - Vérifier les types seuls : `npx tsc`
 
 ## Reprise

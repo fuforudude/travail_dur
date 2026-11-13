@@ -80,6 +80,7 @@ export function createPlinkoBoard(): PlinkoBoard {
   let dy = 0;
   let scale = 1; // pixels de l'écran par unité logique (place disponible × densité de l'écran)
   let fitW = 0; // dernière largeur de conteneur prise en compte
+  let lastMaxH = 0; // dernière hauteur maximale prise en compte (elle change avec la hauteur de la fenêtre)
   let balls: Ball[] = [];
   let flashes: Flash[] = [];
   let raf = 0;
@@ -223,10 +224,13 @@ export function createPlinkoBoard(): PlinkoBoard {
    * Taille du canvas : la largeur du conteneur, sans dépasser sa hauteur maximale (CSS `max-height` de `.pk-board`,
    * la hauteur visible sur ordinateur), proportions gardées ; la résolution suit, pour rester net à toute taille.
    */
+  /** Hauteur maximale lue dans le CSS, 0 si « none » : elle suit la hauteur de la fenêtre (unités vh). */
+  const readMaxH = () => parseFloat(getComputedStyle(el).maxHeight) || 0;
+
   const resize = () => {
     if (!rows) return;
     const dpr = window.devicePixelRatio || 1;
-    const maxH = parseFloat(getComputedStyle(el).maxHeight); // « none » donne NaN : pas de limite
+    const maxH = (lastMaxH = readMaxH());
     let fit = fitW ? fitW / W : 1;
     if (fitW && maxH > 0) fit = Math.min(fit, maxH / height);
     scale = fit * dpr;
@@ -241,11 +245,19 @@ export function createPlinkoBoard(): PlinkoBoard {
 
   const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver((entries) => {
     const w = Math.floor(entries[entries.length - 1].contentRect.width);
-    if (w === fitW) return; // la hauteur du conteneur suit le canvas : on ne réagit qu'à la largeur
+    // La hauteur du conteneur suit le canvas : ce qui compte est la largeur et la hauteur maximale autorisée.
+    if (w === fitW && readMaxH() === lastMaxH) return;
     fitW = w;
     resize();
   });
   observer?.observe(el);
+
+  // Réduire la fenêtre en hauteur ne change pas la largeur du conteneur : sans cela, le plateau déborde et la page
+  // se met à défiler.
+  const onWindowResize = () => {
+    if (readMaxH() !== lastMaxH) resize();
+  };
+  window.addEventListener('resize', onWindowResize);
 
   return {
     el,
@@ -276,6 +288,7 @@ export function createPlinkoBoard(): PlinkoBoard {
     inFlight: () => balls.length,
     destroy() {
       observer?.disconnect();
+      window.removeEventListener('resize', onWindowResize);
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       const pending = balls;

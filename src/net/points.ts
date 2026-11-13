@@ -90,6 +90,14 @@ export function holdWallet(): () => void {
   };
 }
 
+/**
+ * Recale le solde sur celui d'un appel au serveur. Le dernier appel fait foi : un événement temps réel arrivé entre
+ * deux appels peut porter un solde périmé (Plinko en rafale).
+ */
+export function syncWallet(balance: number): void {
+  setWallet({ balance, earned: wallet?.earned ?? 0 });
+}
+
 const MISSING = ['PGRST202', 'PGRST205', '42883', '42P01'];
 /** `migration` : le fichier qui crée la fonction ou la table appelée, cité si elle manque. */
 const pointsError = (err: { code?: string }, migration = '0007_points_casino.sql') =>
