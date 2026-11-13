@@ -63,6 +63,14 @@ Le Plinko n'a d'intérêt que si l'on peut lâcher des billes en rafale. Aujourd
 | Espace maintenue ? | Rafale à 15/s ; une bille par appui | Rafale, rythme tenu par un minuteur | Spam au clavier, indépendant de la répétition du clavier de chaque ordinateur |
 | Ancienne fonction `casino_plinko` ? | La garder ; la retirer | La garder | Compatible avec les pages déjà ouvertes (règle des migrations) ; retrait possible plus tard |
 
+### Décisions prises après les contrôles
+| Question | Options envisagées | Choix | Raison |
+|---|---|---|---|
+| Ordre des résultats chez le spectateur | Ordre des envois ; ordre d'arrivée des billes | Les billes tombent en parallèle, le texte du résultat et le solde suivent l'ordre des envois (résultats chaînés) | Jamais un vieux solde qui écrase le récent |
+| Spectateur très en retard (onglet caché) | Sauter au direct ; accélérer le lâcher | Au-delà de 8 envois en attente ou au retour sur l'onglet : les envois en retard vont dans l'historique sans animation, seul le dernier est rejoué | Le principe de la page est le direct |
+| Montrer qu'il y a plusieurs billes | Fil des multiplicateurs ; case qui rebondit ; variation des trajectoires ; compteur | Les quatre | Lisibilité d'une rafale |
+| Limiter le nombre d'appels au serveur | Second seau 8 appels/s ; écart minimal de 100 ms | Second seau à 8 appels/s, refus avant toute écriture ; plus un index `casino_spins (user_id, created_at)` | Un script ne peut plus multiplier les appels coûteux ; le site (~4 appels/s) n'est jamais gêné |
+
 ## Décisions du besoin (entretien)
 Limite propre au Plinko (roulette et machine à sous inchangées) ; clics en trop ignorés sans message ; une ligne d'historique par envoi groupé ; mode auto avec vitesse normale ou rapide ; réglages dans une colonne à droite et plateau au centre, sans défilement.
 
