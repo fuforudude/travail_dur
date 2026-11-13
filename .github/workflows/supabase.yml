@@ -40,7 +40,8 @@ jobs:
       - run: npm run test:sql
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # La version 3 de la CLI demande --yes sur un projet hébergé et change --linked en --remote : passer à la 3 est une mise à jour à tester à part.
+          version: 2.122.1
       - run: supabase link --project-ref "$PROJECT_REF"
       # --include-all : les numéros sont réservés par domaine (appart 0013–0029, jeux 0030+), une migration
       # de l'appart peut donc arriver après une plus récente des jeux ; sans ce drapeau, db push la refuse.
