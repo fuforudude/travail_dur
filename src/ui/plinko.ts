@@ -7,7 +7,7 @@ import { autoPlay } from './autoplay';
 import { h, hints } from './dom';
 import { page } from './layout';
 import { BIG_WIN_X100, createPlinkoBoard, multLabel, slotColor } from './plinkoBoard';
-import { batchQueue, PER_SECOND, type PlinkoGroup, type SendResult, tokenBucket } from './plinkoQueue';
+import { batchQueue, dropDelays, PER_SECOND, type PlinkoGroup, type SendResult, tokenBucket } from './plinkoQueue';
 
 export const MIN_ROWS = 8;
 export const MAX_ROWS = 16;
@@ -20,7 +20,7 @@ export const RISKS: [PlinkoRisk, string][] = [
 export const PLINKO_RULES = [
   'La bille tombe d’en haut et rebondit à gauche ou à droite, une chance sur deux, à chaque rangée de clous ; la case où elle s’arrête multiplie la mise.',
   'Plus il y a de rangées et plus le risque est haut, plus les cases des bords paient (jusqu’à ×980) et plus celles du centre paient peu. Retour moyen au joueur : environ 97 % dans tous les réglages.',
-  'Le gain est arrondi à l’entier inférieur. On peut lâcher jusqu’à 15 billes par seconde (clics rapides, Espace maintenue ou auto rapide) : les clics en trop sont ignorés, sans rien miser. Les rangées et le risque ne changent pas tant qu’une bille tombe.',
+  'Le gain est arrondi à l’entier inférieur. On peut lâcher jusqu’à 10 billes par seconde (clics rapides, Espace maintenue ou auto rapide) : les clics en trop sont ignorés, sans rien miser. Les rangées et le risque ne changent pas tant qu’une bille tombe.',
 ];
 
 /** Écart entre deux billes d'un même envoi, et rythme de la rafale (Espace maintenue, auto rapide). */
@@ -43,7 +43,7 @@ export function plinkoView(root: HTMLElement): () => void {
   let allIn = false; // mise « All in » choisie : elle suit le solde
   let rows = 12;
   let riskIdx = 1;
-  let fast = false; // vitesse de l'auto : 1 bille/s ou 15 billes/s
+  let fast = false; // vitesse de l'auto : 1 bille/s ou 10 billes/s
   let air = 0; // billes reçues du serveur, pas encore arrivées dans leur case
   // Solde d'affichage tant que des billes sont en file, en vol ou en l'air : mise retirée au clic, gain ajouté à
   // l'arrivée. `hold` gèle en même temps le badge du haut ; quand tout est retombé, on le relâche et on revient au
@@ -66,7 +66,7 @@ export function plinkoView(root: HTMLElement): () => void {
   // Solde du dernier appel réussi : il fait foi quand le badge est relâché (un événement temps réel en retard peut
   // porter un solde périmé).
   let serverBalance: number | null = null;
-  // Prochain instant où une bille peut être lâchée : commun aux envois, pour garder 1/15 s entre deux billes.
+  // Prochain instant où une bille peut être lâchée : commun aux envois, pour garder 1/10 s entre deux billes.
   let nextDrop = 0;
   // Signatures de ce qui est déjà affiché : on ne reconstruit un groupe de boutons que s'il change vraiment.
   let shownBets = '';
@@ -87,9 +87,13 @@ export function plinkoView(root: HTMLElement): () => void {
   const bucket = tokenBucket();
   const queue = batchQueue((g) => sendGroup(g), {
     settled: () => settle(),
-    refund: (stake, balls) => {
-      local += stake; // groupe abandonné après trois réessais : la mise revient au solde local
-      message = `${balls} bille${balls > 1 ? 's' : ''} annulée${balls > 1 ? 's' : ''}, le serveur était saturé.`;
+    refund: (stake, balls, reason) => {
+      local += stake; // bille jamais partie : la mise revient au solde local
+      // Une bille abandonnée faute d'avoir pu partir à temps est silencieuse : c'est le fonctionnement normal d'une
+      // rafale. Un refus du serveur se dit, mais seulement quand la rafale est finie, pour ne pas clignoter.
+      if (reason === 'refused' && !queue.waiting() && !queue.inFlight()) {
+        message = `${balls} bille${balls > 1 ? 's' : ''} annulée${balls > 1 ? 's' : ''}, le serveur était saturé.`;
+      }
     },
   });
   const busy = () => queue.waiting() > 0 || queue.inFlight() || air > 0;
@@ -244,7 +248,7 @@ export function plinkoView(root: HTMLElement): () => void {
       speedEl.replaceChildren(token('Normale', !fast, running, () => (setFast(false), render())), token('Rapide', fast, running, () => (setFast(true), render())));
     }
     drop.disabled = !payouts || running;
-    // Pendant une rafale ou l'auto : le bilan net seul (le résultat de chaque bille changerait 15 fois par seconde).
+    // Pendant une rafale ou l'auto : le bilan net seul (le résultat de chaque bille changerait 10 fois par seconde).
     const net = autoBalls ? autoNet : burstWon - burstStake;
     const summary = autoBalls ? `Auto : ${autoBalls} bille${autoBalls > 1 ? 's' : ''} · ` : burstBalls > 1 ? `Rafale : ${burstBalls} billes · ` : '';
     const key = summary ? `${summary}${net}` : message;
@@ -308,7 +312,7 @@ export function plinkoView(root: HTMLElement): () => void {
 
   /**
    * Un clic : une bille en file à la mise courante, mise retirée tout de suite du solde local.
-   * Ignoré sans rien miser s'il n'y a plus de jeton (plus de 15 billes/s) ou pas assez de points ;
+   * Ignoré sans rien miser s'il n'y a plus de jeton (plus de 10 billes/s) ou pas assez de points ;
    * `alone` : clic isolé (bouton, Entrée, premier appui sur Espace), le seul cas où « pas assez de points » s'affiche.
    */
   const click = (alone: boolean): Click => {
@@ -356,7 +360,7 @@ export function plinkoView(root: HTMLElement): () => void {
 
   /**
    * Un envoi groupé (appelé par la file, un seul à la fois). Le serveur fait autorité : une bille dont le chemin est
-   * incohérent n'est pas animée mais son gain compte ; les billes refusées repartent dans l'envoi suivant.
+   * incohérent n'est pas animée mais son gain compte ; les billes refusées sont remboursées, jamais relancées.
    */
   const sendGroup = async (g: PlinkoGroup): Promise<SendResult | void> => {
     let r;
@@ -366,8 +370,8 @@ export function plinkoView(root: HTMLElement): () => void {
       if (destroyed) return;
       const text = (e as Error).message;
       if (/^doucement/i.test(text)) {
-        // Trop d'appels : le groupe repart un peu plus tard, les mises restent retirées du solde local.
-        return { retry: true };
+        // Trop d'appels : le groupe n'est pas relancé, il est rendu comme un refus du serveur.
+        return { refused: g.n };
       }
       // Erreur franche (réseau, solde, migration) : on n'envoie pas la suite, on arrête la rafale et l'auto.
       local += g.n * g.bet; // mises rendues : le serveur ne les a pas prises
@@ -403,7 +407,10 @@ export function plinkoView(root: HTMLElement): () => void {
     if (count) gains[count - 1] += (Number(r.payout) || 0) - gains.reduce((t, v) => t + v, 0);
     let bad = false;
     const t0 = performance.now();
-    if (nextDrop < t0) nextDrop = t0; // « prochain lâcher possible » commun : deux envois à la suite restent espacés
+    // « Prochain lâcher possible » commun aux envois, avec un retard plafonné : le site égrène les billes aussi vite
+    // que le joueur clique, un retard pris ne se rattraperait jamais et des billes tomberaient après le dernier clic.
+    const schedule = dropDelays(nextDrop, t0, count, GAP_MS);
+    nextDrop = schedule.next;
     for (let i = 0; i < count; i++) {
       const path = r.paths[i];
       const mult = r.mults_x100[i];
@@ -414,8 +421,7 @@ export function plinkoView(root: HTMLElement): () => void {
         continue;
       }
       air++;
-      const delay = nextDrop - t0;
-      nextDrop += GAP_MS;
+      const delay = schedule.delays[i];
       later(() => {
         if (destroyed) return;
         void board.drop(path, { big: mult >= BIG_WIN_X100 }).then((slot) => land(g.bet, mult, gain, mult >= BIG_WIN_X100, slot, g.rows));
@@ -424,7 +430,7 @@ export function plinkoView(root: HTMLElement): () => void {
     }
     if (bad) message = 'Réponse du serveur illisible : une bille n’est pas affichée, ton solde est à jour.';
     else if (count) message = '…';
-    return refused ? { requeue: refused } : undefined;
+    return refused ? { refused } : undefined;
   };
 
   const onKeyUp = (e: KeyboardEvent) => {
@@ -446,7 +452,7 @@ export function plinkoView(root: HTMLElement): () => void {
     else if (key === 'arrowdown') setRows(rows - 1);
     else if (key === 'r') setRisk(riskIdx + 1);
     else if (key === ' ') {
-      // Espace maintenue : rafale à 15 billes/s tenue par un minuteur (la répétition du clavier est ignorée)
+      // Espace maintenue : rafale à 10 billes/s tenue par un minuteur (la répétition du clavier est ignorée)
       if (!e.repeat && !auto.running()) {
         click(true);
         if (!spaceTimer) spaceTimer = window.setInterval(() => void click(false), GAP_MS);

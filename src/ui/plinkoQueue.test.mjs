@@ -1,10 +1,10 @@
-// Tests des fonctions pures du Plinko en rafale (seau à jetons, file d'envoi), lanceur intégré de Node :
+// Tests des fonctions pures du Plinko en rafale (seau à jetons, file d'envoi, égrenage), lanceur intégré de Node :
 //   npm run test:site
 // Fichier en .mjs : Node 22.18+ enlève lui-même les types de plinkoQueue.ts, sans dépendance ni compilation.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { batchQueue, BURST, MAX_RETRIES, MIN_GAP_MS, PER_SECOND, tokenBucket } from './plinkoQueue.ts';
+import { batchQueue, BURST, dropDelays, MAX_LEAD_MS, MAX_WAIT_MS, MIN_GAP_MS, PER_SECOND, tokenBucket } from './plinkoQueue.ts';
 
 /** Horloge et minuteurs simulés : le temps n'avance que quand le test le demande. */
 function makeClock() {
@@ -79,28 +79,30 @@ function makeQueue(clock, send, opts = {}) {
   return { queue, sends };
 }
 
+const total = (sends) => sends.reduce((t, s) => t + s.n, 0);
+
 // ---------------------------------------------------------------- seau à jetons
 
-test('seau : 15 billes d’un coup, puis refus', () => {
+test('seau : 10 billes d’un coup, puis refus', () => {
   let t = 0;
   const b = tokenBucket(BURST, PER_SECOND, () => t);
   for (let i = 0; i < BURST; i++) assert.equal(b.take(), true, `bille ${i + 1}`);
-  assert.equal(b.take(), false, '16e bille refusée');
+  assert.equal(b.take(), false, '11e bille refusée');
 });
 
-test('seau : recharge de 15 jetons par seconde', () => {
+test('seau : recharge de 10 jetons par seconde', () => {
   let t = 0;
   const b = tokenBucket(BURST, PER_SECOND, () => t);
   for (let i = 0; i < BURST; i++) b.take();
   t += 1000 / PER_SECOND;
-  assert.equal(b.take(), true, 'un jeton regagné au bout de 1/15 s');
+  assert.equal(b.take(), true, 'un jeton regagné au bout de 1/10 s');
   assert.equal(b.take(), false, 'pas deux');
   t += 1000;
   for (let i = 0; i < BURST; i++) assert.equal(b.take(), true, 'seau plein au bout d’une seconde');
   assert.equal(b.take(), false, 'jamais plus que la capacité');
 });
 
-test('seau : 15 billes/s pendant 3 minutes, aucun blocage par arrondi', () => {
+test('seau : 10 billes/s pendant 3 minutes, aucun blocage par arrondi', () => {
   let t = 0;
   const b = tokenBucket(BURST, PER_SECOND, () => t);
   for (let i = 0; i < BURST; i++) b.take(); // rafale de départ
@@ -110,6 +112,26 @@ test('seau : 15 billes/s pendant 3 minutes, aucun blocage par arrondi', () => {
     if (b.take()) ok++;
   }
   assert.equal(ok, PER_SECOND * 180, 'le 0,9999999 de la virgule flottante ne doit refuser aucune bille');
+});
+
+// ---------------------------------------------------------------- égrenage des billes reçues
+
+test('égrenage : les billes d’un envoi tombent à GAP_MS d’écart, en repartant du prochain lâcher possible', () => {
+  const gap = 1000 / PER_SECOND;
+  const a = dropDelays(0, 0, 3, gap);
+  assert.deepEqual(a.delays, [0, gap, 2 * gap]);
+  assert.equal(a.next, 3 * gap);
+  // Un envoi qui arrive pendant que le précédent s'égrène reprend la suite, sans chevauchement.
+  const b = dropDelays(a.next, 150, 2, gap);
+  assert.deepEqual(b.delays, [3 * gap - 150, 4 * gap - 150]);
+});
+
+test('égrenage : le retard sur la réponse du serveur est plafonné', () => {
+  const gap = 1000 / PER_SECOND;
+  // Sans plafond, une file d'attente d'égrenage de 2 s ferait tomber des billes 2 s après le dernier clic.
+  const r = dropDelays(5000, 3000, 2, gap);
+  assert.equal(r.delays[0], MAX_LEAD_MS, 'la première bille ne peut pas attendre plus que le plafond');
+  assert.equal(r.delays[1], MAX_LEAD_MS + gap);
 });
 
 // ---------------------------------------------------------------- file d'envoi
@@ -126,24 +148,24 @@ test('file : le premier envoi part tout de suite, les suivants au plus tôt 150 
   for (let i = 1; i < sends.length; i++) {
     assert.ok(sends[i].at - sends[i - 1].at >= MIN_GAP_MS, `envoi ${i} à ${sends[i].at - sends[i - 1].at} ms du précédent`);
   }
-  assert.equal(sends.reduce((t, s) => t + s.n, 0), 40, 'toutes les billes envoyées');
+  assert.equal(total(sends), 40, 'toutes les billes envoyées');
   assert.equal(queue.waiting(), 0);
 });
 
-test('file : regroupement au plus 15 billes, une seule mise par envoi', async () => {
+test('file : regroupement au plus 10 billes, une seule mise par envoi', async () => {
   const clock = makeClock();
-  const { queue, sends } = makeQueue(clock, () => sleep(clock, 500));
+  // Appel long : les 40 clics arrivent d'un coup, ils ne sont pas abandonnés avant le premier envoi.
+  const { queue, sends } = makeQueue(clock, () => sleep(clock, 50), { maxWaitMs: 100000 });
   for (let i = 0; i < 40; i++) queue.push(10, 12, 'medium');
   await clock.advance(10000);
-  assert.equal(sends.length, 4, '1 bille tout de suite, puis 15, 15 et 9');
-  assert.deepEqual(sends.map((s) => s.n), [1, 15, 15, 9]);
-  for (const s of sends) assert.ok(s.n <= BURST, 'jamais plus de 15 par appel');
+  assert.deepEqual(sends.map((s) => s.n), [1, 10, 10, 10, 9]);
+  for (const s of sends) assert.ok(s.n <= BURST, 'jamais plus de 10 par appel');
   assert.deepEqual([...new Set(sends.map((s) => s.bet))], [10], 'une seule mise par envoi');
 });
 
 test('file : un changement de mise ouvre un envoi séparé', async () => {
   const clock = makeClock();
-  const { queue, sends } = makeQueue(clock, () => sleep(clock, 500));
+  const { queue, sends } = makeQueue(clock, () => sleep(clock, 50), { maxWaitMs: 100000 });
   queue.push(10, 12, 'medium'); // part tout de suite
   for (let i = 0; i < 3; i++) queue.push(10, 12, 'medium');
   for (let i = 0; i < 2; i++) queue.push(20, 12, 'medium');
@@ -167,7 +189,7 @@ test('file : clear() rend le total des mises en attente et annule le minuteur', 
   await clock.advance(30); // réponse reçue : la file attend maintenant l'écart de 150 ms
   for (let i = 0; i < 4; i++) queue.push(10, 12, 'medium');
   for (let i = 0; i < 3; i++) queue.push(20, 12, 'medium');
-  assert.equal(clock.count(), 1, 'le minuteur d’écart est armé');
+  assert.equal(clock.count(), 1, 'le minuteur d’attente est armé');
   assert.equal(queue.waiting(), 7);
   assert.equal(queue.clear(), 4 * 10 + 3 * 20);
   assert.equal(clock.count(), 0, 'le minuteur est annulé tout de suite');
@@ -179,79 +201,63 @@ test('file : clear() rend le total des mises en attente et annule le minuteur', 
 test('file : une erreur de send ne bloque pas la suite', async () => {
   const clock = makeClock();
   let calls = 0;
-  const { queue, sends } = makeQueue(clock, async () => {
-    await sleep(clock, 20);
-    if (++calls === 1) throw new Error('réseau');
-  });
+  const { queue, sends } = makeQueue(
+    clock,
+    async () => {
+      await sleep(clock, 20);
+      if (++calls === 1) throw new Error('réseau');
+    },
+    { maxWaitMs: 100000 },
+  );
   for (let i = 0; i < 20; i++) queue.push(10, 12, 'medium');
   await clock.advance(5000);
-  assert.equal(sends.reduce((t, s) => t + s.n, 0), 20);
+  assert.equal(total(sends), 20);
   assert.equal(queue.waiting(), 0);
   assert.equal(queue.inFlight(), false);
 });
 
-test('file : « trop d’appels » renvoie le groupe, puis abandonne au bout de 3 réessais', async () => {
+test('file : les billes refusées par le serveur sont remboursées, jamais relancées', async () => {
   const clock = makeClock();
-  let refunded = 0;
-  const { queue, sends } = makeQueue(clock, async () => {
-    await sleep(clock, 20);
-    return { retry: true };
-  }, { refund: (s) => (refunded += s) });
-  queue.push(10, 12, 'medium');
-  queue.push(10, 12, 'medium');
-  await clock.advance(5000);
-  assert.equal(sends.length, 1 + MAX_RETRIES + 1 + MAX_RETRIES, 'chaque groupe est tenté 1 fois puis réessayé 3 fois');
-  assert.equal(refunded, 20, 'les deux mises sont rendues');
-  assert.equal(queue.waiting(), 0);
-  for (let i = 1; i < sends.length; i++) assert.ok(sends[i].at - sends[i - 1].at >= MIN_GAP_MS, 'les réessais respectent l’écart');
-});
-
-test('file : un groupe qui finit par passer n’est pas abandonné', async () => {
-  const clock = makeClock();
-  let refunded = 0;
+  const refunds = [];
   let calls = 0;
-  const { queue, sends } = makeQueue(clock, async () => {
-    await sleep(clock, 20);
-    return ++calls <= MAX_RETRIES ? { retry: true } : undefined;
-  }, { refund: (s) => (refunded += s) });
-  queue.push(10, 12, 'medium');
-  await clock.advance(5000);
-  assert.equal(sends.length, MAX_RETRIES + 1);
-  assert.equal(refunded, 0);
-});
-
-test('file : les billes refusées par le serveur repartent dans l’envoi suivant', async () => {
-  const clock = makeClock();
-  let refunded = 0;
-  let calls = 0;
-  const { queue, sends } = makeQueue(clock, async () => {
-    await sleep(clock, 20);
-    return ++calls === 2 ? { requeue: 4 } : undefined; // 4 des 5 billes du 2e envoi refusées
-  }, { refund: (s) => (refunded += s) });
+  const { queue, sends } = makeQueue(
+    clock,
+    async () => {
+      await sleep(clock, 20);
+      return ++calls === 2 ? { refused: 4 } : undefined; // 4 billes du 2e envoi refusées
+    },
+    { refund: (stake, balls, reason) => refunds.push({ stake, balls, reason }), maxWaitMs: 100000 },
+  );
   for (let i = 0; i < 6; i++) queue.push(10, 12, 'medium');
   await clock.advance(5000);
-  assert.deepEqual(sends.map((s) => s.n), [1, 5, 4]);
-  assert.equal(refunded, 0, 'une bille refusée repart, elle n’est pas remboursée');
+  assert.deepEqual(sends.map((s) => s.n), [1, 5], 'les 4 billes refusées ne repartent pas');
+  assert.deepEqual(refunds, [{ stake: 40, balls: 4, reason: 'refused' }]);
   assert.equal(queue.waiting(), 0);
 });
 
-test('file : des billes refusées sans fin finissent par être remboursées', async () => {
+test('file : une bille qui n’a pas pu partir à temps est abandonnée et remboursée en silence', async () => {
   const clock = makeClock();
-  let refunded = 0;
-  const { queue, sends } = makeQueue(clock, async (g) => {
-    await sleep(clock, 20);
-    return { requeue: g.n }; // le serveur refuse tout : aucune progression
-  }, { refund: (s) => (refunded += s) });
-  queue.push(10, 12, 'medium');
+  const refunds = [];
+  const { queue, sends } = makeQueue(
+    clock,
+    () => sleep(clock, 2000), // appel très long : rien d'autre ne peut partir
+    { refund: (stake, balls, reason) => refunds.push({ stake, balls, reason }) },
+  );
+  queue.push(10, 12, 'medium'); // part tout de suite
+  await clock.advance(10);
+  queue.push(10, 12, 'medium'); // celle-ci attend derrière l'appel en vol
+  assert.equal(queue.waiting(), 1);
+  await clock.advance(MAX_WAIT_MS + 1);
+  assert.equal(queue.waiting(), 0, 'abandonnée au bout de l’attente maximale, sans attendre la réponse');
+  assert.deepEqual(refunds, [{ stake: 10, balls: 1, reason: 'expired' }]);
   await clock.advance(5000);
-  assert.equal(sends.length, MAX_RETRIES + 1);
-  assert.equal(refunded, 10);
+  assert.equal(total(sends), 1, 'elle ne part jamais');
 });
 
 // ---------------------------------------------------------------- simulation bout en bout
 
 /**
- * Faux serveur : seau de 15 billes rechargé à 15/s (comme casino_plinko_batch), et limite de 8 appels par seconde
+ * Faux serveur : seau de 10 billes rechargé à 10/s (comme casino_plinko_batch), et limite de 8 appels par seconde
  * au-delà de laquelle il répond « doucement : trop d'appels ».
  */
 function fakeServer(clock, { latency, callsPerSecond = 8, balance = 1_000_000, random = seeded(12345) } = {}) {
@@ -287,52 +293,99 @@ function fakeServer(clock, { latency, callsPerSecond = 8, balance = 1_000_000, r
   };
 }
 
-/** Rafale de `seconds` secondes à 15 clics/s, comme Espace maintenue ou l'auto rapide. */
-async function burst(latency, seconds) {
-  const clock = makeClock();
-  const srv = fakeServer(clock, { latency });
-  let local = srv.balance;
+/** Un joueur qui clique à `clicksPerSecond`, avec le seau du site, la file et le faux serveur branchés ensemble. */
+function makePlayer(clock, { latency, callsPerSecond } = {}) {
+  const srv = fakeServer(clock, { latency, callsPerSecond });
   const bucket = tokenBucket(BURST, PER_SECOND, clock.now);
-  const { queue } = makeQueue(
+  const state = { local: srv.balance, clicked: 0, srv };
+  const { queue, sends } = makeQueue(
     clock,
     async (g) => {
       try {
         const r = await srv.spin(g);
-        return r.refused ? { requeue: r.refused } : undefined;
+        return r.refused ? { refused: r.refused } : undefined;
       } catch {
-        return { retry: true };
+        return { refused: g.n }; // « doucement » : plus de réessai, le groupe est rendu
       }
     },
-    { refund: (s) => (local += s) },
+    { refund: (stake) => (state.local += stake) },
   );
-  let clicked = 0;
-  for (let i = 0; i < PER_SECOND * seconds; i++) {
-    if (bucket.take()) {
-      clicked++;
-      local -= 10;
-      queue.push(10, 12, 'medium');
+  state.queue = queue;
+  state.sends = sends;
+  /** Un clic : accepté par le seau ou ignoré sans rien miser. */
+  state.click = () => {
+    if (!bucket.take()) return false;
+    state.clicked++;
+    state.local -= 10;
+    queue.push(10, 12, 'medium');
+    return true;
+  };
+  /** Clique pendant `seconds` secondes, aussi vite que le site l'autorise. */
+  state.spam = async (seconds) => {
+    for (let i = 0; i < PER_SECOND * seconds; i++) {
+      state.click();
+      await clock.advance(1000 / PER_SECOND);
     }
-    await clock.advance(1000 / PER_SECOND);
-  }
-  await clock.advance(5000); // le temps que la file se vide
-  return { clicked, srv, local, queue, clock };
+  };
+  return state;
 }
 
-test('simulation : réseau lent (30-300 ms), ≈ 15 billes/s et solde local juste', async () => {
-  const { clicked, srv, local, queue } = await burst([30, 300], 6);
-  assert.ok(clicked >= 15 * 6, `${clicked} clics acceptés par le seau`);
-  assert.equal(srv.accepted, clicked, 'toutes les billes cliquées sont jouées');
-  assert.ok(srv.lastAcceptedAt <= 6500, `dernière bille jouée à ${Math.round(srv.lastAcceptedAt)} ms : le débit suit les clics`);
-  assert.equal(local, srv.balance, 'le solde local retombe sur celui du serveur');
-  assert.equal(queue.waiting(), 0);
+test('scénario du joueur : rafale, arrêt, puis un seul clic → une seule bille part', async () => {
+  const clock = makeClock();
+  const p = makePlayer(clock, { latency: [30, 300] });
+  await p.spam(4);
+  // Le joueur s'arrête : au-delà de l'appel en vol et de l'envoi en préparation, plus rien ne doit partir.
+  const atStop = total(p.sends);
+  await clock.advance(MAX_WAIT_MS + 400);
+  const after = total(p.sends) - atStop;
+  assert.ok(after <= 2 * BURST, `${after} billes parties après le dernier clic : au plus l’appel en vol et l’envoi suivant`);
+  assert.equal(p.queue.waiting(), 0, 'rien n’est gardé en file');
+  const settled = total(p.sends);
+
+  // Plus tard, un seul clic.
+  await clock.advance(1000);
+  assert.equal(total(p.sends), settled, 'rien ne part pendant le silence');
+  assert.equal(p.click(), true);
+  await clock.advance(3000);
+  assert.equal(total(p.sends) - settled, 1, 'un clic = une bille, pas deux');
+  assert.equal(p.local, p.srv.balance, 'le solde local retombe sur celui du serveur');
 });
 
-test('simulation : réseau rapide (10-40 ms), toujours ≈ 15 billes/s, aucune bille perdue', async () => {
-  const { clicked, srv, local, queue } = await burst([10, 40], 6);
-  assert.ok(clicked >= 15 * 6, `${clicked} clics acceptés par le seau`);
-  assert.equal(srv.accepted, clicked, 'aucune bille perdue : c’est ce que corrige l’écart de 150 ms');
-  assert.ok(srv.lastAcceptedAt <= 6500, `dernière bille jouée à ${Math.round(srv.lastAcceptedAt)} ms : le débit suit les clics`);
-  assert.equal(srv.refusedCalls, 0, 'le site ne dépasse jamais 8 appels par seconde');
-  assert.equal(local, srv.balance);
-  assert.equal(queue.waiting(), 0);
+test('scénario du joueur : rien ne part plus passé l’attente maximale après le dernier clic', async () => {
+  const clock = makeClock();
+  const p = makePlayer(clock, { latency: [30, 300] });
+  await p.spam(6);
+  const stop = clock.now();
+  await clock.advance(5000);
+  const late = p.sends.filter((s) => s.at > stop + MAX_WAIT_MS + 600); // attente maximale + un aller-retour
+  assert.deepEqual(late, [], 'aucun envoi tardif');
+  assert.equal(p.queue.waiting(), 0);
+  assert.equal(p.local, p.srv.balance);
+});
+
+test('simulation : réseau lent (30-300 ms), ≈ 10 billes/s et solde local juste', async () => {
+  const clock = makeClock();
+  const p = makePlayer(clock, { latency: [30, 300] });
+  await p.spam(6);
+  await clock.advance(2000);
+  assert.equal(p.clicked, PER_SECOND * 6, `${p.clicked} clics acceptés par le seau`);
+  // Aller-retour jusqu'à 600 ms : quelques billes dépassent l'attente maximale et sont abandonnées plutôt que
+  // gardées (55 sur 60 avec cette graine, soit ≈ 9,2 billes/s). C'est le prix assumé du « rien n'est gardé ».
+  assert.ok(p.srv.accepted >= 0.9 * p.clicked, `${p.srv.accepted} billes jouées sur ${p.clicked} cliquées`);
+  assert.ok(p.srv.lastAcceptedAt <= 6500, `dernière bille jouée à ${Math.round(p.srv.lastAcceptedAt)} ms : le débit suit les clics`);
+  assert.equal(p.local, p.srv.balance, 'le solde local retombe sur celui du serveur');
+  assert.equal(p.queue.waiting(), 0);
+});
+
+test('simulation : réseau rapide (10-40 ms), ≈ 10 billes/s, aucune bille perdue', async () => {
+  const clock = makeClock();
+  const p = makePlayer(clock, { latency: [10, 40] });
+  await p.spam(6);
+  await clock.advance(2000);
+  assert.equal(p.clicked, PER_SECOND * 6, `${p.clicked} clics acceptés par le seau`);
+  assert.equal(p.srv.accepted, p.clicked, 'aucune bille perdue : c’est ce que protège l’écart de 150 ms');
+  assert.ok(p.srv.lastAcceptedAt <= 6500, `dernière bille jouée à ${Math.round(p.srv.lastAcceptedAt)} ms : le débit suit les clics`);
+  assert.equal(p.srv.refusedCalls, 0, 'le site ne dépasse jamais 8 appels par seconde');
+  assert.equal(p.local, p.srv.balance);
+  assert.equal(p.queue.waiting(), 0);
 });
