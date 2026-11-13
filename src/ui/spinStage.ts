@@ -58,6 +58,7 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
 
   /** Résultat affiché et son : au Plinko, le son de gain seulement si la bille rapporte plus que la mise. */
   const finish = (s: Spin) => {
+    if (disposed) return;
     status.textContent = `${gameName(s.game)} · ${outcome(s)}`;
     if (opts.sound) {
       if (s.game === 'plinko') blip(s.payout > s.stake ? 880 : 300);
@@ -73,6 +74,11 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
 
   const play = async (s: Spin, fast: boolean) => {
     opts.onStart?.(s);
+    // Roulette et machine à sous masquent le plateau : les billes en rattrapage finissent d'abord leur chute.
+    if (s.game !== 'plinko') {
+      await settled();
+      if (disposed) return;
+    }
     roulette.classList.toggle('on', s.game === 'roulette');
     slots.classList.toggle('on', s.game === 'slots');
     plinko.classList.toggle('on', s.game === 'plinko');

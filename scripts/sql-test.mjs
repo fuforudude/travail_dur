@@ -565,6 +565,18 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   const flood = await throws(() => as(player, `select public.casino_plinko(1, 8, 'low')`));
   if (flood?.includes('doucement') && (await balance()) === before) ok('Plinko : la 13ᵉ mise en 10 secondes est refusée, sans débit');
   else fail(`limite du Plinko : ${flood ?? 'acceptée'}, solde ${before} → ${await balance()}`);
+  // Table incomplète : refus explicite, sans débit (on retire toute une combinaison, puis on la remet à l'identique).
+  await resetBurst();
+  const removed = (await db.query(`delete from public.plinko_payouts where rows = 8 and risk = 'low' returning rows, risk, slot, mult_x100`)).rows;
+  const balBroken = await balance();
+  const broken = await throws(() => as(player, `select public.casino_plinko(10, 8, 'low')`));
+  for (const row of removed) {
+    await db.query(`insert into public.plinko_payouts (rows, risk, slot, mult_x100) values ($1, $2, $3, $4)`, [row.rows, row.risk, row.slot, row.mult_x100]);
+  }
+  const restored = (await db.query(`select count(*)::int as n from public.plinko_payouts where rows = 8 and risk = 'low'`)).rows[0].n;
+  if (removed.length === 9 && restored === 9 && broken?.includes('table du Plinko incomplète') && (await balance()) === balBroken)
+    ok('Plinko : table incomplète refusée avec son message, solde inchangé, lignes remises');
+  else fail(`table incomplète du Plinko : ${removed.length} ligne(s) retirée(s), ${restored} remise(s), refus → ${broken ?? 'accepté'}`);
 }
 
 await db.close();

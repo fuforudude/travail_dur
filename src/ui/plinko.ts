@@ -179,7 +179,7 @@ export function plinkoView(root: HTMLElement): () => void {
         return false;
       }
       // Le serveur fait autorité : une réponse incohérente n'est pas animée, son gain compte quand même.
-      if (r.path.length !== rowsNow || r.path.reduce((t, v) => t + v, 0) !== r.slot) {
+      if (!Array.isArray(r?.path) || r.path.length !== rowsNow || r.path.reduce((t, v) => t + v, 0) !== r.slot) {
         local += r.payout;
         air--;
         release();
