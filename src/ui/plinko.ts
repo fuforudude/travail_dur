@@ -18,7 +18,7 @@ export const RISKS: [PlinkoRisk, string][] = [
 
 export const PLINKO_RULES = [
   'La bille tombe d’en haut et rebondit à gauche ou à droite, une chance sur deux, à chaque rangée de clous ; la case où elle s’arrête multiplie la mise.',
-  'Plus il y a de rangées et plus le risque est haut, plus les cases des bords paient (jusqu’à ×1000) et plus celles du centre paient peu. Retour moyen au joueur : environ 97 % dans tous les réglages.',
+  'Plus il y a de rangées et plus le risque est haut, plus les cases des bords paient (jusqu’à ×980) et plus celles du centre paient peu. Retour moyen au joueur : environ 97 % dans tous les réglages.',
   'Le gain est arrondi à l’entier inférieur. On peut lâcher une nouvelle bille avant l’arrivée de la précédente ; les rangées et le risque ne changent pas tant qu’une bille tombe.',
 ];
 
@@ -34,13 +34,17 @@ export function plinkoView(root: HTMLElement): () => void {
   let rows = 12;
   let riskIdx = 1;
   let air = 0; // billes demandées au serveur ou encore en l'air
+  // Solde d'affichage tant que des billes tombent : mise retirée au lancement, gain ajouté à l'arrivée.
+  // Quand plus aucune bille ne tombe, on revient au solde exact du serveur (getWallet, libéré par holdWallet).
+  let local = 0;
   let payouts: Map<string, number[]> | null = null;
   let message = 'Choisis ta mise, puis lâche la bille.';
   let autoNet = 0;
   let autoBalls = 0;
   let destroyed = false;
   const timers: number[] = [];
-  const bets = () => stakeSteps(getWallet()?.balance ?? 0, 8);
+  const shownBalance = () => (air > 0 ? local : (getWallet()?.balance ?? 0));
+  const bets = () => stakeSteps(shownBalance(), 8);
   const mults = () => payouts?.get(`${rows}:${RISKS[riskIdx][0]}`);
 
   const board = createPlinkoBoard();
@@ -114,9 +118,9 @@ export function plinkoView(root: HTMLElement): () => void {
 
   const render = () => {
     const w = getWallet();
-    balanceEl.replaceChildren('Solde ', h('b', {}, w ? formatPoints(w.balance) : '…'));
+    const balance = shownBalance();
+    balanceEl.replaceChildren('Solde ', h('b', {}, w ? formatPoints(balance) : '…'));
     const list = bets();
-    const balance = w?.balance ?? 0;
     bet = allIn ? list[list.length - 1] : keepStake(list, bet); // le solde a pu changer
     betEl.replaceChildren(
       ...list.map((v) =>
@@ -134,7 +138,7 @@ export function plinkoView(root: HTMLElement): () => void {
       token('+', false, locked || rows >= MAX_ROWS, () => (setRows(rows + 1), render())),
     );
     riskEl.replaceChildren(...RISKS.map(([, label], i) => token(label, i === riskIdx, locked, () => (setRisk(i), render()))));
-    drop.disabled = !payouts;
+    drop.disabled = !payouts || auto.running();
     status.textContent = autoBalls ? `${message} · Auto : ${autoBalls} bille${autoBalls > 1 ? 's' : ''}, bilan ${autoNet >= 0 ? '+' : ''}${formatPoints(autoNet)}` : message;
   };
 
@@ -145,12 +149,16 @@ export function plinkoView(root: HTMLElement): () => void {
     [660, 880, 1100, 1320, 1760].forEach((f, i) => timers.push(window.setTimeout(() => blip(f, 0.09), i * 90)));
   };
 
-  /** Une bille : le serveur tire le chemin, la bille le suit, le solde est libéré à l'arrivée. Retourne false si la bille n'est pas partie. */
+  /**
+   * Une bille : le serveur tire le chemin, la bille le suit. La mise quitte le solde local au lancement, le gain
+   * y entre à l'arrivée ; le badge de la barre du haut reste gelé (holdWallet) jusqu'à l'arrivée de la dernière bille.
+   * Retourne false si la bille n'est pas partie.
+   */
   const launch = async (): Promise<boolean> => {
     const m = mults();
     if (!m || destroyed) return false;
     const stake = bet;
-    if ((getWallet()?.balance ?? 0) < stake) {
+    if (shownBalance() < stake) {
       message = 'Pas assez de points pour cette mise.';
       render();
       return false;
@@ -158,6 +166,8 @@ export function plinkoView(root: HTMLElement): () => void {
     if (!auto.running()) autoBalls = 0;
     const rowsNow = rows;
     const risk = RISKS[riskIdx][0];
+    if (air === 0) local = getWallet()?.balance ?? 0;
+    local -= stake;
     air++;
     const release = holdWallet();
     render();
@@ -168,15 +178,25 @@ export function plinkoView(root: HTMLElement): () => void {
         release();
         return false;
       }
+      // Le serveur fait autorité : une réponse incohérente n'est pas animée, son gain compte quand même.
+      if (r.path.length !== rowsNow || r.path.reduce((t, v) => t + v, 0) !== r.slot) {
+        local += r.payout;
+        air--;
+        release();
+        message = 'Réponse du serveur illisible : la bille n’est pas affichée, ton solde est à jour.';
+        render();
+        return false;
+      }
       const big = r.mult_x100 >= BIG_WIN_X100;
       message = '…';
       render();
       void board.drop(r.path, { big }).then(() => {
+        local += r.payout;
         air--;
-        release(); // affiche le solde renvoyé par le serveur
+        release(); // à la dernière bille, le solde exact du serveur réapparaît (ici et dans la barre du haut)
         if (destroyed) return;
-        message = `${multLabel(r.mult_x100)} : ${r.payout >= r.stake ? '+' : ''}${formatPoints(r.payout)} point${r.payout > 1 ? 's' : ''}${r.payout < r.stake ? ' rendus' : ''}`;
-        blip(r.mult_x100 >= 100 ? 880 : 300);
+        message = r.payout ? `${multLabel(r.mult_x100)} : gagné ${formatPoints(r.payout)} point${r.payout > 1 ? 's' : ''}` : `${multLabel(r.mult_x100)} : Perdu`;
+        blip(r.payout > r.stake ? 880 : 300);
         if (big) showBig(`${multLabel(r.mult_x100)} ! +${formatPoints(r.payout)}`);
         if (auto.running() || autoBalls) {
           autoBalls++;
@@ -186,6 +206,7 @@ export function plinkoView(root: HTMLElement): () => void {
       });
       return true;
     } catch (e) {
+      local += stake; // mise rendue : le serveur ne l'a pas prise
       air--;
       release();
       message = (e as Error).message;
@@ -202,12 +223,12 @@ export function plinkoView(root: HTMLElement): () => void {
       const list = bets();
       const i = list.indexOf(keepStake(list, bet));
       bet = list[Math.max(0, Math.min(list.length - 1, i + (key === 'arrowleft' ? -1 : 1)))];
-      allIn = bet === getWallet()?.balance;
+      allIn = bet === shownBalance();
     } else if (key === 'arrowup') setRows(rows + 1);
     else if (key === 'arrowdown') setRows(rows - 1);
     else if (key === 'r') setRisk(riskIdx + 1);
     else if (key === ' ' || key === 'enter') {
-      if (!auto.running()) void launch();
+      if (!e.repeat && !auto.running()) void launch(); // touche maintenue : une seule bille
     } else if (key === 'a') {
       if (auto.running()) auto.stop();
       else void auto.start(10);

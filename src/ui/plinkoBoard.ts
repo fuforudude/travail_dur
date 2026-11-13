@@ -40,8 +40,8 @@ interface Colors {
 /** Gain à partir duquel la case est dorée et le son de jackpot joué (×100, en centièmes). */
 export const BIG_WIN_X100 = 10000;
 
-/** Multiplicateur en français : « ×0,2 », « ×1000 ». */
-export const multLabel = (x100: number) => `×${(x100 / 100).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}`;
+/** Multiplicateur en français : « ×0,2 », « ×1000 » (sans espace des milliers, pour tenir dans les cases étroites). */
+export const multLabel = (x100: number) => `×${(x100 / 100).toLocaleString('fr-FR', { maximumFractionDigits: 2, useGrouping: false })}`;
 
 const slotOf = (path: number[]) => path.reduce((s, v) => s + v, 0);
 
@@ -92,7 +92,7 @@ export function createPlinkoBoard(): PlinkoBoard {
   };
 
   const ballPos = (b: Ball, now: number) => {
-    const t = (now - b.start) / STEP_MS;
+    const t = Math.max(0, (now - b.start) / STEP_MS); // une image peut porter une heure antérieure au lâcher
     const seg = Math.floor(t);
     const f = t - seg;
     // seg 0 : chute depuis le haut jusqu'au premier clou ; puis un rebond (petit arc) par rangée ; le dernier tombe dans la case
@@ -195,7 +195,6 @@ export function createPlinkoBoard(): PlinkoBoard {
       dpr = window.devicePixelRatio || 1;
       canvas.width = Math.round(W * dpr);
       canvas.height = Math.round(height * dpr);
-      canvas.style.aspectRatio = `${W} / ${height}`;
       readColors();
       draw(performance.now());
       if (balls.length || flashes.length) kick();

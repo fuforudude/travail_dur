@@ -91,14 +91,15 @@ export function holdWallet(): () => void {
 }
 
 const MISSING = ['PGRST202', 'PGRST205', '42883', '42P01'];
-const pointsError = (err: { code?: string }) =>
-  new Error(MISSING.includes(err.code ?? '') ? 'Points indisponibles : migration 0007_points_casino.sql à exécuter (voir le README).' : errorMessage(err));
+/** `migration` : le fichier qui crée la fonction ou la table appelée, cité si elle manque. */
+const pointsError = (err: { code?: string }, migration = '0007_points_casino.sql') =>
+  new Error(MISSING.includes(err.code ?? '') ? `Points indisponibles : migration ${migration} à exécuter (voir le README).` : errorMessage(err));
 
-async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
+async function rpc<T>(fn: string, args: Record<string, unknown> = {}, migration?: string): Promise<T> {
   const supabase = await getSupabase();
   if (!supabase) throw new Error('Indisponible en mode local.');
   const { data, error } = await supabase.rpc(fn, args);
-  if (error) throw pointsError(error);
+  if (error) throw pointsError(error, migration);
   return data as T;
 }
 
@@ -206,7 +207,7 @@ export interface PlinkoResult {
 }
 
 export async function spinPlinko(bet: number, rows: number, risk: PlinkoRisk): Promise<PlinkoResult> {
-  const r = await rpc<PlinkoResult>('casino_plinko', { bet, rows, risk });
+  const r = await rpc<PlinkoResult>('casino_plinko', { bet, rows, risk }, '0052_plinko.sql');
   setWallet({ balance: r.balance, earned: wallet?.earned ?? 0 });
   return r;
 }
@@ -219,13 +220,20 @@ export function loadPlinkoPayouts(): Promise<Map<string, number[]>> {
     const supabase = await getSupabase();
     if (!supabase) throw new Error('Indisponible en mode local.');
     const { data, error } = await supabase.from('plinko_payouts').select('rows, risk, slot, mult_x100');
-    if (error) throw pointsError(error);
+    if (error) throw pointsError(error, '0052_plinko.sql');
     const map = new Map<string, number[]>();
     for (const row of data as { rows: number; risk: string; slot: number; mult_x100: number }[]) {
       const key = `${row.rows}:${row.risk}`;
       const list = map.get(key) ?? [];
       list[row.slot] = row.mult_x100;
       map.set(key, list);
+    }
+    // Les 27 tables (8 à 16 rangées × 3 risques), chacune de rangées + 1 cases : sinon le plateau ne peut pas s'afficher.
+    for (let rows = 8; rows <= 16; rows++) {
+      for (const risk of ['low', 'medium', 'high']) {
+        const list = map.get(`${rows}:${risk}`);
+        if (!list || list.length !== rows + 1 || Array.from(list).some((v) => typeof v !== 'number')) throw new Error('Le Plinko est indisponible pour le moment.');
+      }
     }
     return map;
   })();

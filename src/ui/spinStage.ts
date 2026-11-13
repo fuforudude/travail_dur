@@ -1,9 +1,8 @@
-// Roulette et machine à sous d'un ami, rejouées tour par tour (page « Regarder » et fenêtre sur le côté).
+// Roulette, machine à sous et Plinko d'un ami, rejoués tour par tour (page « Regarder » et fenêtre sur le côté).
 
 import { blip } from '../core/sound';
-import { formatPoints } from '../net/points';
+import { formatPoints, loadPlinkoPayouts } from '../net/points';
 import type { Spin } from '../net/spectate';
-import { loadPlinkoPayouts } from '../net/points';
 import { h } from './dom';
 import { BIG_WIN_X100, createPlinkoBoard, multLabel } from './plinkoBoard';
 import { colorName, colorOf, WHEEL, wheelSvg } from './roulette';
@@ -57,6 +56,21 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
   const queue: Spin[] = [];
   const timers = new Set<number>();
 
+  /** Résultat affiché et son : au Plinko, le son de gain seulement si la bille rapporte plus que la mise. */
+  const finish = (s: Spin) => {
+    status.textContent = `${gameName(s.game)} · ${outcome(s)}`;
+    if (opts.sound) {
+      if (s.game === 'plinko') blip(s.payout > s.stake ? 880 : 300);
+      else if (s.payout) blip(s.payout / s.stake >= 36 ? 1200 : 880);
+    }
+    opts.onPlayed?.(s);
+  };
+
+  /** Attend que plus aucune bille ne tombe (avant de changer de plateau). */
+  const settled = async () => {
+    while (board.busy() && !disposed) await wait(100);
+  };
+
   const play = async (s: Spin, fast: boolean) => {
     opts.onStart?.(s);
     roulette.classList.toggle('on', s.game === 'roulette');
@@ -80,13 +94,27 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
       status.textContent = `Mise ${formatPoints(s.stake)}…`;
       const { rows, risk, path } = s.detail;
       if (rows && risk && path) {
-        // Le tour précédent est fini (file en série) : on peut changer le plateau sans toucher une bille en l'air.
-        const mults = (await loadPlinkoPayouts().catch(() => null))?.get(`${rows}:${risk}`);
-        if (mults && !disposed && !board.busy() && shown !== `${rows}:${risk}`) {
-          board.setBoard(rows, mults);
-          shown = `${rows}:${risk}`;
+        const key = `${rows}:${risk}`;
+        if (shown !== key) {
+          // Autres réglages : les billes en l'air finissent leur chute sur l'ancien plateau avant qu'on le change.
+          const mults = (await loadPlinkoPayouts().catch(() => null))?.get(key);
+          await settled();
+          if (mults && !disposed) {
+            board.setBoard(rows, mults);
+            shown = key;
+          }
         }
-        if (shown === `${rows}:${risk}` && !disposed) await board.drop(path, { big: (s.detail.mult_x100 ?? 0) >= BIG_WIN_X100 });
+        if (shown === key && !disposed) {
+          // L'effet doré reste (c'est ce que voit le joueur), sans son de jackpot.
+          const falling = board.drop(path, { big: (s.detail.mult_x100 ?? 0) >= BIG_WIN_X100 });
+          if (fast) {
+            // Tours en attente : plusieurs billes à l'écran, ≈ 0,2 s d'écart ; le résultat s'affiche à l'arrivée de chacune.
+            void falling.then(() => !disposed && finish(s));
+            await wait(200);
+            return;
+          }
+          await falling;
+        }
       }
     } else {
       status.textContent = `Mise ${formatPoints(s.stake)}…`;
@@ -107,9 +135,7 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
       }
       reels.forEach((el) => el.classList.toggle('win', s.payout > 0));
     }
-    status.textContent = `${gameName(s.game)} · ${outcome(s)}`;
-    if (opts.sound && s.payout) blip(s.payout / s.stake >= 36 ? 1200 : 880);
-    opts.onPlayed?.(s);
+    finish(s);
   };
 
   const next = async () => {
@@ -117,8 +143,10 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
     playing = true;
     while (queue.length && !disposed) {
       const s = queue.shift()!;
-      await play(s, queue.length > 0);
-      await wait(queue.length ? 300 : 0);
+      const fast = queue.length > 0;
+      await play(s, fast);
+      // Après une bille lâchée en rattrapage, pas de pause de plus : l'écart de 0,2 s est déjà fait.
+      await wait(queue.length && !(fast && s.game === 'plinko') ? 300 : 0);
     }
     playing = false;
   };

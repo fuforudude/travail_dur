@@ -24,6 +24,7 @@ const PAGES: Record<string, string> = {
   home: 'sur l’accueil',
   roulette: 'à la roulette',
   slots: 'à la machine à sous',
+  plinko: 'au Plinko',
   points: 'au casino',
   shop: 'à la boutique',
   crates: 'ouvre des caisses',
