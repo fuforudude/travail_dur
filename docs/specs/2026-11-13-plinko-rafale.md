@@ -1,6 +1,6 @@
 # Plinko en rafale (spam-clic)
 
-Statut : validée
+Statut : livrée
 Date : 2026-11-13
 
 ## Besoin
