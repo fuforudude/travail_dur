@@ -52,7 +52,7 @@ export interface QueueOptions {
   /** Appelé après chaque réponse, une fois l'envoi suivant éventuel parti. */
   settled?: () => void;
   /** Mises à rendre quand un groupe est abandonné après `MAX_RETRIES` réessais. */
-  refund?: (stake: number) => void;
+  refund?: (stake: number, balls: number) => void;
   max?: number;
   gapMs?: number;
   /** Horloge et minuteur, remplacés par les tests. */
@@ -95,7 +95,7 @@ export function batchQueue(send: (g: PlinkoGroup) => Promise<SendResult | void>,
    */
   const again = (g: Pending, progress: boolean) => {
     const tries = progress ? 0 : g.tries + 1;
-    if (tries > MAX_RETRIES) refund(g.n * g.bet); // abandon silencieux
+    if (tries > MAX_RETRIES) refund(g.n * g.bet, g.n);
     else groups.unshift({ ...g, tries });
   };
 

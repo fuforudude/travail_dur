@@ -1,6 +1,6 @@
 // Tests des fonctions pures du Plinko en rafale (seau à jetons, file d'envoi), lanceur intégré de Node :
 //   npm run test:site
-// Fichier en .mjs : Node 22+ enlève lui-même les types de plinkoQueue.ts, sans dépendance ni compilation.
+// Fichier en .mjs : Node 22.18+ enlève lui-même les types de plinkoQueue.ts, sans dépendance ni compilation.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -42,6 +42,19 @@ function makeClock() {
     },
   };
   return clock;
+}
+
+/** Générateur déterministe (xorshift32) : un échec de simulation se rejoue à l'identique. */
+function seeded(seed) {
+  let x = seed >>> 0 || 1;
+  return () => {
+    x ^= x << 13;
+    x >>>= 0;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    x >>>= 0;
+    return x / 4294967296;
+  };
 }
 
 const sleep = (clock, ms) => new Promise((ok) => clock.setTimer(ok, ms));
@@ -149,15 +162,18 @@ test('file : un changement de mise ouvre un envoi séparé', async () => {
 
 test('file : clear() rend le total des mises en attente et annule le minuteur', async () => {
   const clock = makeClock();
-  const { queue } = makeQueue(clock, () => sleep(clock, 500));
-  queue.push(10, 12, 'medium'); // partie tout de suite, pas remboursée
+  const { queue, sends } = makeQueue(clock, () => sleep(clock, 20));
+  queue.push(10, 12, 'medium'); // part tout de suite, pas remboursée
+  await clock.advance(30); // réponse reçue : la file attend maintenant l'écart de 150 ms
   for (let i = 0; i < 4; i++) queue.push(10, 12, 'medium');
   for (let i = 0; i < 3; i++) queue.push(20, 12, 'medium');
+  assert.equal(clock.count(), 1, 'le minuteur d’écart est armé');
   assert.equal(queue.waiting(), 7);
   assert.equal(queue.clear(), 4 * 10 + 3 * 20);
+  assert.equal(clock.count(), 0, 'le minuteur est annulé tout de suite');
   assert.equal(queue.waiting(), 0);
   await clock.advance(10000);
-  assert.equal(clock.count(), 0, 'aucun minuteur ne reste en place');
+  assert.equal(sends.length, 1, 'rien ne repart');
 });
 
 test('file : une erreur de send ne bloque pas la suite', async () => {
@@ -238,14 +254,15 @@ test('file : des billes refusées sans fin finissent par être remboursées', as
  * Faux serveur : seau de 15 billes rechargé à 15/s (comme casino_plinko_batch), et limite de 8 appels par seconde
  * au-delà de laquelle il répond « doucement : trop d'appels ».
  */
-function fakeServer(clock, { latency, callsPerSecond = 8, balance = 1_000_000 } = {}) {
+function fakeServer(clock, { latency, callsPerSecond = 8, balance = 1_000_000, random = seeded(12345) } = {}) {
   const calls = [];
   let tokens = BURST;
   let at = clock.now();
-  const lag = () => latency[0] + Math.random() * (latency[1] - latency[0]);
+  const lag = () => latency[0] + random() * (latency[1] - latency[0]);
   return {
     balance,
     accepted: 0,
+    lastAcceptedAt: 0,
     refusedCalls: 0,
     async spin(g) {
       await sleep(clock, lag()); // aller
@@ -262,6 +279,7 @@ function fakeServer(clock, { latency, callsPerSecond = 8, balance = 1_000_000 } 
       const take = Math.min(g.n, Math.floor(tokens + 1e-9));
       tokens -= take;
       this.accepted += take;
+      if (take) this.lastAcceptedAt = t;
       this.balance -= take * g.bet;
       await sleep(clock, lag()); // retour
       return { refused: g.n - take, balance: this.balance };
@@ -304,6 +322,7 @@ test('simulation : réseau lent (30-300 ms), ≈ 15 billes/s et solde local just
   const { clicked, srv, local, queue } = await burst([30, 300], 6);
   assert.ok(clicked >= 15 * 6, `${clicked} clics acceptés par le seau`);
   assert.equal(srv.accepted, clicked, 'toutes les billes cliquées sont jouées');
+  assert.ok(srv.lastAcceptedAt <= 6500, `dernière bille jouée à ${Math.round(srv.lastAcceptedAt)} ms : le débit suit les clics`);
   assert.equal(local, srv.balance, 'le solde local retombe sur celui du serveur');
   assert.equal(queue.waiting(), 0);
 });
@@ -312,6 +331,7 @@ test('simulation : réseau rapide (10-40 ms), toujours ≈ 15 billes/s, aucune b
   const { clicked, srv, local, queue } = await burst([10, 40], 6);
   assert.ok(clicked >= 15 * 6, `${clicked} clics acceptés par le seau`);
   assert.equal(srv.accepted, clicked, 'aucune bille perdue : c’est ce que corrige l’écart de 150 ms');
+  assert.ok(srv.lastAcceptedAt <= 6500, `dernière bille jouée à ${Math.round(srv.lastAcceptedAt)} ms : le débit suit les clics`);
   assert.equal(srv.refusedCalls, 0, 'le site ne dépasse jamais 8 appels par seconde');
   assert.equal(local, srv.balance);
   assert.equal(queue.waiting(), 0);

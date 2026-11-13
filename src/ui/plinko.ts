@@ -69,6 +69,9 @@ export function plinkoView(root: HTMLElement): () => void {
   let nextDrop = 0;
   // Signatures de ce qui est déjà affiché : on ne reconstruit un groupe de boutons que s'il change vraiment.
   let shownBets = '';
+  // Liste des jetons et solde qui l'a produite, figés pendant une rafale (le solde local tombe vers 0 à chaque bille).
+  let tokenList: number[] = [];
+  let tokenBalance = 0;
   let shownCtrl = '';
   const timers = new Set<number>();
   const later = (fn: () => void, ms: number) => {
@@ -83,8 +86,9 @@ export function plinkoView(root: HTMLElement): () => void {
   const bucket = tokenBucket();
   const queue = batchQueue((g) => sendGroup(g), {
     settled: () => settle(),
-    refund: (stake) => {
+    refund: (stake, balls) => {
       local += stake; // groupe abandonné après trois réessais : la mise revient au solde local
+      message = `${balls} bille${balls > 1 ? 's' : ''} annulée${balls > 1 ? 's' : ''}, le serveur était saturé.`;
     },
   });
   const busy = () => queue.waiting() > 0 || queue.inFlight() || air > 0;
@@ -202,20 +206,26 @@ export function plinkoView(root: HTMLElement): () => void {
     const w = getWallet();
     const balance = shownBalance();
     balanceEl.replaceChildren('Solde ', h('b', {}, w ? formatPoints(balance) : '…'));
-    const list = bets();
     // Tant que des billes sont en file, en vol ou en l'air, la mise ne bouge pas : le solde local tombe à 0 pendant
     // une rafale (les gains n'arrivent qu'à l'atterrissage) et la mise s'effondrerait à 1 sans y remonter.
-    if (!busy()) bet = allIn ? list[list.length - 1] : keepStake(list, bet);
-    const betsKey = `${list.join(',')}|${bet}`;
+    // Le portefeuille doit être connu : à froid le solde vaut 0 et ramènerait la mise à 1 sans y remonter.
+    if (!busy() && w) {
+      tokenList = bets();
+      tokenBalance = balance;
+      bet = allIn ? tokenList[tokenList.length - 1] : keepStake(tokenList, bet);
+    }
+    const list = tokenList;
+    // Le solde est dans la clé : stakeSteps(0) et stakeSteps(1) donnent la même liste mais pas le même libellé « tout ».
+    const betsKey = `${list.join(',')}|${bet}|${tokenBalance}`;
     if (betsKey !== shownBets) {
       shownBets = betsKey;
       betEl.replaceChildren(
         ...list.map((v) =>
-          token(stakeLabel(v, balance), v === bet, false, () => {
+          token(stakeLabel(v, tokenBalance), v === bet, false, () => {
             bet = v;
-            allIn = v === balance;
+            allIn = v === tokenBalance;
             render();
-          }, v === balance ? ' all-in' : ''),
+          }, v === tokenBalance ? ' all-in' : ''),
         ),
       );
     }
@@ -355,6 +365,7 @@ export function plinkoView(root: HTMLElement): () => void {
       }
       // Erreur franche (réseau, solde, migration) : on n'envoie pas la suite, on arrête la rafale et l'auto.
       local += g.n * g.bet; // mises rendues : le serveur ne les a pas prises
+      serverBalance = null; // l'événement temps réel fera foi
       local += queue.clear();
       stopSpace();
       auto.stop();
@@ -362,7 +373,8 @@ export function plinkoView(root: HTMLElement): () => void {
       return;
     }
     if (destroyed) return;
-    serverBalance = Number(r.balance);
+    const b = Number(r?.balance);
+    if (Number.isFinite(b)) serverBalance = b;
     const refused = Number(r?.refused) || 0;
     const count = g.n - refused;
     const ok =
@@ -375,6 +387,7 @@ export function plinkoView(root: HTMLElement): () => void {
       r.slots.length === count &&
       r.mults_x100.length === count;
     if (!ok) {
+      serverBalance = null; // réponse douteuse : l'événement temps réel fera foi
       local += g.n * g.bet - (Number(r?.stake) || 0) + (Number(r?.payout) || 0);
       message = 'Réponse du serveur illisible : les billes ne sont pas affichées, ton solde est à jour.';
       return;
