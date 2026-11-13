@@ -17,12 +17,22 @@ const wait = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 export const net = (s: Spin) => s.payout - s.stake;
 export const signed = (n: number) => (n > 0 ? '+' : '') + formatPoints(n);
 
+/** Billes d'un tour Plinko : un envoi groupé (paths) ou l'ancien format à une seule bille (path). */
+function plinkoBalls(s: Spin): { path: number[]; mult: number }[] {
+  const d = s.detail;
+  if (d.paths) return d.paths.map((path, i) => ({ path, mult: d.mults_x100?.[i] ?? 0 }));
+  return d.path ? [{ path: d.path, mult: d.mult_x100 ?? 0 }] : [];
+}
+
 export function outcome(s: Spin): string {
+  const balls = s.game === 'plinko' ? plinkoBalls(s).length : 0;
   const what =
     s.game === 'roulette'
       ? `${s.detail.number} ${colorName(s.detail.number ?? 0)}`
       : s.game === 'plinko'
-        ? multLabel(s.detail.mult_x100 ?? 0)
+        ? balls > 1
+          ? `${balls} billes`
+          : multLabel(s.detail.mult_x100 ?? s.detail.mults_x100?.[0] ?? 0)
         : (s.detail.reels ?? []).map((r) => SYMBOLS[r]).join(' ');
   return `${what} : ${s.payout ? `gagné ${formatPoints(s.payout)} (${signed(net(s))})` : `perdu ${formatPoints(s.stake)}`}${s.payout === 0 && s.balance === 0 ? ' · tout perdu 💀' : ''}`;
 }
@@ -72,7 +82,11 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
     while (board.busy() && !disposed) await wait(100);
   };
 
+  /** Vrai si le dernier tour Plinko a lâché ses billes sans attendre leur arrivée (pas de pause avant le suivant). */
+  let released = false;
+
   const play = async (s: Spin, fast: boolean) => {
+    released = false;
     opts.onStart?.(s);
     // Roulette et machine à sous masquent le plateau : les billes en rattrapage finissent d'abord leur chute.
     if (s.game !== 'plinko') {
@@ -98,8 +112,9 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
       result.className = `rl-result ${colorOf(s.detail.number ?? 0)}`;
     } else if (s.game === 'plinko') {
       status.textContent = `Mise ${formatPoints(s.stake)}…`;
-      const { rows, risk, path } = s.detail;
-      if (rows && risk && path) {
+      const { rows, risk } = s.detail;
+      const balls = plinkoBalls(s);
+      if (rows && risk && balls.length) {
         const key = `${rows}:${risk}`;
         if (shown !== key) {
           // Autres réglages : les billes en l'air finissent leur chute sur l'ancien plateau avant qu'on le change.
@@ -112,14 +127,22 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
         }
         if (shown === key && !disposed) {
           // L'effet doré reste (c'est ce que voit le joueur), sans son de jackpot.
-          const falling = board.drop(path, { big: (s.detail.mult_x100 ?? 0) >= BIG_WIN_X100 });
-          if (fast) {
-            // Tours en attente : plusieurs billes à l'écran, ≈ 0,2 s d'écart ; le résultat s'affiche à l'arrivée de chacune.
-            void falling.then(() => !disposed && finish(s));
-            await wait(200);
+          // Billes d'un envoi décalées de 1/15 s (au plus ~1 s pour tout l'envoi), sans attendre leur arrivée.
+          const gap = Math.min(1000 / 15, 1000 / balls.length);
+          const falling: Promise<number>[] = [];
+          for (let i = 0; i < balls.length; i++) {
+            if (i > 0) await wait(gap);
+            if (disposed) return;
+            falling.push(board.drop(balls[i].path, { big: balls[i].mult >= BIG_WIN_X100 }));
+          }
+          if (balls.length > 1 || fast) {
+            // Un seul son et résultat pour l'envoi, à l'arrivée de la dernière bille ; on passe au tour suivant sans pause.
+            void Promise.all(falling).then(() => !disposed && finish(s));
+            released = true;
+            if (balls.length === 1) await wait(200);
             return;
           }
-          await falling;
+          await falling[0];
         }
       }
     } else {
@@ -151,8 +174,8 @@ export function spinStage(opts: { sound: boolean; onStart?: (s: Spin) => void; o
       const s = queue.shift()!;
       const fast = queue.length > 0;
       await play(s, fast);
-      // Après une bille lâchée en rattrapage, pas de pause de plus : l'écart de 0,2 s est déjà fait.
-      await wait(queue.length && !(fast && s.game === 'plinko') ? 300 : 0);
+      // Après des billes lâchées sans attendre, pas de pause de plus : l'écart est déjà fait.
+      await wait(queue.length && !released ? 300 : 0);
     }
     playing = false;
   };
