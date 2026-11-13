@@ -475,16 +475,21 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   const resetBurst = () => db.query(`delete from public.point_events where user_id = $1 and kind = 'casino'`, [player]);
   await resetBurst();
   const balance = async () => Number((await db.query(`select balance from public.wallets where user_id = $1`, [player])).rows[0].balance);
+  const rows7 = await throws(() => as(player, `select public.casino_plinko(10, 7, 'low')`));
+  const rows17 = await throws(() => as(player, `select public.casino_plinko(10, 17, 'low')`));
+  const badRisk = await throws(() => as(player, `select public.casino_plinko(10, 8, 'extrême')`));
+  const afterSettings = await balance();
+  if (rows7?.includes('rangées') && rows17?.includes('rangées') && badRisk?.includes('risque inconnu') && afterSettings === 1000)
+    ok('Plinko : rangées 7 ou 17 et risque inconnu refusés avec leur message, solde inchangé');
+  else fail(`réglages refusés du Plinko : 7 → ${rows7 ?? 'accepté'} | 17 → ${rows17 ?? 'accepté'} | risque → ${badRisk ?? 'accepté'} ; solde ${afterSettings} (attendu 1000)`);
   const refusals = [
-    await throws(() => as(player, `select public.casino_plinko(10, 7, 'low')`)),
-    await throws(() => as(player, `select public.casino_plinko(10, 17, 'low')`)),
-    await throws(() => as(player, `select public.casino_plinko(10, 8, 'extrême')`)),
     await throws(() => as(player, `select public.casino_plinko(0, 8, 'low')`)),
     await throws(() => as(player, `select public.casino_plinko(-5, 8, 'low')`)),
     await throws(() => as(player, `select public.casino_plinko(1001, 8, 'low')`)),
   ];
-  if (refusals.every(Boolean) && (await balance()) === 1000) ok('Plinko : rangées hors 8–16, risque inconnu, mise nulle, négative ou trop grosse refusés, solde inchangé');
-  else fail(`refus du Plinko : ${refusals.map((r) => r ?? 'accepté').join(' | ')} ; solde ${await balance()} (attendu 1000)`);
+  const afterBets = await balance();
+  if (refusals.every(Boolean) && afterBets === 1000) ok('Plinko : mise nulle, négative ou plus grosse que le solde refusée, solde inchangé');
+  else fail(`mises refusées du Plinko : ${refusals.map((r) => r ?? 'accepté').join(' | ')} ; solde ${afterBets} (attendu 1000)`);
 
   // Une vingtaine de billes : chaque réponse suit le contrat et le solde suit les gains.
   const shots = [];
@@ -530,6 +535,25 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
   )
     ok('Plinko : 20 billes conformes (chemin, case, multiplicateur, gain arrondi), solde exact, chacune notée pour les spectateurs');
   else fail(`billes du Plinko : ${bad.length} réponse(s) fausse(s) ${JSON.stringify(bad[0] ?? '')}, solde ${await balance()} / renvoyé ${last} (attendu ${expected}), ${logged} ligne(s) au journal, détail ${JSON.stringify(detail)}`);
+
+  // Mise énorme : 3 × 10^17 × le plus petit multiplicateur de 8 rangées bas (×0,43) dépasse bigint ;
+  // le gain, calculé en numeric, doit valoir exactement floor(mise × mult / 100). Montants lus en texte (au-delà de 2^53).
+  const hugeBet = 3n * 10n ** 17n;
+  const hugeBad = [];
+  for (let i = 0; i < 4; i++) {
+    await resetBurst();
+    await db.query(`update public.wallets set balance = $2 where user_id = $1`, [player, hugeBet.toString()]);
+    try {
+      const r = (await as(player, `select r->>'payout' as payout, r->>'mult_x100' as mult, r->>'balance' as bal from (select public.casino_plinko($1::bigint, 8, 'low') as r) x`, [hugeBet.toString()])).rows[0];
+      const want = (hugeBet * BigInt(r.mult)) / 100n;
+      if (BigInt(r.payout) !== want || BigInt(r.bal) !== want) hugeBad.push(`×${r.mult} : gain ${r.payout}, solde ${r.bal} (attendu ${want})`);
+    } catch (e) {
+      hugeBad.push(e.message);
+    }
+  }
+  if (!hugeBad.length) ok('Plinko : une mise de 3 × 10^17 ne déborde pas, gain exact à l’entier près');
+  else fail(`mise énorme au Plinko : ${hugeBad.join(' ; ')}`);
+  await db.query(`update public.wallets set balance = 1000 where user_id = $1`, [player]);
 
   // Limite commune au casino : la 13ᵉ mise en 10 secondes est refusée sans débit.
   await resetBurst();

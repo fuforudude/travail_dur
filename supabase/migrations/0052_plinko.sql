@@ -109,7 +109,11 @@ begin
   end loop;
   select p.mult_x100 into mult from public.plinko_payouts p
    where p.rows = casino_plinko.rows and p.risk = casino_plinko.risk and p.slot = s;
-  payout := bet * mult / 100; -- division entière : arrondi à l'inférieur
+  if mult is null then
+    raise exception 'table du Plinko incomplète' using errcode = 'P0001';
+  end if;
+  -- En numeric : bet × mult dépasserait bigint pour une mise énorme (casino « All in », 0048).
+  payout := floor(bet::numeric * mult / 100)::bigint;
   bal := public.casino_settle(uid, bet, payout, 'Plinko : ×' ||
     case when mult % 100 = 0 then (mult / 100)::text
          else replace(rtrim((mult / 100.0)::numeric(10, 2)::text, '0'), '.', ',') end);
