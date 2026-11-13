@@ -2,7 +2,8 @@
 -- * casino_plinko_batch tire jusqu'à 15 billes en un appel : même mise, mêmes rangées, même risque.
 -- * Limite propre au Plinko : 15 billes par seconde par joueur, par un seau à jetons (capacité 15,
 --   recharge 15 jetons/s, 1 jeton par bille) rangé dans plinko_rate. Une rafale de 15 d'un coup est
---   possible, puis 15/s sans fin. Ce qui dépasse le seau ou le solde n'est pas tiré : la réponse dit
+--   possible, puis 15/s sans fin. Un second seau limite les appels : capacité 8, recharge 8 appels/s,
+--   1 appel par envoi accepté (même horloge « at »), pour borner le travail du serveur. Ce qui dépasse le seau ou le solde n'est pas tiré : la réponse dit
 --   combien de billes sont refusées, et seules les billes tirées sont débitées.
 -- * Un envoi = une ligne point_events (« Plinko : 4 billes, misé 40, gagné 52 ») et une ligne
 --   casino_spins (detail : rows, risk, bet, paths, slots, mults_x100) pour les amis qui regardent.
@@ -16,10 +17,14 @@ set client_encoding = 'UTF8';
 create table public.plinko_rate (
   user_id uuid primary key references public.profiles (id) on delete cascade,
   tokens numeric not null,
+  calls numeric not null,
   at timestamptz not null
 );
 alter table public.plinko_rate enable row level security;
 revoke all on public.plinko_rate from anon, authenticated;
+
+-- La purge de casino_spin_log filtre sur created_at ; profite aussi à la roulette et à la machine à sous.
+create index casino_spins_user_created on public.casino_spins (user_id, created_at);
 
 create function public.casino_plinko_batch(bet bigint, rows int, risk text, n int) returns jsonb
 language plpgsql security definer set search_path = '' as $$
@@ -28,6 +33,8 @@ declare
   bal bigint;
   tok numeric;
   last_at timestamptz;
+  cal numeric;
+  elapsed numeric;
   k int;
   j int;
   i int;
@@ -61,20 +68,26 @@ begin
 
   -- Seau : plein (15) à la première bille, rechargé de 15 jetons par seconde écoulée, plafonné à 15.
   -- clock_timestamp() et non now() : les tests avancent l'heure en reculant « at ».
-  select r.tokens, r.at into tok, last_at from public.plinko_rate r where r.user_id = uid;
+  select r.tokens, r.calls, r.at into tok, cal, last_at from public.plinko_rate r where r.user_id = uid;
   if not found then
     tok := 15;
+    cal := 8;
   else
-    tok := least(15, tok + greatest(0, extract(epoch from clock_timestamp() - last_at)) * 15);
+    elapsed := greatest(0, extract(epoch from clock_timestamp() - last_at));
+    tok := least(15, tok + elapsed * 15);
+    cal := least(8, cal + elapsed * 8);
   end if;
+
+  -- Seau d'appels, avant toute écriture ni tirage : sans 1 appel disponible, rien n'est modifié.
+  if cal < 1 then raise exception 'doucement : trop d''appels' using errcode = 'P0001'; end if;
 
   k := least(casino_plinko_batch.n, floor(tok)::int, least(floor(bal / bet), 15)::int);
   if k = 0 then
     if bal < bet then raise exception 'pas assez de points' using errcode = 'P0001'; end if;
     raise exception 'doucement : 15 billes par seconde au plus' using errcode = 'P0001';
   end if;
-  insert into public.plinko_rate (user_id, tokens, at) values (uid, tok - k, clock_timestamp())
-    on conflict (user_id) do update set tokens = excluded.tokens, at = excluded.at;
+  insert into public.plinko_rate (user_id, tokens, calls, at) values (uid, tok - k, cal - 1, clock_timestamp())
+    on conflict (user_id) do update set tokens = excluded.tokens, calls = excluded.calls, at = excluded.at;
 
   -- k billes : un rebond tiré par rangée (0 = gauche, 1 = droite), la case est la somme.
   for j in 1..k loop
