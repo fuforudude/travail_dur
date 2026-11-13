@@ -654,6 +654,14 @@ else fail(`admin avec double authentification refusé : ${withCode}`);
     ok('Plinko en rafale : 10 demandées avec 4 jetons → 4 tirées, 6 refusées, 4 mises débitées');
   else fail(`4 jetons : ${four.slots.length} tirée(s), refused ${four.refused}, mise ${four.stake}, solde ${before4} → ${await balance()}`);
 
+  // Ancien seau de 0053 (15 jetons) : dès le premier appel il est ramené à 10, donc 10 tirées et 5 refusées.
+  await db.query(`update public.plinko_rate set tokens = 15, calls = 8, at = clock_timestamp() where user_id = $1`, [player]);
+  await setBalance(10000);
+  const legacyBucket = await batch(10, 8, 'low', 15);
+  if (legacyBucket.slots.length === 10 && legacyBucket.refused === 5 && Number((await bucket()).tokens) <= 0.001)
+    ok('Plinko : un ancien seau de 15 jetons est ramené à 10 dès le premier appel');
+  else fail(`ancien seau de 15 jetons : ${legacyBucket.slots.length} tirée(s), refused ${legacyBucket.refused}, seau ${JSON.stringify(await bucket())}`);
+
   // Solde : 35 points à 10 la bille → 3 tirées ; 5 points → « pas assez de points », seau inchangé.
   await db.query(`update public.plinko_rate set tokens = 10, at = clock_timestamp() where user_id = $1`, [player]);
   await setBalance(35);
