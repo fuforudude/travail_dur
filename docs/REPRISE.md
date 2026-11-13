@@ -140,14 +140,7 @@ Pour démarrer une fonctionnalité depuis n'importe quel mode : `/feature <descr
 - **Le site historique garde sa logique en SQL** : c'est l'écart assumé aux règles `architecture-backend`, prévu par l'ADR 0001. Tout **nouveau** code backend (branche `backend`) suit ces règles à la lettre.
 
 ### Ce qui manque pour profiter pleinement des plugins
-- `.claude/settings.json` (permissions communes des agents) : absent, seul `settings.local.json` existe. À créer avec la skill `socle:setup-projet` (modèle `modeles/settings.json`).
-- ADR des décisions déjà prises mais jamais consignées, à écrire avec `socle:ecrire-adr` :
-  1. Le serveur fait autorité : fonctions SQL `security definer`, clients en lecture seule.
-  2. Moteurs partagés site / fonctions Edge, copiés par `td:sync`.
-  3. Numérotation des migrations par domaine et application automatique (`db push --include-all`).
-  4. Hébergement sur GitHub Pages avec CSP en balise meta.
-  5. Touche panique sur Échap, Retour arrière pour fermer.
-  6. Économie : gains × 3, pas d'achat de points contre de l'argent réel (raison légale, `AUDIT.md` P3).
+(`.claude/settings.json` et les ADR 0002 à 0007 sont faits, sur la branche `agents/doc-reprise`.)
 - Une commande de vérification unique (`npm run verifier` : build, `test:sql`, plus tard lint) : préalable à la skill `socle:outiller-ci` (revue automatique et fusion des PR par la CI). C'est une décision à prendre : passer aux PR fusionnées par la CI, ou garder le push direct.
 
 ---
