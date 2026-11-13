@@ -193,6 +193,47 @@ export async function spinSlots(bet: number): Promise<SlotsResult> {
 }
 
 
+export type PlinkoRisk = 'low' | 'medium' | 'high';
+
+export interface PlinkoResult {
+  /** Un élément par rangée : 0 = la bille part à gauche, 1 = à droite. */
+  path: number[];
+  slot: number;
+  mult_x100: number;
+  stake: number;
+  payout: number;
+  balance: number;
+}
+
+export async function spinPlinko(bet: number, rows: number, risk: PlinkoRisk): Promise<PlinkoResult> {
+  const r = await rpc<PlinkoResult>('casino_plinko', { bet, rows, risk });
+  setWallet({ balance: r.balance, earned: wallet?.earned ?? 0 });
+  return r;
+}
+
+let plinkoPayouts: Promise<Map<string, number[]>> | null = null;
+
+/** Multiplicateurs (en centièmes) du Plinko, lus une fois dans `plinko_payouts` : clé `rows:risk`, valeurs rangées par case. */
+export function loadPlinkoPayouts(): Promise<Map<string, number[]>> {
+  plinkoPayouts ??= (async () => {
+    const supabase = await getSupabase();
+    if (!supabase) throw new Error('Indisponible en mode local.');
+    const { data, error } = await supabase.from('plinko_payouts').select('rows, risk, slot, mult_x100');
+    if (error) throw pointsError(error);
+    const map = new Map<string, number[]>();
+    for (const row of data as { rows: number; risk: string; slot: number; mult_x100: number }[]) {
+      const key = `${row.rows}:${row.risk}`;
+      const list = map.get(key) ?? [];
+      list[row.slot] = row.mult_x100;
+      map.set(key, list);
+    }
+    return map;
+  })();
+  plinkoPayouts.catch(() => (plinkoPayouts = null)); // une erreur n'est pas gardée : on pourra réessayer
+  return plinkoPayouts;
+}
+
+
 /** Montant court pour les jetons : 2,5 k, 10 M… */
 export const shortPoints = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toLocaleString('fr-FR')} M` : n >= 1e4 ? `${(n / 1e3).toLocaleString('fr-FR')} k` : formatPoints(n);

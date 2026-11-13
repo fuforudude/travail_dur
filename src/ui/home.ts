@@ -134,6 +134,7 @@ export function homeView(root: HTMLElement): () => void {
       card('roulette', 'Roulette', '', '◎', 2, () => navigate('/roulette'), { disabled: off }),
       card('shop', 'Boutique', '', '✦', 3, () => navigate('/shop'), { disabled: off }),
       card('slots', 'Machine à sous', '', '7', 5, () => navigate('/slots'), { disabled: off }),
+      card('plinko', 'Plinko', '', '▼', 1, () => navigate('/plinko'), { disabled: off }),
     ),
     hints(['← ↑ → ↓', 'choisir'], ['Entrée', 'ouvrir'], ['M', 'menu'], [keyLabel(getSettings().panicKey), 'masquer l’écran']),
   );

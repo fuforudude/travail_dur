@@ -18,6 +18,8 @@ export function pointsView(root: HTMLElement): () => void {
   roulette.addEventListener('click', () => navigate('/roulette'));
   const slots = h('button', { class: 'field', type: 'button' }, 'Machine à sous');
   slots.addEventListener('click', () => navigate('/slots'));
+  const plinko = h('button', { class: 'field', type: 'button' }, 'Plinko');
+  plinko.addEventListener('click', () => navigate('/plinko'));
   const shop = h('button', { class: 'field', type: 'button' }, 'Boutique');
   shop.addEventListener('click', () => navigate('/shop'));
 
@@ -33,7 +35,7 @@ export function pointsView(root: HTMLElement): () => void {
       'div',
       { class: 'card' },
       h('div', { class: 'pts-head' }, h('div', {}, h('h1', {}, 'Mes points'), earned), balance),
-      multiConfigured ? h('div', { class: 'pts-actions' }, shop, roulette, slots) : h('p', { class: 'notice' }, 'Les points ne sont pas disponibles en mode local.'),
+      multiConfigured ? h('div', { class: 'pts-actions' }, shop, roulette, slots, plinko) : h('p', { class: 'notice' }, 'Les points ne sont pas disponibles en mode local.'),
       h('h2', {}, 'Comment gagner des points'),
       h('table', { class: 'pts-scale' }, h('tbody', {}, ...SCALE.map(([g, rule]) => h('tr', {}, h('td', {}, g), h('td', {}, rule))))),
       multiConfigured ? h('h2', {}, 'Paliers de fou furieux') : '',
