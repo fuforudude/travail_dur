@@ -29,7 +29,7 @@ En bref :
 ## Git et déploiement
 - Un push sur `main` déploie le site (GitHub Pages) et, s'il touche `supabase/`, **applique les migrations en production** après `npm run test:sql`.
 - En fin de session de dev, une fois build et tests passés : commit puis `git pull --rebase` et push sur `main`, sans redemander. Ne jamais pousser un état qui ne compile pas ou dont les tests échouent.
-- Plusieurs sessions travaillent en parallèle dans des worktrees (`../Multiplay-appart`, `../Multiplay-backend`, `../Multiplay-mobile`, `../Multiplay-td`, `../Multiplay-perf`). Dans un worktree, pousser sur sa branche, jamais sur `main`.
+- Plusieurs sessions travaillent en parallèle dans des worktrees. Le seul dossier permanent est `../Multiplay-backend` (branche `backend`). Les worktrees `.claude/worktrees/agent-*` sont temporaires : un par agent, supprimés une fois leur travail fusionné (`git worktree list` donne l'état réel). Dans un worktree, pousser sur sa branche, jamais sur `main`.
 - La branche `backend` ne se fusionne pas tant que l'API n'est pas en ligne sur le VPS (voir `docs/adr/0001-backend-sur-vps.md`).
 
 ## Agents de l'équipe

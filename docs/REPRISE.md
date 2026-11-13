@@ -1,14 +1,14 @@
 # Reprendre travail_dur (Multiplay)
 
-État vérifié le 2026-11-10, sur `main` à `27a7d12`. Ce document sert à reprendre le projet proprement avec la méthodologie des plugins `socle` et `backend` (marketplace `equipe`). Il ne remplace pas les documents de référence, il les relie et dit ce qui est à jour, ce qui ne l'est plus et par quoi commencer.
+État vérifié le 2026-11-10 sur `main` à `27a7d12` ; mis à jour le 2026-11-13 (migrations, tests, CI, nettoyage des worktrees, ADR, documentation corrigée). Ce document sert à reprendre le projet proprement avec la méthodologie des plugins `socle` et `backend` (marketplace `equipe`). Il ne remplace pas les documents de référence, il les relie et dit ce qui est à jour, ce qui ne l'est plus et par quoi commencer.
 
 | Document | Rôle | État |
 |---|---|---|
-| [CLAUDE.md](../CLAUDE.md) | Règles pour toutes les sessions et tous les agents | À jour, sauf la liste des worktrees (voir § 6) |
+| [CLAUDE.md](../CLAUDE.md) | Règles pour toutes les sessions et tous les agents | À jour (liste des worktrees corrigée le 2026-11-13) |
 | [README.md](../README.md) | Descriptif fonctionnel, configuration Supabase, liste des migrations | À jour |
 | [Plan.md](../Plan.md) | Architecture et invariants | Invariants justes ; la partie « Vérification avant livraison » est périmée (voir § 6) |
 | [AUDIT.md](../AUDIT.md) | Audit d'octobre et tâches P0 à P4 | Une case non cochée est faite, le reste est valable (voir § 6) |
-| [docs/adr/](adr/) | Décisions structurantes | Une seule : 0001, backend sur VPS |
+| [docs/adr/](adr/) | Décisions structurantes | 0001 (backend sur VPS) et 0002 à 0007, décisions déjà prises consignées après coup |
 | [docs/specs/](specs/) | Specs de fonctionnalités | Une seule : annonce, connexions, lien Pocharlume (livrée) |
 
 ---
@@ -20,7 +20,7 @@ Plateforme de mini-jeux jouables au clavier (et au tactile), en solo ou en ligne
 - **Site** : Vite + TypeScript sans framework, hébergé sur GitHub Pages : https://fuforudude.github.io/travail_dur/ (répond, version en ligne `27a7d12` = `main`).
 - **Serveur** : Supabase (Auth, Postgres avec RLS, Realtime, Edge Functions). Le serveur fait autorité : chaque score classé, point, achat, tirage et coup en ligne est validé par une fonction SQL `security definer` ou une fonction Edge. Les clients n'ont que la lecture.
 - **Dépôt** : `github.com/fuforudude/travail_dur` (public).
-- **Taille** : environ 20 000 lignes de TypeScript, 29 écrans dans `src/ui/`, 13 jeux, 44 migrations (0001 à 0051, numéros 0023 à 0029 non utilisés), 2 fonctions Edge.
+- **Taille** : environ 20 000 lignes de TypeScript, 29 écrans dans `src/ui/`, 13 jeux, 46 migrations (0001 à 0053, numéros 0023 à 0029 non utilisés), 2 fonctions Edge.
 
 **Jeux** : 2048, Tetris, Flappy, Wordle, tower defense (campagne de 70 niveaux en 2 chapitres, défis Héroïque et Fer, mode infini classé), Morpion, Puissance 4, Quarto, Corridor (Quoridor), Dames, Échecs, Échecs à 4, Corridor à 4 (course à la case centrale).
 
@@ -34,7 +34,7 @@ Plateforme de mini-jeux jouables au clavier (et au tactile), en solo ou en ligne
 |---|---|---|
 | Site en production | OK, version `27a7d12` | `version.json` du site en ligne |
 | CI « Tests » (chaque push) | OK sur `27a7d12` | API GitHub Actions |
-| CI « Supabase » (push sur `main` touchant `supabase/`) | OK : migrations jusqu'à 0051 appliquées, fonctions `td` et `board4` redéployées | API GitHub Actions |
+| CI « Supabase » (push sur `main` touchant `supabase/`) | OK : migrations jusqu'à 0051 appliquées au 2026-11-10 (0052 et 0053, Plinko, sont arrivées depuis : état de leur application non revérifié), fonctions `td` et `board4` redéployées | API GitHub Actions |
 | CI « Déploiement GitHub Pages » | OK | API GitHub Actions |
 | **Sauvegarde nocturne de la base** | **En échec chaque nuit depuis le 22 octobre (20 sur 20) : aucune sauvegarde n'a jamais été faite** | Étape « Phrase secrète présente ? » en échec : le secret `BACKUP_PASSPHRASE` n'existe pas |
 | Tests SQL (`npm run test:sql`) | OK | Lancés en local et en CI |
@@ -50,7 +50,7 @@ Le détail est dans [Plan.md](../Plan.md) et [CLAUDE.md](../CLAUDE.md). À ne ja
 1. **Le serveur fait autorité.** Toute écriture passe par une fonction SQL `security definer` ou une fonction Edge ; les tables ne sont qu'en lecture (RLS). Une nouvelle fonction appelable par les joueurs doit être ajoutée volontairement à `supabase/tests/public-functions.txt` (`npm run test:sql -- --update`), sinon les tests échouent : c'est voulu.
 2. **Moteurs partagés site / serveur.** Le moteur du tower defense (`src/games/towerdefense/engine/`) et celui des jeux à 4 (`src/games/four/engine/`) sont copiés dans les fonctions Edge par `npm run td:sync` (fait aussi par `npm run build`). On ne modifie jamais les copies dans `supabase/functions/`. La CI vérifie que la copie est à jour.
 3. **Règles dupliquées TS / SQL.** Une quarantaine d'endroits « doit rester identique à public.… » (jeux de plateau et `match_play`, prix, raretés, revenus de l'appart…). C'est la dette que l'ADR 0001 veut résorber.
-4. **Migrations.** `supabase/migrations/NNNN_<slug>.sql`, jamais réécrites une fois appliquées. Prochain numéro libre : **0052** (le plus haut sur toutes les branches est 0051). Le workflow applique avec `--include-all`, donc un numéro plus petit qu'une migration déjà passée est accepté, mais à éviter.
+4. **Migrations.** `supabase/migrations/NNNN_<slug>.sql`, jamais réécrites une fois appliquées. Prochain numéro libre : **0054** (0052 `plinko` et 0053 `plinko_rafale` sont sur `main` ; revérifier sur les branches `agents/*` en cours, notamment `agents/monetisation` et les branches plinko, avant d'en créer une). Le workflow applique avec `--include-all`, donc un numéro plus petit qu'une migration déjà passée est accepté, mais à éviter.
 5. **CSP stricte** (balise meta, ajoutée au build seulement) : pas de `style="…"` écrit dans le HTML ni d'attribut `style` posé par `setAttribute` ; passer par `element.style.x = …` ou `style.setProperty`. Scripts et styles externes interdits. Les tests en dev ne montrent pas ces erreurs : vérifier avec `npm run build` puis `npx vite preview`.
 6. **Touche panique = Échap** (et bouton dédié sur téléphone). Ne jamais utiliser Échap pour fermer une fenêtre : c'est Retour arrière. L'écran panique est à `z-index: 100`, tout le reste en dessous.
 7. **Secrets.** `.env.local` (dossier principal) contient `SUPABASE_ACCESS_TOKEN` : ne jamais l'afficher ; seuls les noms de variables se lisent. Les secrets de CI sont dans GitHub.
@@ -59,10 +59,21 @@ Le détail est dans [Plan.md](../Plan.md) et [CLAUDE.md](../CLAUDE.md). À ne ja
 
 ## 4. Branches et worktrees
 
-Toutes les branches de fonctionnalité ont été fusionnées, sauf `backend`.
+Nettoyage fait le 2026-11-13 : les worktrees et branches fusionnés ont été supprimés. État vérifié avec `git worktree list` ce jour-là :
 
-| Branche / worktree | Commits absents de `main` | Recommandation |
+| Branche / worktree | État | Recommandation |
 |---|---|---|
+| `main` (dossier `Multiplay`) | Référence | — |
+| `backend` (`../Multiplay-backend`) | 1 commit absent de `main` (`b32aabd`, API de l'appart), en retard sur `main` | À garder (voir § 5) ; à remettre à jour depuis `main` avant toute reprise : conflits probables dans `src/net/apartment.ts`, `src/net/furniture.ts`, `src/ui/apartment.ts` |
+| Worktrees `.claude/worktrees/agent-*` (un par agent), dont ceux des branches `agents/plinko10-serveur`, `agents/plinko10-site`, `agents/plinko10-fin`, `agents/rafale-corr-site`, `agents/plinko-corrections`, `agents/plinko-bilan2`, `agents/monetisation` | Non fusionnés (travail Plinko et monétisation en cours ou à trier) ; certains sont verrouillés (`locked`) | Les garder tant que leur travail n'est pas fusionné ou abandonné, puis les supprimer (`git status` avant) |
+| `.claude/worktrees/merge-tout` (branche `agents/plinko-bilan`) | Non fusionné | Idem |
+| 23 branches locales `worktree-agent-*` | Restes de worktrees d'agents supprimés | À supprimer |
+| Branches distantes `origin/appart`, `origin/mobile`, `origin/perf-rls`, `origin/td-sauvegarde` | Fusionnées dans `main` | À supprimer sur GitHub |
+| Nombreuses branches distantes `origin/agents/*` (plinko, rafale, workflow-include-all, cli-supabase-2…) | Branches d'agents poussées, certaines déjà fusionnées | À trier : supprimer celles qui sont fusionnées |
+
+Avant de supprimer un worktree, lancer `git status` dedans. Pour la suppression, suivre la mémoire « Jonction node_modules des worktrees » : retirer la jonction `node_modules` avant `git worktree remove`, jamais `--force`. Je n'ai pas vérifié branche par branche lesquelles des `origin/agents/*` sont fusionnées.
+
+---|---|---|
 | `main` (dossier `Multiplay`) | — | Branche de référence |
 | `backend` (`../Multiplay-backend`) | 1 (`b32aabd`, API de l'appart), et 14 commits de retard sur `main` | À garder (voir § 5) ; à remettre à jour depuis `main` avant toute reprise : conflits probables dans `src/net/apartment.ts`, `src/net/furniture.ts`, `src/ui/apartment.ts` (réserve en piles arrivée depuis) |
 | `appart`, `mobile`, `perf-rls`, `td-sauvegarde` (worktrees `../Multiplay-*`) | 0 | Fusionnées : supprimer les worktrees puis les branches |
@@ -95,7 +106,7 @@ C'est la prochaine **fonctionnalité** à mener avec le flux complet (§ 7) : il
 | `Plan.md`, « Serveur » | Une seule fonction Edge (`td`) | Deux : `td` et `board4` (jeux à 4) |
 | `AUDIT.md`, P1 | « Politiques RLS en `(select auth.uid())` » non coché | Fait par `0044_conseiller_supabase.sql` (branche `perf-rls`, fusionnée) |
 | `AUDIT.md`, P0 | « Sauvegardes de la base » coché | Le workflow existe, mais n'a jamais réussi (secret manquant, § 2) |
-| `CLAUDE.md`, « Git et déploiement » | Liste de 5 worktrees en parallèle | Toutes ces branches sont fusionnées sauf `backend` (§ 4) |
+| `CLAUDE.md`, « Git et déploiement » (corrigé le 2026-11-13) | Liste de 5 worktrees en parallèle | Toutes ces branches sont fusionnées sauf `backend` (§ 4) |
 | `README.md`, liste des migrations | `0037_securite.sql` citée en dernier | Simple ordre d'écriture ; le workflow applique tout dans l'ordre des numéros |
 | `.github/workflows/supabase.yml` | `--include-all --include-all` | Drapeau en double, sans effet : à nettoyer |
 | Mémoire « Worktrees en parallèle » | Worktrees appart, mobile, td, perf en cours | Tous fusionnés |
@@ -133,7 +144,7 @@ Pour démarrer une fonctionnalité depuis n'importe quel mode : `/feature <descr
 
 ### Ce qui est propre à ce projet
 - **Pas de CI de fusion** : on pousse directement sur `main` (autorisé par `.claude/agents-equipe.json`, `pushBrancheProtegeeAutorise: true`). Les garde-fous demandent l'accord de l'utilisateur pour tout push qui touche `supabase/migrations/` ou `supabase/functions/`, puisqu'un push sur `main` les applique en production.
-- **Vérification complète** avant tout push : `npm run build` (synchronisation des moteurs, `tsc`, build Vite) puis `npm run test:sql`. Il n'y a pas de `npm run verifier`, ni de lint ou de tests unitaires du site.
+- **Vérification complète** avant tout push : `npm run build` (synchronisation des moteurs, `tsc`, build Vite) puis `npm run test:sql`. Il n'y a pas de `npm run verifier` ni de lint. `npm run test:site` (`node --test "src/**/*.test.mjs"`) lance les tests des fonctions pures du site (Plinko : seau à jetons et file d'envoi) ; la CI l'exécute, avec Node 24 (`.github/workflows/tests.yml`).
 - **Pour une interface**, vérifier aussi sur le build de production (`npm run build`, puis `npx vite preview`), à cause de la CSP (§ 3, point 5).
 - **Commits** en français, au nom de l'utilisateur (`titouan`), sans ligne `Co-Authored-By` (consigne globale).
 - **Suivi** : tenir les tâches du projet « Multiplay » dans l'outil taches (taches.pocharlume.fr) : reprendre ou créer la tâche au début, la terminer une fois vérifiée, créer les suites en « à faire ».
@@ -156,7 +167,7 @@ Pour démarrer une fonctionnalité depuis n'importe quel mode : `/feature <descr
 
 1. **Sauvegardes** (urgent, action de l'utilisateur) : secret `BACKUP_PASSPHRASE`, puis un lancement manuel du workflow pour vérifier.
 2. **Photos des cadres listables par tous** (`AUDIT.md`, P0, toujours ouvert) : bucket `artworks` privé et liens signés pour les photos possédées. Petite fonctionnalité avec migration : `dev`, puis `reviewer` et `securite-backend`.
-3. **Ménage** : supprimer les worktrees et branches fusionnés (§ 4), après un `git status` dans chacun.
+3. **Ménage** : fait en grande partie le 2026-11-13 ; reste le tri décrit au § 4 (branches locales `worktree-agent-*`, branches distantes, worktrees Plinko et monétisation).
 4. **Documentation** : corriger les écarts du § 6, créer `.claude/settings.json`, écrire les ADR manquants (§ 7). Pour le gros du texte, un agent `redacteur`.
 5. **Backend sur VPS** : remettre `backend` à jour depuis `main`, puis flux complet (`/feature`) pour la mise en ligne de l'API de l'appart.
 6. **Suite de l'audit** : P1 (hébergement, ménage automatique `pg_cron`, photos compressées), puis P2 (défis du jour, replays, saisons…), P3 et P4 avant toute monétisation.
