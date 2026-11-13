@@ -1,7 +1,7 @@
 // Carte du monde de la campagne (façon Kingdom Rush) : des pages (une par acte), chacune avec un
 // chemin sinueux qui relie des ronds numérotés. Seuls les niveaux débloqués sont montrés.
 
-import { BONUS, CHAPTER2_FIRST, CHAPTER2_LAST, LEVEL_COUNT } from './engine/data';
+import { BONUS, CHAPTER2_LAST, LEVEL_COUNT } from './engine/data';
 import { ACTS, ACTS2, BONUS_ACT } from './story';
 
 export interface WorldPage {
@@ -65,4 +65,3 @@ export function pathThrough(points: [number, number][]): string {
   return d;
 }
 
-export const isChapter2Level = (L: number) => L >= CHAPTER2_FIRST && L <= CHAPTER2_LAST;

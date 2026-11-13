@@ -6,8 +6,6 @@ import { ENEMIES, HEROES, TOWERS } from './engine/data';
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 export const RARITY_NAMES: Record<Rarity, string> = { common: 'Commun', rare: 'Rare', epic: 'Épique', legendary: 'Légendaire', mythic: 'Mythique' };
-export const RARITIES: Rarity[] = ['common', 'rare', 'epic', 'legendary', 'mythic'];
-
 export interface Finish {
   id: string;
   name: string;
