@@ -7,7 +7,7 @@ import { autoPlay } from './autoplay';
 import { h, hints } from './dom';
 import { page } from './layout';
 import { BIG_WIN_X100, createPlinkoBoard, multLabel, slotColor } from './plinkoBoard';
-import { batchQueue, dropDelays, PER_SECOND, type PlinkoGroup, type SendResult, tokenBucket } from './plinkoQueue';
+import { type AutoState, autoStep, batchQueue, type Click, dropDelays, newAutoState, PER_SECOND, type PlinkoGroup, type SendResult, tokenBucket } from './plinkoQueue';
 
 export const MIN_ROWS = 8;
 export const MAX_ROWS = 16;
@@ -29,8 +29,6 @@ const GAP_MS = 1000 / PER_SECOND;
 const FEED_MAX = 12;
 /** Rythme de mise à jour du compteur de billes en jeu. */
 const AIR_MS = 250;
-
-type Click = 'ok' | 'token' | 'poor' | 'off';
 
 export function plinkoView(root: HTMLElement): () => void {
   const content = page(root, 'Plinko');
@@ -54,11 +52,19 @@ export function plinkoView(root: HTMLElement): () => void {
   let message = 'Choisis ta mise, puis lâche la bille.';
   let autoNet = 0;
   let autoBalls = 0;
-  // Billes dues au mode auto : une bille payée au clic mais jamais tombée (abandonnée faute d'avoir pu partir à
-  // temps, ou refusée par le serveur) n'a pas joué le tour qu'elle a consommé. Tant qu'il reste des dettes, un clic
-  // réussi en solde une au lieu de consommer un tour, pour qu'« Auto ×N » joue bien N billes même sur un réseau
-  // lent (la série dure juste plus longtemps). Les dettes sont oubliées dès que l'auto s'arrête.
-  let owed = 0;
+  // Dettes et garde anti-boucle de la série d'auto en cours (voir `autoStep`). Remis à zéro à chaque démarrage.
+  let autoSt: AutoState = newAutoState();
+  // Billes en file ou en vol au démarrage de la série : elles viennent d'une rafale à la main et n'ont consommé aucun
+  // tour de l'auto. Si elles sont abandonnées pendant la série, elles ne doivent donc pas devenir des dettes, sinon
+  // « Auto ×10 » joue 11 ou 12 billes. Les remboursements partent des plus vieilles billes : on les décompte d'abord ici.
+  let preAuto = 0;
+  // Billes de l'appel en vol : elles complètent `queue.waiting()` pour connaître les billes d'avant la série.
+  let flyingBalls = 0;
+  // Billes tombées depuis l'ouverture de la page : seule sa progression compte (garde anti-boucle de l'auto).
+  let landed = 0;
+  // Message qui doit rester visible même pendant une rafale ou l'auto (arrêt de l'auto), là où la ligne d'état montre
+  // d'habitude le bilan. Effacé au premier clic de la rafale suivante.
+  let notice = '';
   // Bilan de la rafale en cours (depuis le dernier moment où plus rien ne tombait)
   let burstBalls = 0;
   let burstStake = 0;
@@ -97,7 +103,11 @@ export function plinkoView(root: HTMLElement): () => void {
     // Pendant l'auto, elle devient une dette : le tour qu'elle avait consommé sera rejoué.
     refund: (stake, balls) => {
       local += stake;
-      if (auto.running()) owed += balls;
+      if (!auto.running()) return;
+      // Seules les billes mises en file depuis le démarrage de la série deviennent des dettes.
+      const avant = Math.min(preAuto, balls);
+      preAuto -= avant;
+      autoSt.owed += balls - avant;
     },
   });
   const busy = () => queue.waiting() > 0 || queue.inFlight() || air > 0;
@@ -125,35 +135,29 @@ export function plinkoView(root: HTMLElement): () => void {
 
   const auto = autoPlay(
     [5, 10, 25, 50, 100],
-    async () => {
-      for (;;) {
-        const r = click(true);
-        if (r === 'off') return false;
-        if (r === 'poor' && !busy()) {
-          // Le solde manque et plus rien n'est en file, en vol ni en l'air : aucun gain ne viendra le renflouer.
-          // Les dettes restantes sont oubliées : l'auto s'arrête, il ne tourne pas en boucle pour les solder.
-          message = 'Plus assez de points pour cette mise : auto arrêté.';
-          return false;
-        }
-        if (r === 'ok') {
-          await wait(fast ? GAP_MS : 1000);
-          // Dernier tour de la série : on laisse tout retomber avant de conclure, sinon une bille abandonnée au
-          // tout dernier moment n'aurait plus de tour pour être rejouée et « ×100 » s'arrêterait à 99.
-          if (!owed && !auto.left()) while (busy() && auto.running() && !destroyed) await wait(20);
-          if (!owed) return !destroyed; // le tour est joué
-          owed--; // ce clic remplace une bille qui n'est jamais tombée : le tour n'est pas consommé
-        } else {
-          await wait(20); // plus de jeton, ou gains encore en route : on attend au lieu d'arrêter l'auto
-        }
-        if (destroyed || !auto.running()) return false;
-      }
-    },
+    // Un tour de la série : la boucle elle-même est dans `autoStep`, jouée telle quelle par les tests.
+    () =>
+      autoStep({
+        state: autoSt,
+        click: () => click(true),
+        wait,
+        now: () => performance.now(),
+        busy,
+        running: () => auto.running(),
+        alive: () => !destroyed,
+        last: () => !auto.left(),
+        landed: () => landed,
+        gapMs: () => (fast ? GAP_MS : 1000),
+        onPoor: () => (notice = 'Plus assez de points pour cette mise : auto arrêté.'),
+        onStuck: () => (notice = 'Auto arrêté : le serveur ne répond plus assez vite.'),
+      }),
     () => {
       if (auto.running()) {
         stopSpace(); // l'auto et la touche Espace maintenue ne cliquent pas en même temps
         autoNet = 0;
         autoBalls = 0;
-        owed = 0;
+        autoSt = newAutoState();
+        preAuto = queue.waiting() + flyingBalls; // billes d'une rafale à la main : elles ne doivent pas faire de dettes
       }
       render();
     },
@@ -263,10 +267,12 @@ export function plinkoView(root: HTMLElement): () => void {
     // Pendant une rafale ou l'auto : le bilan net seul (le résultat de chaque bille changerait 10 fois par seconde).
     const net = autoBalls ? autoNet : burstWon - burstStake;
     const summary = autoBalls ? `Auto : ${autoBalls} bille${autoBalls > 1 ? 's' : ''} · ` : burstBalls > 1 ? `Rafale : ${burstBalls} billes · ` : '';
-    const key = summary ? `${summary}${net}` : message;
+    // Un `notice` (arrêt de l'auto) passe devant le bilan : sans ça il serait masqué par la rafale et jamais lu.
+    const key = notice ? `!${notice}` : summary ? `${summary}${net}` : message;
     if (key !== shownStatus) {
       shownStatus = key;
-      if (summary) status.replaceChildren(summary, h('b', { class: net > 0 ? 'pk-net gain' : net < 0 ? 'pk-net perte' : 'pk-net' }, signedShortPoints(net)));
+      if (notice) status.textContent = notice;
+      else if (summary) status.replaceChildren(summary, h('b', { class: net > 0 ? 'pk-net gain' : net < 0 ? 'pk-net perte' : 'pk-net' }, signedShortPoints(net)));
       else status.textContent = message;
     }
   };
@@ -342,6 +348,7 @@ export function plinkoView(root: HTMLElement): () => void {
       local = getWallet()?.balance ?? 0;
       hold = holdWallet();
       burstBalls = burstStake = burstWon = 0;
+      notice = ''; // nouvelle rafale : le message d'arrêt de la série précédente n'a plus lieu d'être
       if (!auto.running()) autoBalls = 0;
     }
     local -= stake;
@@ -355,6 +362,7 @@ export function plinkoView(root: HTMLElement): () => void {
     if (destroyed) return;
     local += payout;
     air--;
+    landed++; // progrès de la série d'auto : ce compteur remet la garde anti-boucle à zéro
     addFeed(mult, slot, rowCount);
     showAir();
     burstBalls++;
@@ -376,9 +384,11 @@ export function plinkoView(root: HTMLElement): () => void {
    */
   const sendGroup = async (g: PlinkoGroup): Promise<SendResult | void> => {
     let r;
+    flyingBalls = g.n;
     try {
       r = await spinPlinkoBatch(g.bet, g.rows, g.risk, g.n);
     } catch (e) {
+      flyingBalls = 0;
       if (destroyed) return;
       const text = (e as Error).message;
       if (/^doucement/i.test(text)) {
@@ -394,6 +404,7 @@ export function plinkoView(root: HTMLElement): () => void {
       message = text;
       return;
     }
+    flyingBalls = 0;
     if (destroyed) return;
     const b = Number(r?.balance);
     if (Number.isFinite(b)) serverBalance = b;

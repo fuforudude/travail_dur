@@ -63,6 +63,111 @@ export function dropDelays(from: number, now: number, count: number, gapMs: numb
   return { delays, next: at };
 }
 
+/**
+ * Clics d'affilée sans qu'aucune bille ne tombe au bout desquels le mode auto s'arrête. Même principe que la garde
+ * « tours sans progrès » des billes remises en file : le compteur repart à zéro dès qu'une bille tombe, pour qu'une
+ * connexion lente mais qui avance ne soit jamais interrompue. Sans cette borne, un serveur qui refuse tout
+ * (« doucement » à chaque appel) fait tourner l'auto sans fin : chaque clic remboursé recrée la dette qu'il vient de
+ * solder, le solde ne baisse jamais et aucune bille ne tombe.
+ */
+export const MAX_CLICS_SANS_BILLE = 25;
+
+/**
+ * Temps maximal passé, au dernier tour d'une série, à attendre que tout soit retombé. `rpc` n'a pas de délai maximal
+ * et l'animation d'une bille est gelée dans un onglet en arrière-plan : sans cette borne, l'attente peut ne jamais
+ * se terminer.
+ */
+export const DRAIN_MAX_MS = 5000;
+
+/** Ce qu'un clic a fait : bille mise en file, plus de jeton, pas assez de points, ou Plinko indisponible. */
+export type Click = 'ok' | 'token' | 'poor' | 'off';
+
+/** Compteurs d'une série du mode auto, remis à zéro à chaque démarrage de série. */
+export interface AutoState {
+  /**
+   * Billes dues : une bille payée au clic mais jamais tombée (abandonnée faute d'avoir pu partir à temps, ou refusée
+   * par le serveur) n'a pas joué le tour qu'elle a consommé. Tant qu'il reste des dettes, un clic réussi en solde une
+   * au lieu de consommer un tour, pour qu'« Auto ×N » joue bien N billes même sur un réseau lent.
+   */
+  owed: number;
+  /** Clics d'affilée sans qu'aucune bille ne tombe (garde `MAX_CLICS_SANS_BILLE`). */
+  stuck: number;
+  /** Nombre de billes tombées vu au dernier clic : c'est lui qui dit si la série progresse. */
+  landed: number;
+}
+
+export const newAutoState = (): AutoState => ({ owed: 0, stuck: 0, landed: 0 });
+
+/** Ce dont un tour d'auto a besoin de la page : tout est injecté, pour que la boucle soit testable telle quelle. */
+export interface AutoStepDeps {
+  state: AutoState;
+  /** Un clic : une bille en file à la mise courante. */
+  click: () => Click;
+  /** Attente, qui rend la main au navigateur (ou à l'horloge simulée des tests). */
+  wait: (ms: number) => Promise<void>;
+  now: () => number;
+  /** Des billes sont en file, en vol ou en l'air. */
+  busy: () => boolean;
+  /** L'auto tourne toujours (le joueur n'a pas appuyé sur « Arrêter »). */
+  running: () => boolean;
+  /** La page est toujours là. */
+  alive: () => boolean;
+  /** Dernier tour de la série. */
+  last: () => boolean;
+  /** Nombre total de billes tombées depuis l'ouverture de la page (seule sa progression compte). */
+  landed: () => number;
+  /** Attente entre deux clics : 1/10 s en rapide, 1 s en normale. */
+  gapMs: () => number;
+  /** Plus assez de points : l'auto s'arrête. */
+  onPoor: () => void;
+  /** Rien n'avance plus depuis `MAX_CLICS_SANS_BILLE` clics : l'auto s'arrête. */
+  onStuck: () => void;
+}
+
+/**
+ * Un tour du mode auto : clique jusqu'à ce qu'une bille ait vraiment joué le tour, et dit par son retour si la série
+ * continue (`false` = arrêter l'auto). Fonction sans DOM ni horloge réelle : la page et les tests jouent la **même**
+ * boucle.
+ */
+export async function autoStep(d: AutoStepDeps): Promise<boolean> {
+  const s = d.state;
+  for (;;) {
+    const r = d.click();
+    if (r === 'off') return false;
+    if (r === 'poor' && !d.busy()) {
+      // Le solde manque et plus rien n'est en file, en vol ni en l'air : aucun gain ne viendra le renflouer.
+      // Les dettes restantes sont oubliées : l'auto s'arrête, il ne tourne pas en boucle pour les solder.
+      d.onPoor();
+      return false;
+    }
+    if (r === 'ok') {
+      // Progrès = une bille de plus tombée depuis le clic précédent. Sinon le compteur monte, et à
+      // MAX_CLICS_SANS_BILLE la série s'arrête : le serveur ne suit plus du tout.
+      const landed = d.landed();
+      if (landed > s.landed) {
+        s.landed = landed;
+        s.stuck = 0;
+      } else if (++s.stuck >= MAX_CLICS_SANS_BILLE) {
+        d.onStuck();
+        return false;
+      }
+      await d.wait(d.gapMs());
+      // Dernier tour de la série : on laisse tout retomber avant de conclure, sinon une bille abandonnée au tout
+      // dernier moment n'aurait plus de tour pour être rejouée et « ×100 » s'arrêterait à 99. Attente bornée : la
+      // promesse d'un appel ou d'une animation peut ne jamais se résoudre.
+      if (!s.owed && d.last()) {
+        const until = d.now() + DRAIN_MAX_MS;
+        while (d.busy() && d.running() && d.alive() && d.now() < until) await d.wait(20);
+      }
+      if (!s.owed) return d.alive(); // le tour est joué
+      s.owed--; // ce clic remplace une bille qui n'est jamais tombée : le tour n'est pas consommé
+    } else {
+      await d.wait(20); // plus de jeton, ou gains encore en route : on attend au lieu d'arrêter l'auto
+    }
+    if (!d.alive() || !d.running()) return false;
+  }
+}
+
 /** Billes en attente d'envoi : une seule mise, un seul nombre de rangées, un seul risque par groupe. */
 export interface PlinkoGroup {
   bet: number;
