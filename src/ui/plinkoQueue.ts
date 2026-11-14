@@ -64,13 +64,17 @@ export function dropDelays(from: number, now: number, count: number, gapMs: numb
 }
 
 /**
- * Clics d'affilée sans qu'aucune bille ne tombe au bout desquels le mode auto s'arrête. Même principe que la garde
- * « tours sans progrès » des billes remises en file : le compteur repart à zéro dès qu'une bille tombe, pour qu'une
- * connexion lente mais qui avance ne soit jamais interrompue. Sans cette borne, un serveur qui refuse tout
- * (« doucement » à chaque appel) fait tourner l'auto sans fin : chaque clic remboursé recrée la dette qu'il vient de
- * solder, le solde ne baisse jamais et aucune bille ne tombe.
+ * Temps sans qu'aucune bille ne tombe au bout duquel le mode auto s'arrête. Le chronomètre repart à zéro dès qu'une
+ * bille tombe : une connexion lente mais qui avance n'est jamais interrompue. Sans cette borne, un serveur qui refuse
+ * tout (« doucement » à chaque appel) fait tourner l'auto sans fin — chaque clic remboursé recrée la dette qu'il vient
+ * de solder, le solde ne baisse jamais et aucune bille ne tombe.
+ *
+ * Borne en **temps** et pas en clics : un nombre de clics mesure une durée avec une règle qui dépend de la vitesse de
+ * l'auto, et 25 clics (2,4 s en rapide) ne couvraient même pas un aller-retour lent — l'auto s'arrêtait avant la
+ * première bille à 3 s de latence. 10 s couvrent largement l'aller-retour le plus lent, tout en bornant aussi un
+ * serveur **muet**, dont aucune réponse n'arrive jamais.
  */
-export const MAX_CLICS_SANS_BILLE = 25;
+export const MAX_MS_SANS_BILLE = 10_000;
 
 /**
  * Temps maximal passé, au dernier tour d'une série, à attendre que tout soit retombé. `rpc` n'a pas de délai maximal
@@ -90,13 +94,13 @@ export interface AutoState {
    * au lieu de consommer un tour, pour qu'« Auto ×N » joue bien N billes même sur un réseau lent.
    */
   owed: number;
-  /** Clics d'affilée sans qu'aucune bille ne tombe (garde `MAX_CLICS_SANS_BILLE`). */
-  stuck: number;
-  /** Nombre de billes tombées vu au dernier clic : c'est lui qui dit si la série progresse. */
+  /** Instant du dernier progrès (garde `MAX_MS_SANS_BILLE`) ; −1 tant que la série n'a pas cliqué. */
+  since: number;
+  /** Nombre de billes tombées vu au dernier progrès : c'est lui qui dit si la série avance. */
   landed: number;
 }
 
-export const newAutoState = (): AutoState => ({ owed: 0, stuck: 0, landed: 0 });
+export const newAutoState = (): AutoState => ({ owed: 0, since: -1, landed: 0 });
 
 /** Ce dont un tour d'auto a besoin de la page : tout est injecté, pour que la boucle soit testable telle quelle. */
 export interface AutoStepDeps {
@@ -120,7 +124,7 @@ export interface AutoStepDeps {
   gapMs: () => number;
   /** Plus assez de points : l'auto s'arrête. */
   onPoor: () => void;
-  /** Rien n'avance plus depuis `MAX_CLICS_SANS_BILLE` clics : l'auto s'arrête. */
+  /** Rien n'avance plus depuis `MAX_MS_SANS_BILLE` : l'auto s'arrête. */
   onStuck: () => void;
 }
 
@@ -141,13 +145,14 @@ export async function autoStep(d: AutoStepDeps): Promise<boolean> {
       return false;
     }
     if (r === 'ok') {
-      // Progrès = une bille de plus tombée depuis le clic précédent. Sinon le compteur monte, et à
-      // MAX_CLICS_SANS_BILLE la série s'arrête : le serveur ne suit plus du tout.
+      // Progrès = une bille de plus tombée. Le chronomètre repart de zéro à chaque progrès (et au premier clic de la
+      // série) ; au bout de MAX_MS_SANS_BILLE sans aucune bille, la série s'arrête : le serveur ne suit plus du tout.
+      const t = d.now();
       const landed = d.landed();
-      if (landed > s.landed) {
+      if (landed > s.landed || s.since < 0) {
         s.landed = landed;
-        s.stuck = 0;
-      } else if (++s.stuck >= MAX_CLICS_SANS_BILLE) {
+        s.since = t;
+      } else if (t - s.since >= MAX_MS_SANS_BILLE) {
         d.onStuck();
         return false;
       }

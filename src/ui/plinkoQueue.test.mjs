@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { autoStep, batchQueue, BURST, dropDelays, MAX_CLICS_SANS_BILLE, MAX_LEAD_MS, MAX_WAIT_MS, MIN_GAP_MS, newAutoState, PER_SECOND, tokenBucket } from './plinkoQueue.ts';
+import { autoStep, batchQueue, BURST, dropDelays, MAX_LEAD_MS, MAX_MS_SANS_BILLE, MAX_WAIT_MS, MIN_GAP_MS, newAutoState, PER_SECOND, tokenBucket } from './plinkoQueue.ts';
 
 /** Horloge et minuteurs simulés : le temps n'avance que quand le test le demande. */
 function makeClock() {
@@ -315,7 +315,7 @@ test('file : clear() pendant un appel en vol empêche le double remboursement de
  * Faux serveur : seau de 10 billes rechargé à 10/s (comme casino_plinko_batch), et limite de 8 appels par seconde
  * au-delà de laquelle il répond « doucement : trop d'appels ».
  */
-function fakeServer(clock, { latency, callsPerSecond = 8, balance = 1_000_000, random = seeded(12345) } = {}) {
+function fakeServer(clock, { latency, callsPerSecond = 8, balance = 1_000_000, random = seeded(12345), muet = false } = {}) {
   const calls = [];
   let tokens = BURST;
   let at = clock.now();
@@ -326,6 +326,8 @@ function fakeServer(clock, { latency, callsPerSecond = 8, balance = 1_000_000, r
     lastAcceptedAt: 0,
     refusedCalls: 0,
     async spin(g) {
+      // Serveur muet : l'appel ne répond jamais (ni réponse, ni erreur, ni délai maximal — `rpc` n'en a pas).
+      if (muet) return new Promise(() => {});
       await sleep(clock, lag()); // aller
       const t = clock.now();
       while (calls.length && calls[0] <= t - 1000) calls.shift();
@@ -353,8 +355,8 @@ function fakeServer(clock, { latency, callsPerSecond = 8, balance = 1_000_000, r
  * le faux serveur branchés ensemble. `drops` est ce que le joueur voit vraiment : l'instant où chaque bille est
  * lâchée sur le plateau. C'est ce que mesure le critère « après le dernier clic, plus rien ne part ».
  */
-function makePlayer(clock, { latency, callsPerSecond } = {}) {
-  const srv = fakeServer(clock, { latency, callsPerSecond });
+function makePlayer(clock, { latency, callsPerSecond, muet } = {}) {
+  const srv = fakeServer(clock, { latency, callsPerSecond, muet });
   const bucket = tokenBucket(BURST, PER_SECOND, clock.now);
   const gap = 1000 / PER_SECOND;
   const state = { local: srv.balance, clicked: 0, lastClick: 0, drops: [], onRefund: () => {}, srv };
@@ -478,6 +480,8 @@ async function autoRapide(clock, p, tours) {
   }
   const duree = Math.round(clock.now());
   await clock.advance(5000); // tout retombe
+  // `PLINKO_MESURE=1 npm run test:site` affiche les mesures qui servent de repères dans les commentaires ci-dessous.
+  if (process.env.PLINKO_MESURE) console.log('MESURE', JSON.stringify({ duree, arret, clics: p.clicked, billes: p.srv.accepted, restants: left + (arret ? 1 : 0) }));
   return { duree, arret, clics: p.clicked, restants: left + (arret ? 1 : 0) };
 }
 
@@ -501,12 +505,13 @@ test('auto : « ×100 » joue 100 billes, quelle que soit la connexion', async (
  */
 test('auto : durée d’un « ×100 » selon l’aller-retour', async () => {
   // Mesures (aller-retour → clics, durée) : 100 → 100 clics, 10,2 s ; 400 → 132 clics, 14,0 s ; 800 → 265 clics,
-  // 28,8 s ; 1500 → 489 clics, 54,0 s. Les budgets laissent ≈ 15 % de marge.
+  // 28,8 s ; 1500 → 489 clics, 54,0 s ; 3000 → 969 clics, 108,0 s. Les budgets laissent ≈ 15 % de marge.
   const cas = [
     [100, 12000],
     [400, 16000],
     [800, 33000],
     [1500, 62000],
+    [3000, 125000],
   ];
   for (const [roundTrip, budget] of cas) {
     const clock = makeClock();
@@ -519,24 +524,7 @@ test('auto : durée d’un « ×100 » selon l’aller-retour', async () => {
   }
 });
 
-/**
- * Limite de la garde, mesurée : à 10 clics/s, 25 clics sans bille font 2,4 s. Une **première** bille ne peut pas
- * tomber avant un aller-retour complet, donc au-delà de ≈ 2,4 s d'aller-retour la garde arrête la série avant même
- * que la première bille soit tombée. C'est en contradiction avec « ×N joue N billes, quelle que soit la connexion » :
- * en attente d'arbitrage (voir la spec, décisions après la revue des finitions). Ce test fixe le comportement actuel
- * pour qu'un changement de la garde soit un choix et pas un accident.
- */
-test('auto : au-delà de ≈ 2,4 s d’aller-retour, la garde arrête la série (en attente d’arbitrage)', async () => {
-  const clock = makeClock();
-  const p = makePlayer(clock, { latency: [1500, 1500] }); // aller-retour 3 s
-  const r = await autoRapide(clock, p, 100);
-  assert.equal(r.arret, 'stuck', `arrêt attendu par la garde (arrêt : ${r.arret})`);
-  assert.equal(r.clics, MAX_CLICS_SANS_BILLE, `${r.clics} clics avant l’arrêt`);
-  assert.ok(p.srv.accepted <= 2, `${p.srv.accepted} bille(s) jouée(s) sur 100 demandées : la série s’arrête quasi tout de suite`);
-  assert.equal(p.local, p.srv.balance, 'le solde local retombe sur celui du serveur');
-});
-
-test('auto : serveur saturé — la garde arrête la série au bout de 25 clics sans bille', async () => {
+test('auto : serveur saturé — la garde arrête la série au bout de 10 s sans bille', async () => {
   const clock = makeClock();
   // callsPerSecond = 0 : le serveur répond « doucement » à chaque appel, aucune bille n'est jamais tirée.
   const p = makePlayer(clock, { latency: [50, 50], callsPerSecond: 0 });
@@ -544,10 +532,34 @@ test('auto : serveur saturé — la garde arrête la série au bout de 25 clics 
   assert.equal(p.srv.accepted, 0, 'aucune bille jouée : le serveur refuse tout');
   assert.equal(r.arret, 'stuck', `la série doit s’arrêter d’elle-même (arrêt : ${r.arret}, ${r.clics} clics)`);
   // Sans la garde : 6 000 clics, 4 001 appels refusés et 0 bille en 10 minutes simulées, et ça tournait encore.
-  assert.ok(r.clics <= MAX_CLICS_SANS_BILLE + BURST, `${r.clics} clics avant l’arrêt (garde : ${MAX_CLICS_SANS_BILLE})`);
+  assert.ok(
+    r.duree >= MAX_MS_SANS_BILLE && r.duree <= MAX_MS_SANS_BILLE + 1000,
+    `arrêt à ${r.duree} ms après ${r.clics} clics (garde : ${MAX_MS_SANS_BILLE} ms)`,
+  );
   assert.ok(r.restants > 50, `la série s’arrête tôt : ${r.restants} tours jamais joués`);
   assert.equal(p.local, p.srv.balance, 'toutes les mises ont été rendues');
   assert.equal(p.queue.waiting(), 0);
+});
+
+/**
+ * Serveur **muet** : aucune réponse n'arrive jamais (c'est le cas qu'une garde comptée « à partir de la première
+ * réponse » n'aurait pas borné). `rpc` n'a pas de délai maximal : seule cette garde arrête la série.
+ */
+test('auto : serveur muet — la garde arrête aussi la série au bout de 10 s', async () => {
+  const clock = makeClock();
+  const p = makePlayer(clock, { latency: [50, 50], muet: true });
+  const r = await autoRapide(clock, p, 100);
+  assert.equal(p.srv.accepted, 0, 'aucune bille jouée : le serveur ne répond pas');
+  assert.equal(r.arret, 'stuck', `la série doit s’arrêter d’elle-même (arrêt : ${r.arret}, ${r.clics} clics)`);
+  assert.ok(
+    r.duree >= MAX_MS_SANS_BILLE && r.duree <= MAX_MS_SANS_BILLE + 1000,
+    `arrêt à ${r.duree} ms après ${r.clics} clics (garde : ${MAX_MS_SANS_BILLE} ms)`,
+  );
+  assert.ok(r.restants > 50, `la série s’arrête tôt : ${r.restants} tours jamais joués`);
+  // Seules les mises du groupe parti dans l'appel sans réponse restent retirées du solde local : la file ne les rend
+  // qu'à la réponse, qui n'arrive jamais. Tout le reste a été remboursé.
+  assert.equal(p.srv.balance - p.local, 10, `écart de solde : ${p.srv.balance - p.local} (la bille de l’appel muet)`);
+  assert.equal(p.queue.waiting(), 0, 'rien n’est gardé en file malgré l’appel sans réponse');
 });
 
 test('scénario du joueur : rafale, arrêt, puis un seul clic → une seule bille part', async () => {
